@@ -1,5 +1,5 @@
 ---
-- name: Disable PVE enterprise repository
+- name: Disable PVE enterprise repository (.list)
   ansible.builtin.copy:
     content: "# Disabled by Ansible — enterprise repo requires subscription\n"
     dest: /etc/apt/sources.list.d/pve-enterprise.list
@@ -8,7 +8,13 @@
     mode: "0644"
   notify: Update apt cache
 
-- name: Disable Ceph enterprise repository
+- name: Disable PVE enterprise repository (.sources)
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/pve-enterprise.sources
+    state: absent
+  notify: Update apt cache
+
+- name: Disable Ceph enterprise repository (.list)
   ansible.builtin.copy:
     content: "# Disabled by Ansible — enterprise repo requires subscription\n"
     dest: /etc/apt/sources.list.d/ceph.list
@@ -17,16 +23,22 @@
     mode: "0644"
   notify: Update apt cache
 
+- name: Disable Ceph enterprise repository (.sources)
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/ceph.sources
+    state: absent
+  notify: Update apt cache
+
 - name: Add PVE no-subscription repository
   ansible.builtin.apt_repository:
-    repo: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
+    repo: "deb http://download.proxmox.com/debian/pve trixie pve-no-subscription"
     filename: pve-no-subscription
     state: present
   notify: Update apt cache
 
 - name: Add Ceph no-subscription repository
   ansible.builtin.apt_repository:
-    repo: "deb http://download.proxmox.com/debian/ceph-reef bookworm no-subscription"
+    repo: "deb http://download.proxmox.com/debian/ceph-squid trixie no-subscription"
     filename: ceph-no-subscription
     state: present
   notify: Update apt cache

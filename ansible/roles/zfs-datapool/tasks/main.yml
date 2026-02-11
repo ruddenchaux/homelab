@@ -25,6 +25,7 @@
       {{ zfs_datapool_disk1 }}
       {{ zfs_datapool_disk2 }}
   when: zpool_check.rc != 0
+  register: zpool_create
 
 - name: Set ZFS compression property
   community.general.zfs:
@@ -32,7 +33,7 @@
     state: present
     extra_zfs_properties:
       compression: "{{ zfs_datapool_compression }}"
-  when: zpool_check.rc == 0
+  when: zpool_check.rc == 0 or (zpool_create is defined and zpool_create is changed)
 
 - name: Set ZFS atime property
   community.general.zfs:
@@ -40,4 +41,4 @@
     state: present
     extra_zfs_properties:
       atime: "{{ zfs_datapool_atime }}"
-  when: zpool_check.rc == 0
+  when: zpool_check.rc == 0 or (zpool_create is defined and zpool_create is changed)
