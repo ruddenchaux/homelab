@@ -9,7 +9,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - **RAM**: 6x 16GB DDR4 2666MHz (96GB total)
 - **Storage Controller**: Dell H740p Mini 8GB cache — configured in **Enhanced HBA (eHBA) mode**, all disks as Non-RAID
 - **Boot Storage**: 2x 960GB SAS SSD — ZFS mirror (rpool), Proxmox installed here
-- **Data Storage**: 2x 4TB SAS HDD 7.2K — to be configured as ZFS mirror (datapool)
+- **Data Storage**: 2x 4TB SAS HDD 7.2K — ZFS mirror (datapool), compression=lz4, atime=off
 - **NIC**: BCM57416 (2x 10G, ports 1-2) + BCM5720 (2x 1G, ports 3-4)
 - **PSU**: 2x 1100W Platinum
 - **Router**: MikroTik L009UiGS-2HaxD-IN (SFP port max 2.5G)
@@ -18,29 +18,33 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 ## Current State
 - All firmware updated (iDRAC 7.00.00.183, BIOS 2.25.0, H740p 51.16.0-5150, Broadcom NIC 23.3/23.3.1, CPLD 1.1.4)
 - H740p in eHBA mode, 4 disks as Non-RAID
-- Proxmox VE 8.3 installed on ZFS mirror (2x SSD)
+- Proxmox VE 9.1.5 (Debian Trixie) installed on ZFS mirror (2x SSD), kernel 6.17.2-1-pve
+- Enterprise repos disabled, no-subscription repos enabled (PVE + Ceph Squid)
+- ZFS datapool mirror created on 2x 4TB HDDs, mounted at /datapool
+- SSH hardened (PermitRootLogin=prohibit-password, PasswordAuthentication=no, PubkeyAuthentication=yes)
 - Server connected to MikroTik via 1G port (BCM5720) because 10G<->2.5G speed mismatch
 - Proxmox accessible at https://192.168.88.187:8006
 - SSH access configured with ed25519 key from dev-box
 
+## Completed Tasks
+1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
+   - Disabled enterprise repos, enabled no-subscription repos (PVE + Ceph Squid for Trixie)
+   - Full system upgrade (83 packages)
+   - Created ZFS datapool mirror on 2x 4TB HDDs (compression=lz4, atime=off)
+   - SSH hardening (key-only auth, no X11 forwarding)
+
 ## Pending Tasks (in order)
-1. **Ansible: Configure Proxmox base** (NEXT)
-   - Disable enterprise repos, enable no-subscription repo
-   - Full system upgrade
-   - Install useful packages
-   - Create ZFS datapool mirror on the 2 HDDs
-   - SSH hardening
-2. **Ansible: Configure networking/VLANs on Proxmox and MikroTik**
+1. **Ansible: Configure networking/VLANs on Proxmox and MikroTik** (NEXT)
    - VLAN 10: Management (Proxmox, iDRAC, MikroTik admin)
    - VLAN 20: Trusted LAN (personal devices)
    - VLAN 30: Kubernetes/Services
    - VLAN 40: IoT (Home Assistant, NVR cameras)
    - VLAN 50: DMZ (VPN endpoint, reverse proxy)
    - VLAN 100: Storage/Ceph (future, inter-node)
-3. **Packer: Create VM template** (Ubuntu 24.04 + cloud-init + qemu-guest-agent)
-4. **Terraform: Provision VMs** (k3s control plane + workers)
-5. **Ansible: Install k3s cluster**
-6. **Helm/ArgoCD: Deploy services via GitOps**
+2. **Packer: Create VM template** (Ubuntu 24.04 + cloud-init + qemu-guest-agent)
+3. **Terraform: Provision VMs** (k3s control plane + workers)
+4. **Ansible: Install k3s cluster**
+5. **Helm/ArgoCD: Deploy services via GitOps**
 
 ## Services to Deploy (on k3s)
 - Media server (Servarr stack)
@@ -58,7 +62,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 ## Architecture Decisions
 - **No RAID hardware**: eHBA mode + ZFS for checksumming, self-healing, snapshots
 - **ZFS mirror on SSDs** for boot (managed by Proxmox installer)
-- **ZFS mirror on HDDs** for bulk data (to be created via Ansible)
+- **ZFS mirror on HDDs** for bulk data (created via Ansible, mounted at /datapool)
 - **Future Ceph**: when second node is added (same rack), minimum 3 nodes needed. Third node at parents' house — use ZFS send/receive or Syncthing instead of Ceph for remote replication due to latency
 - **VMs for k3s**: don't run k3s directly on Proxmox host. 1 VM control plane + 1-2 VM workers
 - **GitOps with ArgoCD**: all services declared in Git
