@@ -12,6 +12,7 @@
   register: zpool_check
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Create ZFS mirror pool
   ansible.builtin.command:
@@ -31,6 +32,7 @@
     state: present
     extra_zfs_properties:
       compression: "{{ zfs_datapool_compression }}"
+  when: zpool_check.rc == 0
 
 - name: Set ZFS atime property
   community.general.zfs:
@@ -38,3 +40,4 @@
     state: present
     extra_zfs_properties:
       atime: "{{ zfs_datapool_atime }}"
+  when: zpool_check.rc == 0
