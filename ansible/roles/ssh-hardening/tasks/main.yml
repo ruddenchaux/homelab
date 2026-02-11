@@ -1,0 +1,40 @@
+---
+- name: Set PermitRootLogin
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PermitRootLogin"
+    line: "PermitRootLogin {{ ssh_permit_root_login }}"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+- name: Set PasswordAuthentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication {{ ssh_password_authentication }}"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+- name: Set PubkeyAuthentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PubkeyAuthentication"
+    line: "PubkeyAuthentication {{ ssh_pubkey_authentication }}"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+- name: Set X11Forwarding
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?X11Forwarding"
+    line: "X11Forwarding {{ ssh_x11_forwarding }}"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+- name: Set UsePAM
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?UsePAM"
+    line: "UsePAM {{ ssh_use_pam }}"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd

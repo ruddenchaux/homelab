@@ -1,0 +1,40 @@
+---
+- name: Validate disk variables are set
+  ansible.builtin.assert:
+    that:
+      - zfs_datapool_disk1 | length > 0
+      - zfs_datapool_disk2 | length > 0
+    fail_msg: "zfs_datapool_disk1 and zfs_datapool_disk2 must be set to /dev/disk/by-id/... paths"
+
+- name: Check if ZFS pool already exists
+  ansible.builtin.command:
+    cmd: "zpool list {{ zfs_datapool_name }}"
+  register: zpool_check
+  changed_when: false
+  failed_when: false
+
+- name: Create ZFS mirror pool
+  ansible.builtin.command:
+    cmd: >-
+      zpool create
+      -o ashift={{ zfs_datapool_ashift }}
+      -m {{ zfs_datapool_mountpoint }}
+      {{ zfs_datapool_name }}
+      mirror
+      {{ zfs_datapool_disk1 }}
+      {{ zfs_datapool_disk2 }}
+  when: zpool_check.rc != 0
+
+- name: Set ZFS compression property
+  community.general.zfs:
+    name: "{{ zfs_datapool_name }}"
+    state: present
+    extra_zfs_properties:
+      compression: "{{ zfs_datapool_compression }}"
+
+- name: Set ZFS atime property
+  community.general.zfs:
+    name: "{{ zfs_datapool_name }}"
+    state: present
+    extra_zfs_properties:
+      atime: "{{ zfs_datapool_atime }}"

@@ -1,0 +1,8 @@
+---
+zfs_datapool_name: datapool
+zfs_datapool_disk1: "" # Required — /dev/disk/by-id/...
+zfs_datapool_disk2: "" # Required — /dev/disk/by-id/...
+zfs_datapool_mountpoint: /datapool
+zfs_datapool_compression: lz4
+zfs_datapool_atime: "off"
+zfs_datapool_ashift: 12

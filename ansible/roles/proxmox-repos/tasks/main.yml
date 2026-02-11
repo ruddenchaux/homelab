@@ -1,0 +1,35 @@
+---
+- name: Disable PVE enterprise repository
+  ansible.builtin.copy:
+    content: "# Disabled by Ansible — enterprise repo requires subscription\n"
+    dest: /etc/apt/sources.list.d/pve-enterprise.list
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update apt cache
+
+- name: Disable Ceph enterprise repository
+  ansible.builtin.copy:
+    content: "# Disabled by Ansible — enterprise repo requires subscription\n"
+    dest: /etc/apt/sources.list.d/ceph.list
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update apt cache
+
+- name: Add PVE no-subscription repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
+    filename: pve-no-subscription
+    state: present
+  notify: Update apt cache
+
+- name: Add Ceph no-subscription repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://download.proxmox.com/debian/ceph-reef bookworm no-subscription"
+    filename: ceph-no-subscription
+    state: present
+  notify: Update apt cache
+
+- name: Flush handlers to update apt cache now
+  ansible.builtin.meta: flush_handlers

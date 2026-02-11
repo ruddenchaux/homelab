@@ -1,0 +1,29 @@
+# Ansible
+*.retry
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Packer
+packer_cache/
+
+# Secrets & environment
+.env
+*.vault
+*vault-password*
+*.age
+*.key
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
