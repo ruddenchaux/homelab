@@ -1,0 +1,6 @@
+---
+# Fire-and-forget: SSH will drop when the IP changes
+- name: Reload network interfaces
+  ansible.builtin.command: ifreload -a
+  async: 30
+  poll: 0

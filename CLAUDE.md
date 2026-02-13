@@ -23,7 +23,8 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - ZFS datapool mirror created on 2x 4TB HDDs, mounted at /datapool
 - SSH hardened (PermitRootLogin=prohibit-password, PasswordAuthentication=no, PubkeyAuthentication=yes)
 - Server connected to MikroTik via 1G port (BCM5720) because 10G<->2.5G speed mismatch
-- Proxmox accessible at https://192.168.88.187:8006
+- VLAN segmentation configured: VLAN 10 (mgmt), VLAN 20 (trusted LAN), VLAN 30 (kubernetes)
+- Proxmox management IP: 10.10.0.2 (VLAN 10), accessible at https://10.10.0.2:8006
 - SSH access configured with ed25519 key from dev-box
 
 ## Completed Tasks
@@ -32,19 +33,20 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Full system upgrade (83 packages)
    - Created ZFS datapool mirror on 2x 4TB HDDs (compression=lz4, atime=off)
    - SSH hardening (key-only auth, no X11 forwarding)
+2. **Ansible: Configure networking/VLANs** — `ansible/playbooks/network-vlans.yml`
+   - Cleaned up leftover MikroTik guest WiFi experiment (10.10.50.0/24)
+   - VLAN 10 (Management): 10.10.0.0/24 — Proxmox at 10.10.0.2, MikroTik GW 10.10.0.1
+   - VLAN 20 (Trusted LAN): 10.20.0.0/24 — personal devices
+   - VLAN 30 (Kubernetes): 10.30.0.0/24 — k3s VMs
+   - MikroTik bridge VLAN filtering, trunk on ether6, VLAN interfaces in LAN firewall list
+   - Proxmox VLAN-aware bridge (vmbr0), management on vmbr0.10
+   - DNS: Proxmox → MikroTik GW → AdGuardHome (10.10.20.2)
 
 ## Pending Tasks (in order)
-1. **Ansible: Configure networking/VLANs on Proxmox and MikroTik** (NEXT)
-   - VLAN 10: Management (Proxmox, iDRAC, MikroTik admin)
-   - VLAN 20: Trusted LAN (personal devices)
-   - VLAN 30: Kubernetes/Services
-   - VLAN 40: IoT (Home Assistant, NVR cameras)
-   - VLAN 50: DMZ (VPN endpoint, reverse proxy)
-   - VLAN 100: Storage/Ceph (future, inter-node)
-2. **Packer: Create VM template** (Debian 13 + cloud-init + qemu-guest-agent)
-3. **Terraform: Provision VMs** (k3s control plane + workers)
-4. **Ansible: Install k3s cluster**
-5. **Helm/ArgoCD: Deploy services via GitOps**
+1. **Packer: Create VM template** (Debian 13 + cloud-init + qemu-guest-agent) (NEXT)
+2. **Terraform: Provision VMs** (k3s control plane + workers)
+3. **Ansible: Install k3s cluster**
+4. **Helm/ArgoCD: Deploy services via GitOps**
 
 ## Services to Deploy (on k3s)
 - Media server (Servarr stack)
@@ -85,9 +87,13 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - SSH key: ~/.ssh/id_ed25519
 
 ## Network Info
-- Proxmox IP: 192.168.88.187
-- MikroTik default subnet: 192.168.88.0/24
+- Proxmox management IP: 10.10.0.2 (VLAN 10)
+- MikroTik default subnet: 192.168.88.0/24 (VLAN 1, untagged)
 - MikroTik LAN gateway: 192.168.88.1
+- VLAN 10 (Management): 10.10.0.0/24 — GW 10.10.0.1, Proxmox 10.10.0.2
+- VLAN 20 (Trusted LAN): 10.20.0.0/24 — GW 10.20.0.1
+- VLAN 30 (Kubernetes): 10.30.0.0/24 — GW 10.30.0.1
+- Trunk port: MikroTik ether6 ↔ Proxmox nic0 (tagged VLANs 10,20,30)
 - iDRAC: separate dedicated port (check IP in iDRAC network settings)
 - Server NIC layout:
   - nic0 (tg3): BCM5720 port 3 — 1G

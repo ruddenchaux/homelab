@@ -1,0 +1,22 @@
+---
+- name: Backup /etc/network/interfaces (once, before any changes)
+  ansible.builtin.copy:
+    src: /etc/network/interfaces
+    dest: /etc/network/interfaces.pre-vlan-backup
+    remote_src: true
+    force: false
+    mode: "0644"
+
+- name: Deploy VLAN-aware network interfaces
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    mode: "0644"
+    backup: true
+  notify: Reload network interfaces
+
+- name: Set DNS nameserver to gateway
+  ansible.builtin.copy:
+    content: "nameserver {{ proxmox_dns_nameserver }}\n"
+    dest: /etc/resolv.conf
+    mode: "0644"

@@ -1,0 +1,123 @@
+---
+# Remove leftover guest WiFi experiment (10.10.50.0/24)
+# Order matters: remove dependents first, then infrastructure
+
+# --- DHCP ---
+
+- name: Check if guest DHCP server exists
+  community.routeros.command:
+    commands:
+      - /ip dhcp-server print where name=guest-dhcp
+  register: _guest_dhcp_server
+
+- name: Remove guest DHCP server
+  community.routeros.command:
+    commands:
+      - /ip dhcp-server remove [find name=guest-dhcp]
+  when: "'guest-dhcp' in _guest_dhcp_server.stdout[0]"
+
+- name: Check if guest DHCP network exists
+  community.routeros.command:
+    commands:
+      - /ip dhcp-server network print where address=10.10.50.0/24
+  register: _guest_dhcp_network
+
+- name: Remove guest DHCP network
+  community.routeros.command:
+    commands:
+      - /ip dhcp-server network remove [find address=10.10.50.0/24]
+  when: "'10.10.50.0/24' in _guest_dhcp_network.stdout[0]"
+
+- name: Check if guest DHCP pool exists
+  community.routeros.command:
+    commands:
+      - /ip pool print where name=dhcp_guest_bridge
+  register: _guest_dhcp_pool
+
+- name: Remove guest DHCP pool
+  community.routeros.command:
+    commands:
+      - /ip pool remove [find name=dhcp_guest_bridge]
+  when: "'dhcp_guest_bridge' in _guest_dhcp_pool.stdout[0]"
+
+# --- Firewall ---
+
+- name: Check if guest firewall drop rule exists
+  community.routeros.command:
+    commands:
+      - /ip firewall filter print where src-address=10.10.50.0/24 dst-address=192.168.88.0/24 action=drop
+  register: _guest_fw_drop
+
+- name: Remove guest firewall drop rule
+  community.routeros.command:
+    commands:
+      - /ip firewall filter remove [find src-address=10.10.50.0/24 dst-address=192.168.88.0/24 action=drop]
+  when: "'10.10.50.0/24' in _guest_fw_drop.stdout[0]"
+
+- name: Check if guest NAT masquerade rule exists
+  community.routeros.command:
+    commands:
+      - /ip firewall nat print where src-address=10.10.50.0/24 action=masquerade
+  register: _guest_nat
+
+- name: Remove guest NAT masquerade rule
+  community.routeros.command:
+    commands:
+      - /ip firewall nat remove [find src-address=10.10.50.0/24 action=masquerade]
+  when: "'10.10.50.0/24' in _guest_nat.stdout[0]"
+
+# --- IP Address ---
+
+- name: Check if guest bridge IP exists
+  community.routeros.command:
+    commands:
+      - /ip address print where address=10.10.50.1/24 interface=guest-bridge
+  register: _guest_ip
+
+- name: Remove guest bridge IP address
+  community.routeros.command:
+    commands:
+      - /ip address remove [find address=10.10.50.1/24 interface=guest-bridge]
+  when: "'10.10.50.1/24' in _guest_ip.stdout[0]"
+
+# --- Bridge port (wifi2) ---
+
+- name: Check if wifi2 is a guest-bridge port
+  community.routeros.command:
+    commands:
+      - /interface bridge port print where bridge=guest-bridge interface=wifi2
+  register: _guest_bridge_port
+
+- name: Remove wifi2 from guest-bridge
+  community.routeros.command:
+    commands:
+      - /interface bridge port remove [find bridge=guest-bridge interface=wifi2]
+  when: "'wifi2' in _guest_bridge_port.stdout[0]"
+
+# --- Disable wifi2 ---
+
+- name: Check if wifi2 exists and is enabled
+  community.routeros.command:
+    commands:
+      - /interface wifi print where name=wifi2 disabled=no
+  register: _wifi2_enabled
+
+- name: Disable wifi2 interface
+  community.routeros.command:
+    commands:
+      - /interface wifi disable [find name=wifi2]
+  when: "'wifi2' in _wifi2_enabled.stdout[0]"
+
+# --- Remove guest-bridge ---
+
+- name: Check if guest-bridge exists
+  community.routeros.command:
+    commands:
+      - /interface bridge print where name=guest-bridge
+  register: _guest_bridge
+
+- name: Remove guest-bridge
+  community.routeros.command:
+    commands:
+      - /interface bridge remove [find name=guest-bridge]
+  when: "'guest-bridge' in _guest_bridge.stdout[0]"

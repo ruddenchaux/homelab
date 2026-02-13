@@ -1,0 +1,32 @@
+---
+# Create VLAN interfaces on bridge
+- name: Check existing VLAN interfaces
+  community.routeros.command:
+    commands:
+      - /interface vlan print
+  register: _vlan_interfaces
+
+- name: Create VLAN interfaces on bridge
+  community.routeros.command:
+    commands:
+      - /interface vlan add interface={{ mikrotik_bridge }} vlan-id={{ item.id }} name=vlan{{ item.id }}-{{ item.name }} comment="{{ item.comment }}"
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "vlan{{ item.id }}-{{ item.name }}"
+  when: "('vlan' ~ item.id | string ~ '-' ~ item.name) not in _vlan_interfaces.stdout[0]"
+
+# Assign gateway IPs to VLAN interfaces
+- name: Check existing IP addresses
+  community.routeros.command:
+    commands:
+      - /ip address print
+  register: _ip_addresses
+
+- name: Assign gateway IPs to VLAN interfaces
+  community.routeros.command:
+    commands:
+      - /ip address add address={{ item.gateway }} interface=vlan{{ item.id }}-{{ item.name }} comment="{{ item.comment }}"
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "{{ item.gateway }} on vlan{{ item.id }}-{{ item.name }}"
+  when: "item.gateway not in _ip_addresses.stdout[0]"

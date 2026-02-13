@@ -1,0 +1,55 @@
+---
+# Ensure VLAN 1 keeps bridge as untagged member (safety for existing default devices)
+- name: Check if VLAN 1 has bridge as untagged member
+  community.routeros.command:
+    commands:
+      - /interface bridge vlan print where vlan-ids=1
+  register: _vlan1_entry
+
+- name: Ensure VLAN 1 has bridge as untagged member
+  community.routeros.command:
+    commands:
+      - /interface bridge vlan add bridge={{ mikrotik_bridge }} vlan-ids=1 untagged={{ mikrotik_bridge }}
+  when: "'{{ mikrotik_bridge }}' not in _vlan1_entry.stdout[0]"
+
+# Add VLANs as tagged on trunk port and bridge
+- name: Check existing bridge VLAN table
+  community.routeros.command:
+    commands:
+      - /interface bridge vlan print
+  register: _bridge_vlans
+
+- name: Add VLANs to bridge VLAN table (tagged on trunk + bridge)
+  community.routeros.command:
+    commands:
+      - /interface bridge vlan add bridge={{ mikrotik_bridge }} vlan-ids={{ item.id }} tagged={{ mikrotik_trunk_port }},{{ mikrotik_bridge }} comment={{ item.comment | regex_replace(' ', '_') }}
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }} ({{ item.name }})"
+  when: "('vlan-ids=' ~ item.id | string) not in _bridge_vlans.stdout[0]"
+
+# Set trunk port to only accept tagged frames
+- name: Get trunk port frame-types setting
+  community.routeros.command:
+    commands:
+      - /interface bridge port print where interface={{ mikrotik_trunk_port }}
+  register: _trunk_port
+
+- name: Set trunk port to admit only VLAN-tagged frames
+  community.routeros.command:
+    commands:
+      - /interface bridge port set [find interface={{ mikrotik_trunk_port }}] frame-types=admit-only-vlan-tagged
+  when: "'admit-only-vlan-tagged' not in _trunk_port.stdout[0]"
+
+# Enable VLAN filtering LAST to avoid lockout
+- name: Check if bridge VLAN filtering is enabled
+  community.routeros.command:
+    commands:
+      - /interface bridge print where name={{ mikrotik_bridge }} vlan-filtering=yes
+  register: _vlan_filtering
+
+- name: Enable bridge VLAN filtering
+  community.routeros.command:
+    commands:
+      - /interface bridge set [find name={{ mikrotik_bridge }}] vlan-filtering=yes
+  when: "'vlan-filtering=yes' not in _vlan_filtering.stdout[0]"

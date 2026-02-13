@@ -1,0 +1,17 @@
+---
+- name: Clean up MikroTik guest experiment
+  hosts: mikrotik
+  gather_facts: false
+  roles:
+    - mikrotik-guest-cleanup
+
+- name: Configure VLANs on MikroTik
+  hosts: mikrotik
+  gather_facts: false
+  roles:
+    - mikrotik-vlans
+
+- name: Configure Proxmox networking for VLANs
+  hosts: proxmox
+  roles:
+    - proxmox-networking

@@ -1,0 +1,7 @@
+---
+proxmox_physical_interface: nic0
+proxmox_bridge: vmbr0
+proxmox_mgmt_vlan: 10
+proxmox_mgmt_address: 10.10.0.2/24
+proxmox_mgmt_gateway: 10.10.0.1
+proxmox_dns_nameserver: 10.10.0.1

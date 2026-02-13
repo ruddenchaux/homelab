@@ -1,0 +1,17 @@
+---
+# Add VLAN interfaces to LAN interface list so default firewall rules apply
+
+- name: Check current LAN interface list members
+  community.routeros.command:
+    commands:
+      - /interface list member print where list=LAN
+  register: _lan_members
+
+- name: Add VLAN interfaces to LAN interface list
+  community.routeros.command:
+    commands:
+      - /interface list member add interface=vlan{{ item.id }}-{{ item.name }} list=LAN comment="{{ item.comment }}"
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "vlan{{ item.id }}-{{ item.name }} -> LAN list"
+  when: "('vlan' ~ item.id | string ~ '-' ~ item.name) not in _lan_members.stdout[0]"

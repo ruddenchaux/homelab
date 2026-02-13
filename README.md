@@ -27,26 +27,50 @@ Infrastructure as Code for a single-node Proxmox homelab running Kubernetes (k3s
 
 ```
 ansible/
-  inventory/hosts.yml
-  playbooks/proxmox-base.yml
+  requirements.yml              # Collection dependencies (community.routeros, ansible.netcommon)
+  inventory/
+    hosts.yml                   # Proxmox + MikroTik hosts
+    group_vars/
+      mikrotik.yml              # RouterOS connection settings
+  playbooks/
+    proxmox-base.yml            # Base Proxmox configuration
+    network-vlans.yml           # VLAN setup on MikroTik + Proxmox
   roles/
-    proxmox-repos/     # Disable enterprise, enable no-subscription repos
-    system-upgrade/     # apt upgrade + reboot if needed
-    zfs-datapool/       # Create ZFS mirror on data HDDs
-    ssh-hardening/      # Key-only auth, disable root password login
+    proxmox-repos/              # Disable enterprise, enable no-subscription repos
+    system-upgrade/             # apt upgrade + reboot if needed
+    zfs-datapool/               # Create ZFS mirror on data HDDs
+    ssh-hardening/              # Key-only auth, disable root password login
+    mikrotik-guest-cleanup/     # Remove leftover guest WiFi experiment
+    mikrotik-vlans/             # Bridge VLAN table, VLAN interfaces, firewall
+    proxmox-networking/         # VLAN-aware bridge, management IP, DNS
 ```
+
+## Network
+
+| VLAN | Name | Subnet | Gateway |
+|------|------|--------|---------|
+| 1 | Default | 192.168.88.0/24 | 192.168.88.1 |
+| 10 | Management | 10.10.0.0/24 | 10.10.0.1 |
+| 20 | Trusted LAN | 10.20.0.0/24 | 10.20.0.1 |
+| 30 | Kubernetes | 10.30.0.0/24 | 10.30.0.1 |
 
 ## Usage
 
 ```bash
+# Install Ansible collection dependencies
+ansible-galaxy collection install -r ansible/requirements.yml
+
 # Configure Proxmox base (repos, ZFS, SSH hardening)
 ansible-playbook ansible/playbooks/proxmox-base.yml
+
+# Configure VLANs on MikroTik and Proxmox
+ansible-playbook ansible/playbooks/network-vlans.yml
 ```
 
 ## Roadmap
 
 1. ~~Proxmox base configuration~~ (done)
-2. Network VLANs (Proxmox + MikroTik)
+2. ~~Network VLANs (Proxmox + MikroTik)~~ (done)
 3. Packer VM template (Debian 13)
 4. Terraform VM provisioning
 5. k3s cluster install

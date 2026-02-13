@@ -1,0 +1,9 @@
+---
+- name: Configure bridge VLAN table and filtering
+  ansible.builtin.include_tasks: bridge-vlans.yml
+
+- name: Create VLAN interfaces and assign IPs
+  ansible.builtin.include_tasks: vlan-interfaces.yml
+
+- name: Add VLAN interfaces to firewall LAN list
+  ansible.builtin.include_tasks: firewall.yml
