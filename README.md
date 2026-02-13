@@ -57,6 +57,9 @@ ansible/
 ## Usage
 
 ```bash
+# Install Python dependency for MikroTik network_cli connection
+pip install paramiko
+
 # Install Ansible collection dependencies
 ansible-galaxy collection install -r ansible/requirements.yml
 
