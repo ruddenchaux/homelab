@@ -41,7 +41,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - VLAN 40: IoT (Home Assistant, NVR cameras)
    - VLAN 50: DMZ (VPN endpoint, reverse proxy)
    - VLAN 100: Storage/Ceph (future, inter-node)
-2. **Packer: Create VM template** (Ubuntu 24.04 + cloud-init + qemu-guest-agent)
+2. **Packer: Create VM template** (Debian 13 + cloud-init + qemu-guest-agent)
 3. **Terraform: Provision VMs** (k3s control plane + workers)
 4. **Ansible: Install k3s cluster**
 5. **Helm/ArgoCD: Deploy services via GitOps**
