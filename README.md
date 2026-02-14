@@ -27,14 +27,16 @@ Infrastructure as Code for a single-node Proxmox homelab running Kubernetes (k8s
 
 ```
 ansible/
-  requirements.yml              # Collection dependencies (community.routeros, ansible.netcommon)
+  requirements.yml              # Collection dependencies (community.routeros, ansible.netcommon, kubernetes.core)
   inventory/
-    hosts.yml                   # Proxmox + MikroTik hosts
+    hosts.yml                   # Proxmox + MikroTik + k8s hosts
     group_vars/
       mikrotik.yml              # RouterOS connection settings
+      k8s.yml                   # Kubernetes nodes connection settings
   playbooks/
     proxmox-base.yml            # Base Proxmox configuration
     network-vlans.yml           # VLAN setup on MikroTik + Proxmox
+    kubernetes-install.yml      # Kubernetes cluster install (kubeadm + Cilium)
   roles/
     proxmox-repos/              # Disable enterprise, enable no-subscription repos
     system-upgrade/             # apt upgrade + reboot if needed
@@ -43,6 +45,9 @@ ansible/
     mikrotik-guest-cleanup/     # Remove leftover guest WiFi experiment
     mikrotik-vlans/             # Bridge VLAN table, VLAN interfaces, firewall
     proxmox-networking/         # VLAN-aware bridge, management IP, DNS
+    k8s-prerequisites/          # Containerd, kubeadm, kubelet, kernel modules
+    k8s-control-plane/          # kubeadm init, Helm, Cilium CNI
+    k8s-workers/                # kubeadm join workers to cluster
 packer/
   debian-13/
     debian-13.pkr.hcl           # Packer template (proxmox-iso builder)
@@ -120,6 +125,13 @@ cd packer/debian-13 && packer build .
 cd terraform/kubernetes && terraform init
 terraform plan
 terraform apply
+
+# Install Kubernetes cluster (kubeadm + Cilium)
+ansible-playbook ansible/playbooks/kubernetes-install.yml
+
+# Verify cluster
+ssh debian@10.30.0.10 "kubectl get nodes -o wide"
+ssh debian@10.30.0.10 "kubectl get pods -n kube-system"
 ```
 
 ## Roadmap
@@ -128,5 +140,5 @@ terraform apply
 2. ~~Network VLANs (Proxmox + MikroTik)~~ (done)
 3. ~~Packer VM template (Debian 13)~~ (done)
 4. ~~Terraform VM provisioning~~ (done)
-5. Kubernetes cluster install
+5. ~~Kubernetes cluster install~~ (done)
 6. ArgoCD + service deployment

@@ -1,0 +1,5 @@
+---
+k8s_pod_cidr: "10.244.0.0/16"
+k8s_service_cidr: "10.96.0.0/12"
+k8s_api_advertise_address: "{{ ansible_host }}"
+cilium_version: "1.19.0"

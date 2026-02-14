@@ -1,0 +1,103 @@
+---
+# Initialize the Kubernetes control plane
+- name: Check if kubeadm has already been initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_init_check
+
+- name: Initialize Kubernetes control plane
+  ansible.builtin.command: >-
+    kubeadm init
+    --pod-network-cidr={{ k8s_pod_cidr }}
+    --service-cidr={{ k8s_service_cidr }}
+    --apiserver-advertise-address={{ k8s_api_advertise_address }}
+    --control-plane-endpoint={{ k8s_api_advertise_address }}
+  when: not kubeadm_init_check.stat.exists
+
+# Set up kubeconfig for debian user
+- name: Create .kube directory for debian user
+  ansible.builtin.file:
+    path: /home/debian/.kube
+    state: directory
+    owner: debian
+    group: debian
+    mode: "0755"
+
+- name: Copy admin.conf to debian user kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/debian/.kube/config
+    remote_src: true
+    owner: debian
+    group: debian
+    mode: "0600"
+
+# Install Helm
+- name: Check if Helm is installed
+  ansible.builtin.command: helm version --short
+  register: helm_check
+  changed_when: false
+  failed_when: false
+
+- name: Download Helm install script
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: /tmp/get-helm-3.sh
+    mode: "0755"
+  when: helm_check.rc != 0
+
+- name: Install Helm
+  ansible.builtin.command: /tmp/get-helm-3.sh
+  environment:
+    DESIRED_VERSION: ""
+  when: helm_check.rc != 0
+
+# Install Cilium CNI
+- name: Add Cilium Helm repository
+  become: false
+  ansible.builtin.command: helm repo add cilium https://helm.cilium.io/
+  register: cilium_repo
+  changed_when: "'has been added' in cilium_repo.stdout"
+  failed_when: cilium_repo.rc != 0 and 'already exists' not in cilium_repo.stderr
+
+- name: Update Helm repositories
+  become: false
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: Install Cilium
+  become: false
+  ansible.builtin.command: >-
+    helm upgrade --install cilium cilium/cilium
+    --version {{ cilium_version }}
+    --namespace kube-system
+    --set operator.replicas=1
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: cilium_install
+  changed_when: "'STATUS: deployed' in cilium_install.stdout"
+
+- name: Wait for Cilium pods to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=Ready
+    pods -l app.kubernetes.io/part-of=cilium
+    -n kube-system
+    --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: cilium_wait
+  until: cilium_wait.rc == 0
+
+# Generate join command for workers
+- name: Generate kubeadm join command
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_command_output
+  changed_when: false
+
+- name: Store join command as fact
+  ansible.builtin.set_fact:
+    k8s_join_command: "{{ join_command_output.stdout }}"

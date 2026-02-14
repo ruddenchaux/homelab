@@ -58,10 +58,16 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - All VMs on VLAN 30 (Kubernetes), static IPs via cloud-init
    - Cloud-init: user `debian`, SSH key injection, DNS via MikroTik GW
    - Workers use `for_each` map for stable resource addresses
+5. **Ansible: Install k8s cluster** — `ansible/playbooks/kubernetes-install.yml`
+   - kubeadm + containerd (from Docker repo) + Cilium CNI
+   - Roles: k8s-prerequisites (all nodes), k8s-control-plane, k8s-workers
+   - Control plane: kubeadm init, Helm install, Cilium via Helm chart
+   - Workers: kubeadm join (serial: 1 to avoid API server race)
+   - Pod CIDR 10.244.0.0/16, Service CIDR 10.96.0.0/12 (no VLAN conflicts)
+   - Idempotent: stat checks before init/join
 
 ## Pending Tasks (in order)
-1. **Ansible: Install k8s cluster** (NEXT)
-2. **Helm/ArgoCD: Deploy services via GitOps**
+1. **Helm/ArgoCD: Deploy services via GitOps** (NEXT)
 
 ## Services to Deploy (on k8s)
 - Media server (Servarr stack)
