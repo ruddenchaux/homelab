@@ -1,6 +1,6 @@
 # Homelab
 
-Infrastructure as Code for a single-node Proxmox homelab running Kubernetes (k3s).
+Infrastructure as Code for a single-node Proxmox homelab running Kubernetes (k8s).
 
 ## Hardware
 
@@ -19,7 +19,7 @@ Infrastructure as Code for a single-node Proxmox homelab running Kubernetes (k3s
 | VM templates | Packer |
 | VM provisioning | Terraform (bpg/proxmox) |
 | First boot | cloud-init |
-| Cluster | k3s |
+| Cluster | Kubernetes |
 | GitOps | ArgoCD + Helm |
 | Secrets | SOPS + age |
 
@@ -43,6 +43,15 @@ ansible/
     mikrotik-guest-cleanup/     # Remove leftover guest WiFi experiment
     mikrotik-vlans/             # Bridge VLAN table, VLAN interfaces, firewall
     proxmox-networking/         # VLAN-aware bridge, management IP, DNS
+packer/
+  debian-13/
+    debian-13.pkr.hcl           # Packer template (proxmox-iso builder)
+    variables.pkr.hcl           # Variable definitions with defaults
+    debian-13.auto.pkrvars.hcl  # User secrets (GITIGNORED)
+    http/
+      preseed.cfg               # Debian automated install preseed
+    scripts/
+      cleanup.sh                # Template sysprep (cloud-init reset, cleanup)
 ```
 
 ## Network
@@ -53,6 +62,29 @@ ansible/
 | 10 | Management | 10.10.0.0/24 | 10.10.0.1 |
 | 20 | Trusted LAN | 10.20.0.0/24 | 10.20.0.1 |
 | 30 | Kubernetes | 10.30.0.0/24 | 10.30.0.1 |
+
+## Prerequisites
+
+These one-time manual steps are required before running automation:
+
+```bash
+# 1. Import SSH public key into MikroTik (for VLAN playbook)
+#    Upload key via MikroTik WebFig or WinBox, then:
+#    /user/ssh-keys/import public-key-file=id_ed25519.pub user=admin
+
+# 2. Create Proxmox API token for Packer
+ssh root@10.10.0.2 "pveum user token add root@pam packer-token --privsep 0"
+# Save the displayed token secret
+
+# 3. Create Packer secrets file
+cat > packer/debian-13/debian-13.auto.pkrvars.hcl <<'EOF'
+proxmox_token_secret = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+http_ip              = "192.168.88.254"
+EOF
+
+# 4. Initialize Packer plugins
+cd packer/debian-13 && packer init .
+```
 
 ## Usage
 
@@ -68,13 +100,16 @@ ansible-playbook ansible/playbooks/proxmox-base.yml
 
 # Configure VLANs on MikroTik and Proxmox
 ansible-playbook ansible/playbooks/network-vlans.yml
+
+# Build Packer VM template
+cd packer/debian-13 && packer build .
 ```
 
 ## Roadmap
 
 1. ~~Proxmox base configuration~~ (done)
 2. ~~Network VLANs (Proxmox + MikroTik)~~ (done)
-3. Packer VM template (Debian 13)
+3. ~~Packer VM template (Debian 13)~~ (done)
 4. Terraform VM provisioning
-5. k3s cluster install
+5. Kubernetes cluster install
 6. ArgoCD + service deployment

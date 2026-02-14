@@ -25,6 +25,10 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Server connected to MikroTik via 1G port (BCM5720) because 10G<->2.5G speed mismatch
 - VLAN segmentation configured: VLAN 10 (mgmt), VLAN 20 (trusted LAN), VLAN 30 (kubernetes)
 - Proxmox management IP: 10.10.0.2 (VLAN 10), accessible at https://10.10.0.2:8006
+- Proxmox node name: `pve01` (hostname `pve01.ruddenchaux.xyz`)
+- `/etc/hosts` on Proxmox: `10.10.0.2 pve01.ruddenchaux.xyz pve01` (updated from old 192.168.88.187)
+- Proxmox API token: `root@pam!packer-token` (privsep=0, used by Packer and Terraform)
+- VM template 9000 (`debian-13-cloud`): Debian 13 + cloud-init + qemu-guest-agent
 - SSH access configured with ed25519 key from dev-box
 
 ## Completed Tasks
@@ -37,18 +41,23 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Cleaned up leftover MikroTik guest WiFi experiment (10.10.50.0/24)
    - VLAN 10 (Management): 10.10.0.0/24 — Proxmox at 10.10.0.2, MikroTik GW 10.10.0.1
    - VLAN 20 (Trusted LAN): 10.20.0.0/24 — personal devices
-   - VLAN 30 (Kubernetes): 10.30.0.0/24 — k3s VMs
+   - VLAN 30 (Kubernetes): 10.30.0.0/24 — k8s VMs
    - MikroTik bridge VLAN filtering, trunk on ether6, VLAN interfaces in LAN firewall list
    - Proxmox VLAN-aware bridge (vmbr0), management on vmbr0.10
    - DNS: Proxmox → MikroTik GW → AdGuardHome (10.10.20.2)
+3. **Packer: Create VM template** — `packer/debian-13/`
+   - Debian 13 netinst automated install via preseed
+   - cloud-init + qemu-guest-agent installed
+   - Template sysprep (machine-id truncated, SSH keys removed, cloud-init reset, root locked)
+   - Build VM on VLAN 30 (10.30.0.100), Proxmox API token auth
+   - Template ID 9000, stored on local-zfs
 
 ## Pending Tasks (in order)
-1. **Packer: Create VM template** (Debian 13 + cloud-init + qemu-guest-agent) (NEXT)
-2. **Terraform: Provision VMs** (k3s control plane + workers)
-3. **Ansible: Install k3s cluster**
-4. **Helm/ArgoCD: Deploy services via GitOps**
+1. **Terraform: Provision VMs** (k8s control plane + workers) (NEXT)
+2. **Ansible: Install k8s cluster**
+3. **Helm/ArgoCD: Deploy services via GitOps**
 
-## Services to Deploy (on k3s)
+## Services to Deploy (on k8s)
 - Media server (Servarr stack)
 - Storage/backup (Nextcloud)
 - Home Assistant
@@ -66,7 +75,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - **ZFS mirror on SSDs** for boot (managed by Proxmox installer)
 - **ZFS mirror on HDDs** for bulk data (created via Ansible, mounted at /datapool)
 - **Future Ceph**: when second node is added (same rack), minimum 3 nodes needed. Third node at parents' house — use ZFS send/receive or Syncthing instead of Ceph for remote replication due to latency
-- **VMs for k3s**: don't run k3s directly on Proxmox host. 1 VM control plane + 1-2 VM workers
+- **VMs for k8s**: don't run k8s directly on Proxmox host. 1 VM control plane + 1-2 VM workers
 - **GitOps with ArgoCD**: all services declared in Git
 - **Secrets**: SOPS + age or Vault
 - **Monitoring**: Prometheus + Grafana + Loki
@@ -78,8 +87,8 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - **Packer** → VM templates
 - **Terraform** (bpg/proxmox provider) → VM provisioning
 - **Cloud-init** → first boot config
-- **Ansible** → post-provisioning, k3s install, Proxmox host config
-- **Helm/ArgoCD** → k3s service deployment
+- **Ansible** → post-provisioning, k8s install, Proxmox host config
+- **Helm/ArgoCD** → k8s service deployment
 
 ## Dev Environment
 - Fedora Kinoite (immutable) on laptop

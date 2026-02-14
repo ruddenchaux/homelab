@@ -9,6 +9,7 @@
 
 # Packer
 packer_cache/
+*.auto.pkrvars.hcl
 
 # Secrets & environment
 .env
