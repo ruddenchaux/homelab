@@ -37,6 +37,7 @@ ansible/
     proxmox-base.yml            # Base Proxmox configuration
     network-vlans.yml           # VLAN setup on MikroTik + Proxmox
     kubernetes-install.yml      # Kubernetes cluster install (kubeadm + Cilium)
+    argocd-bootstrap.yml        # ArgoCD + Traefik + cert-manager bootstrap
   roles/
     proxmox-repos/              # Disable enterprise, enable no-subscription repos
     system-upgrade/             # apt upgrade + reboot if needed
@@ -48,6 +49,8 @@ ansible/
     k8s-prerequisites/          # Containerd, kubeadm, kubelet, kernel modules
     k8s-control-plane/          # kubeadm init, Helm, Cilium CNI
     k8s-workers/                # kubeadm join workers to cluster
+    cilium-l2/                  # Cilium L2 announcements for LoadBalancer
+    argocd/                     # ArgoCD install + GitOps bootstrap
 packer/
   debian-13/
     debian-13.pkr.hcl           # Packer template (proxmox-iso builder)
@@ -64,6 +67,15 @@ terraform/
     main.tf                     # Provider config + VM resources
     outputs.tf                  # VM IP outputs
     terraform.auto.tfvars       # API token secret (GITIGNORED)
+kubernetes/
+  apps/                             # Root app-of-apps (ArgoCD Application set)
+    Chart.yaml
+    values.yaml
+    templates/                      # ArgoCD Application manifests
+  platform/
+    argocd/                         # ArgoCD self-managed umbrella chart
+    traefik/                        # Traefik ingress umbrella chart
+    cert-manager/                   # cert-manager + ClusterIssuers
 ```
 
 ## Network
@@ -101,6 +113,10 @@ cd packer/debian-13 && packer init .
 cat > terraform/kubernetes/terraform.auto.tfvars <<'EOF'
 proxmox_api_token = "root@pam!packer-token=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 EOF
+
+# 6. Create Cloudflare API token for cert-manager DNS-01 challenge
+#    Go to Cloudflare dashboard → My Profile → API Tokens → Create Token
+#    Use "Edit zone DNS" template, scope to your zone
 ```
 
 ## Usage
@@ -132,6 +148,35 @@ ansible-playbook ansible/playbooks/kubernetes-install.yml
 # Verify cluster
 ssh debian@10.30.0.10 "kubectl get nodes -o wide"
 ssh debian@10.30.0.10 "kubectl get pods -n kube-system"
+
+# Bootstrap ArgoCD and GitOps platform (Cilium L2 + ArgoCD + Traefik + cert-manager)
+ansible-playbook ansible/playbooks/argocd-bootstrap.yml \
+  --extra-vars "gitops_repo_url=https://github.com/<user>/homelab.git" \
+  --extra-vars "cloudflare_api_token=<token>" \
+  --extra-vars "acme_email=<email>"
+
+# Get ArgoCD initial admin password
+ssh debian@10.30.0.10 "kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d && echo"
+
+# Access ArgoCD UI via port-forward
+ssh -L 8080:localhost:8080 debian@10.30.0.10 \
+  "kubectl port-forward svc/argocd-server -n argocd 8080:443"
+# Then open https://localhost:8080 (user: admin)
+
+# Verify Cilium L2 load balancing
+ssh debian@10.30.0.10 "kubectl get ciliumloadbalancerippool"
+ssh debian@10.30.0.10 "kubectl get ciliuml2announcementpolicy"
+
+# Verify ArgoCD applications
+ssh debian@10.30.0.10 "kubectl get applications -n argocd"
+
+# Verify Traefik (should have external IP from 10.30.0.200-250)
+ssh debian@10.30.0.10 "kubectl get svc -n traefik"
+
+# Verify cert-manager and ClusterIssuers
+ssh debian@10.30.0.10 "kubectl get pods -n cert-manager"
+ssh debian@10.30.0.10 "kubectl get clusterissuer"
 ```
 
 ## Roadmap
@@ -141,4 +186,5 @@ ssh debian@10.30.0.10 "kubectl get pods -n kube-system"
 3. ~~Packer VM template (Debian 13)~~ (done)
 4. ~~Terraform VM provisioning~~ (done)
 5. ~~Kubernetes cluster install~~ (done)
-6. ArgoCD + service deployment
+6. ~~ArgoCD + GitOps platform~~ (done)
+7. Service deployment

@@ -30,6 +30,11 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Proxmox API token: `root@pam!packer-token` (privsep=0, used by Packer and Terraform)
 - VM template 9000 (`debian-13-cloud`): Debian 13 + cloud-init + qemu-guest-agent
 - SSH access configured with ed25519 key from dev-box
+- Cilium L2 announcements enabled, LoadBalancer IP pool 10.30.0.200-250
+- ArgoCD installed (chart 7.8.0), app-of-apps pattern, self-managing
+- Traefik ingress controller (LoadBalancer service, Cilium L2 IP)
+- cert-manager with Cloudflare DNS-01, ClusterIssuers: letsencrypt-staging + letsencrypt-prod
+- GitOps manifests in `kubernetes/` (apps/ = root app-of-apps, platform/ = umbrella charts)
 
 ## Completed Tasks
 1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
@@ -65,9 +70,18 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Workers: kubeadm join (serial: 1 to avoid API server race)
    - Pod CIDR 10.244.0.0/16, Service CIDR 10.96.0.0/12 (no VLAN conflicts)
    - Idempotent: stat checks before init/join
+6. **Ansible: Bootstrap ArgoCD + GitOps platform** — `ansible/playbooks/argocd-bootstrap.yml`
+   - Cilium L2 announcements enabled (LoadBalancer IP pool 10.30.0.200-250)
+   - CiliumLoadBalancerIPPool + CiliumL2AnnouncementPolicy CRDs applied
+   - ArgoCD installed via Helm (chart 7.8.0), server.insecure=true
+   - Cloudflare API token secret created for cert-manager DNS-01 challenge
+   - Root Application (app-of-apps) pointing to `kubernetes/apps/`
+   - GitOps manifests in `kubernetes/` (apps + platform umbrella charts)
+   - Platform services managed by ArgoCD: ArgoCD (self-managed), Traefik (LoadBalancer ingress), cert-manager (Let's Encrypt ClusterIssuers)
+   - Roles: cilium-l2 (L2 load balancing), argocd (install + bootstrap)
 
 ## Pending Tasks (in order)
-1. **Helm/ArgoCD: Deploy services via GitOps** (NEXT)
+1. **Deploy services via GitOps** (NEXT) — add service Applications to `kubernetes/`
 
 ## Services to Deploy (on k8s)
 - Media server (Servarr stack)

@@ -1,0 +1,70 @@
+---
+# Enable L2 announcements in Cilium
+- name: Upgrade Cilium with L2 announcements enabled
+  become: false
+  ansible.builtin.command: >-
+    helm upgrade cilium cilium/cilium
+    --namespace kube-system
+    --reuse-values
+    --version {{ cilium_version }}
+    --set l2announcements.enabled=true
+    --set externalIPs.enabled=true
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: cilium_upgrade
+  changed_when: "'STATUS: deployed' in cilium_upgrade.stdout"
+
+- name: Wait for Cilium pods to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=Ready
+    pods -l app.kubernetes.io/part-of=cilium
+    -n kube-system
+    --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: cilium_wait
+  until: cilium_wait.rc == 0
+
+# Apply CiliumLoadBalancerIPPool
+- name: Template CiliumLoadBalancerIPPool manifest
+  ansible.builtin.template:
+    src: ip-pool.yml.j2
+    dest: /tmp/cilium-ip-pool.yml
+    mode: "0600"
+
+- name: Apply CiliumLoadBalancerIPPool
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/cilium-ip-pool.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: ip_pool_apply
+  changed_when: "'created' in ip_pool_apply.stdout or 'configured' in ip_pool_apply.stdout"
+
+- name: Remove temporary IP pool manifest
+  ansible.builtin.file:
+    path: /tmp/cilium-ip-pool.yml
+    state: absent
+
+# Apply CiliumL2AnnouncementPolicy
+- name: Template CiliumL2AnnouncementPolicy manifest
+  ansible.builtin.template:
+    src: l2-announcement-policy.yml.j2
+    dest: /tmp/cilium-l2-policy.yml
+    mode: "0600"
+
+- name: Apply CiliumL2AnnouncementPolicy
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/cilium-l2-policy.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: l2_policy_apply
+  changed_when: "'created' in l2_policy_apply.stdout or 'configured' in l2_policy_apply.stdout"
+
+- name: Remove temporary L2 policy manifest
+  ansible.builtin.file:
+    path: /tmp/cilium-l2-policy.yml
+    state: absent

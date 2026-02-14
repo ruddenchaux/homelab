@@ -1,0 +1,6 @@
+cert-manager:
+  crds:
+    enabled: true
+    keep: true
+
+acmeEmail: "f.r.dainelli@gmail.com"

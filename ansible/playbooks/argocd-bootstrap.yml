@@ -1,0 +1,10 @@
+---
+- name: Configure Cilium L2 load balancing
+  hosts: k8s_control_plane
+  roles:
+    - cilium-l2
+
+- name: Bootstrap ArgoCD and GitOps
+  hosts: k8s_control_plane
+  roles:
+    - argocd

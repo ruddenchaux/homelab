@@ -1,0 +1,109 @@
+---
+# Install ArgoCD via Helm
+- name: Add Argo Helm repository
+  become: false
+  ansible.builtin.command: helm repo add argo https://argoproj.github.io/argo-helm
+  register: argo_repo
+  changed_when: "'has been added' in argo_repo.stdout"
+  failed_when: argo_repo.rc != 0 and 'already exists' not in argo_repo.stderr
+
+- name: Update Helm repositories
+  become: false
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: Create argocd namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ argocd_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: argocd_ns
+  changed_when: "'created' in argocd_ns.stdout"
+  failed_when: argocd_ns.rc != 0 and 'already exists' not in argocd_ns.stderr
+
+- name: Create cert-manager namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ certmanager_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: certmanager_ns
+  changed_when: "'created' in certmanager_ns.stdout"
+  failed_when: certmanager_ns.rc != 0 and 'already exists' not in certmanager_ns.stderr
+
+# Create Cloudflare API token secret for cert-manager DNS-01 challenge
+- name: Template Cloudflare API token secret
+  ansible.builtin.template:
+    src: cloudflare-api-token-secret.yml.j2
+    dest: /tmp/cloudflare-api-token-secret.yml
+    mode: "0600"
+  no_log: true
+
+- name: Apply Cloudflare API token secret
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/cloudflare-api-token-secret.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: cf_secret_apply
+  changed_when: "'created' in cf_secret_apply.stdout or 'configured' in cf_secret_apply.stdout"
+  no_log: true
+
+- name: Remove temporary Cloudflare secret manifest
+  ansible.builtin.file:
+    path: /tmp/cloudflare-api-token-secret.yml
+    state: absent
+
+# Install ArgoCD
+- name: Install ArgoCD via Helm
+  become: false
+  ansible.builtin.command: >-
+    helm upgrade --install argocd argo/argo-cd
+    --version {{ argocd_chart_version }}
+    --namespace {{ argocd_namespace }}
+    --set configs.params."server\.insecure"=true
+    --wait
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: argocd_install
+  changed_when: "'STATUS: deployed' in argocd_install.stdout"
+
+- name: Wait for ArgoCD server to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=Ready
+    pods -l app.kubernetes.io/name=argocd-server
+    -n {{ argocd_namespace }}
+    --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: argocd_wait
+  until: argocd_wait.rc == 0
+
+# Bootstrap root Application (app-of-apps)
+- name: Template root Application manifest
+  ansible.builtin.template:
+    src: root-application.yml.j2
+    dest: /tmp/root-application.yml
+    mode: "0600"
+
+- name: Apply root Application
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/root-application.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: root_app_apply
+  changed_when: "'created' in root_app_apply.stdout or 'configured' in root_app_apply.stdout"
+
+- name: Remove temporary root Application manifest
+  ansible.builtin.file:
+    path: /tmp/root-application.yml
+    state: absent
+
+- name: Print ArgoCD admin password retrieval command
+  ansible.builtin.debug:
+    msg: >-
+      ArgoCD installed. Get the initial admin password with:
+      kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret
+      -o jsonpath='{.data.password}' | base64 -d && echo

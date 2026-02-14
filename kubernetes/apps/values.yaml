@@ -1,0 +1,5 @@
+spec:
+  repoURL: "https://github.com/ruddenchaux/homelab.git"
+  targetRevision: HEAD
+  destination:
+    server: https://kubernetes.default.svc

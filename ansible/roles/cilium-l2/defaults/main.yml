@@ -1,0 +1,4 @@
+---
+cilium_version: "1.19.0"
+cilium_l2_pool_start: "10.30.0.200"
+cilium_l2_pool_stop: "10.30.0.250"

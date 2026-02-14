@@ -11,6 +11,7 @@
 # Packer
 packer_cache/
 *.auto.pkrvars.hcl
+downloaded_iso_path/
 
 # Secrets & environment
 .env

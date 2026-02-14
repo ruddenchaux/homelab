@@ -1,0 +1,8 @@
+apiVersion: v2
+name: argocd
+description: ArgoCD umbrella chart (self-managed)
+version: 0.1.0
+dependencies:
+  - name: argo-cd
+    version: "7.8.0"
+    repository: https://argoproj.github.io/argo-helm

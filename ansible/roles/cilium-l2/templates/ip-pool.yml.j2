@@ -1,0 +1,9 @@
+---
+apiVersion: cilium.io/v2alpha1
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: default-pool
+spec:
+  blocks:
+    - start: "{{ cilium_l2_pool_start }}"
+      stop: "{{ cilium_l2_pool_stop }}"
