@@ -51,11 +51,17 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Template sysprep (machine-id truncated, SSH keys removed, cloud-init reset, root locked)
    - Build VM on VLAN 30 (10.30.0.100), Proxmox API token auth
    - Template ID 9000, stored on local-zfs
+4. **Terraform: Provision k8s VMs** — `terraform/kubernetes/`
+   - bpg/proxmox provider, clones VM template 9000 (Debian 13 + cloud-init)
+   - Control plane: k8s-ctrl-01 (VM 200), 10.30.0.10, 4 cores, 8GB RAM, 20GB disk
+   - Workers: k8s-worker-01..03 (VM 201-203), 10.30.0.11-13, 8 cores, 16GB RAM, 50GB disk
+   - All VMs on VLAN 30 (Kubernetes), static IPs via cloud-init
+   - Cloud-init: user `debian`, SSH key injection, DNS via MikroTik GW
+   - Workers use `for_each` map for stable resource addresses
 
 ## Pending Tasks (in order)
-1. **Terraform: Provision VMs** (k8s control plane + workers) (NEXT)
-2. **Ansible: Install k8s cluster**
-3. **Helm/ArgoCD: Deploy services via GitOps**
+1. **Ansible: Install k8s cluster** (NEXT)
+2. **Helm/ArgoCD: Deploy services via GitOps**
 
 ## Services to Deploy (on k8s)
 - Media server (Servarr stack)

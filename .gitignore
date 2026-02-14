@@ -6,6 +6,7 @@
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+*.auto.tfvars
 
 # Packer
 packer_cache/
