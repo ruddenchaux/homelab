@@ -14,6 +14,21 @@
   register: cilium_upgrade
   changed_when: "'STATUS: deployed' in cilium_upgrade.stdout"
 
+- name: Restart Cilium to apply config changes
+  become: false
+  ansible.builtin.command: kubectl -n kube-system rollout restart daemonset/cilium
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  when: cilium_upgrade.changed
+
+- name: Wait for Cilium rollout to complete
+  become: false
+  ansible.builtin.command: kubectl -n kube-system rollout status daemonset/cilium --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  when: cilium_upgrade.changed
+
 - name: Wait for Cilium pods to be ready
   become: false
   ansible.builtin.command: >-

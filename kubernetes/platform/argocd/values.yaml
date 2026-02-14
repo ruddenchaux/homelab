@@ -3,6 +3,10 @@ argo-cd:
     params:
       server.insecure: true
   server:
-    service:
-      type: NodePort
-      nodePortHttp: 30080
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hostname: argocd.ruddenchaux.xyz
+      tls: true
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
