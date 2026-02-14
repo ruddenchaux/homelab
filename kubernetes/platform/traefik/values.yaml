@@ -1,6 +1,13 @@
 traefik:
   service:
     type: LoadBalancer
+  api:
+    dashboard: true
   ingressRoute:
     dashboard:
-      enabled: false
+      enabled: true
+      matchRule: Host(`traefik.ruddenchaux.xyz`)
+      entryPoints:
+        - websecure
+      tls:
+        secretName: traefik-dashboard-tls
