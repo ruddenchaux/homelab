@@ -1,7 +1,7 @@
 ---
 # Create Authentik namespace and pre-generate secrets
 # Idempotent: only generates secrets if the k8s Secret doesn't exist yet
-# Also ensures AUTHENTIK_BOOTSTRAP_TOKEN is present (patches if missing)
+# Also stores a bootstrap API token value for the authentik-config role
 
 - name: Create authentik namespace
   become: false
@@ -101,30 +101,6 @@
   no_log: true
   when: >-
     authentik_secret_check.rc == 0 and
-    (authentik_token_check.stdout | default('') == '')
-
-- name: Restart Authentik server to pick up bootstrap token
-  become: false
-  ansible.builtin.command: >-
-    kubectl rollout restart deployment/authentik-server
-    -n {{ authentik_namespace }}
-  environment:
-    KUBECONFIG: /home/debian/.kube/config
-  when: >-
-    authentik_secret_check.rc != 0 or
-    (authentik_token_check.stdout | default('') == '')
-
-- name: Wait for Authentik server to be ready
-  become: false
-  ansible.builtin.command: >-
-    kubectl rollout status deployment/authentik-server
-    -n {{ authentik_namespace }}
-    --timeout=300s
-  environment:
-    KUBECONFIG: /home/debian/.kube/config
-  changed_when: false
-  when: >-
-    authentik_secret_check.rc != 0 or
     (authentik_token_check.stdout | default('') == '')
 
 - name: Authentik credentials secret already exists with bootstrap token

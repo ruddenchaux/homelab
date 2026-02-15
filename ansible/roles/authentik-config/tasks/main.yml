@@ -19,6 +19,30 @@
     authentik_api_token: "{{ authentik_token_b64.stdout | b64decode }}"
   no_log: true
 
+- name: Ensure API token exists in Authentik database
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec -n {{ authentik_namespace }} deployment/authentik-server --
+    ak shell -c "
+    from authentik.core.models import Token, TokenIntents, User;
+    user = User.objects.get(username='akadmin');
+    token, created = Token.objects.get_or_create(
+        identifier='{{ authentik_bootstrap_token_name }}',
+        defaults={
+            'user': user,
+            'intent': TokenIntents.INTENT_API,
+            'key': '{{ authentik_api_token }}',
+            'expiring': False,
+        }
+    );
+    print(f'Token created: {created}')
+    "
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: token_create_result
+  changed_when: "'Token created: True' in token_create_result.stdout"
+  no_log: true
+
 - name: Start kubectl port-forward to Authentik
   become: false
   ansible.builtin.shell: >-
