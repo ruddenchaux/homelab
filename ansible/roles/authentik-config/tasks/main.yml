@@ -22,9 +22,10 @@
 - name: Start kubectl port-forward to Authentik
   become: false
   ansible.builtin.shell: >-
-    kubectl port-forward svc/authentik-server
+    nohup kubectl port-forward svc/authentik-server
     -n {{ authentik_namespace }}
-    {{ authentik_local_port }}:80 &
+    {{ authentik_local_port }}:80
+    > /tmp/authentik-pf.log 2>&1 &
     echo $!
   environment:
     KUBECONFIG: /home/debian/.kube/config
@@ -35,7 +36,15 @@
   ansible.builtin.set_fact:
     authentik_pf_pid: "{{ port_forward_pid.stdout_lines[-1] }}"
 
+- name: Wait for port-forward to be ready
+  become: false
+  ansible.builtin.wait_for:
+    port: "{{ authentik_local_port }}"
+    host: 127.0.0.1
+    timeout: 30
+
 - name: Wait for Authentik API to be reachable
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/root/config/"
     headers:
@@ -43,11 +52,12 @@
     status_code: 200
   register: api_check
   until: api_check.status == 200
-  retries: 30
+  retries: 12
   delay: 5
   no_log: true
 
 - name: Get default authorization flow
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/flows/instances/?designation=authorization"
     headers:
@@ -61,6 +71,7 @@
     authentik_authorization_flow: "{{ auth_flows.json.results[0].pk }}"
 
 - name: Get default authentication flow
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/flows/instances/?designation=authentication"
     headers:
@@ -74,6 +85,7 @@
     authentik_authentication_flow: "{{ authn_flows.json.results[0].pk }}"
 
 - name: Get OIDC scope property mappings
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/propertymappings/provider/scope/?ordering=scope_name"
     headers:
@@ -102,6 +114,7 @@
   ansible.builtin.include_tasks: outpost.yml
 
 - name: Kill port-forward process
+  become: false
   ansible.builtin.command: "kill {{ authentik_pf_pid }}"
   changed_when: false
   failed_when: false

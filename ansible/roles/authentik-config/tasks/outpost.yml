@@ -2,6 +2,7 @@
 # Configure embedded outpost to serve all applications
 
 - name: Get embedded outpost
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/outposts/instances/?managed=goauthentik.io/outposts/embedded"
     headers:
@@ -15,6 +16,7 @@
     outpost_pk: "{{ embedded_outpost.json.results[0].pk }}"
 
 - name: Get all Authentik applications
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/?page_size=100"
     headers:
@@ -28,6 +30,7 @@
     all_app_pks: "{{ all_apps.json.results | selectattr('provider', 'ne', None) | map(attribute='pk') | list }}"
 
 - name: Update embedded outpost with all applications
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/outposts/instances/{{ outpost_pk }}/"
     method: PATCH

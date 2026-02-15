@@ -2,6 +2,7 @@
 # Create forward-domain proxy provider and application for ForwardAuth
 
 - name: Check if ForwardAuth proxy provider exists
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/proxy/?name={{ authentik_forwardauth_provider_name | urlencode }}"
     headers:
@@ -11,6 +12,7 @@
   no_log: true
 
 - name: Create ForwardAuth proxy provider
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/proxy/"
     method: POST
@@ -38,6 +40,7 @@
                    forwardauth_provider_created.json.pk) }}
 
 - name: Check if ForwardAuth application exists
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/?slug={{ authentik_forwardauth_app_slug }}"
     headers:
@@ -47,6 +50,7 @@
   no_log: true
 
 - name: Create ForwardAuth application
+  become: false
   ansible.builtin.uri:
     url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/"
     method: POST
