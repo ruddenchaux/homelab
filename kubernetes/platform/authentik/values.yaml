@@ -1,14 +1,17 @@
 authentik:
   authentik:
     secret_key: ""
-    existingSecret: authentik-credentials
+    existingSecret:
+      secretName: authentik-credentials
+    postgresql:
+      password: ""
   postgresql:
     enabled: true
     auth:
       existingSecret: authentik-credentials
       secretKeys:
-        adminPasswordKey: authentik-postgresql-password
-        userPasswordKey: authentik-postgresql-password
+        adminPasswordKey: AUTHENTIK_POSTGRESQL__PASSWORD
+        userPasswordKey: AUTHENTIK_POSTGRESQL__PASSWORD
   redis:
     enabled: true
   server:
