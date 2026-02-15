@@ -27,9 +27,9 @@
       cookie_domain: "{{ authentik_domain }}"
       authorization_flow: "{{ authentik_authorization_flow }}"
       authentication_flow: "{{ authentik_authentication_flow }}"
+      invalidation_flow: "{{ authentik_invalidation_flow }}"
     status_code: 201
   register: forwardauth_provider_created
-  no_log: true
   when: forwardauth_provider_check.json.pagination.count == 0
 
 - name: Set ForwardAuth provider PK

@@ -21,22 +21,21 @@
 
 - name: Ensure API token exists in Authentik database
   become: false
-  ansible.builtin.command: >-
-    kubectl exec -n {{ authentik_namespace }} deployment/authentik-server --
-    ak shell -c "
-    from authentik.core.models import Token, TokenIntents, User;
-    user = User.objects.get(username='akadmin');
+  ansible.builtin.shell: |
+    cat <<'PYEOF' | kubectl exec -i -n {{ authentik_namespace }} deployment/authentik-server -- ak shell
+    from authentik.core.models import Token, TokenIntents, User
+    user = User.objects.get(username="akadmin")
     token, created = Token.objects.get_or_create(
-        identifier='{{ authentik_bootstrap_token_name }}',
+        identifier="{{ authentik_bootstrap_token_name }}",
         defaults={
-            'user': user,
-            'intent': TokenIntents.INTENT_API,
-            'key': '{{ authentik_api_token }}',
-            'expiring': False,
+            "user": user,
+            "intent": TokenIntents.INTENT_API,
+            "key": "{{ authentik_api_token }}",
+            "expiring": False,
         }
-    );
-    print(f'Token created: {created}')
-    "
+    )
+    print(f"Token created: {created}")
+    PYEOF
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: token_create_result
@@ -107,6 +106,20 @@
 - name: Set authentication flow UUID
   ansible.builtin.set_fact:
     authentik_authentication_flow: "{{ authn_flows.json.results[0].pk }}"
+
+- name: Get default invalidation flow
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/flows/instances/?designation=invalidation"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: invalidation_flows
+  no_log: true
+
+- name: Set invalidation flow UUID
+  ansible.builtin.set_fact:
+    authentik_invalidation_flow: "{{ invalidation_flows.json.results[0].pk }}"
 
 - name: Get OIDC scope property mappings
   become: false

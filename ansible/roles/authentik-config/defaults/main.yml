@@ -3,6 +3,7 @@ authentik_external_url: "https://auth.ruddenchaux.xyz"
 authentik_domain: "ruddenchaux.xyz"
 authentik_namespace: "authentik"
 authentik_secret_name: "authentik-credentials"
+authentik_bootstrap_token_name: "ansible-bootstrap-token"
 authentik_local_port: 9000
 
 # ForwardAuth

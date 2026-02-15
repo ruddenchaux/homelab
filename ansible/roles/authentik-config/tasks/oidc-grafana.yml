@@ -92,9 +92,12 @@
       client_type: confidential
       client_id: "{{ grafana_client_id }}"
       client_secret: "{{ grafana_client_secret }}"
-      redirect_uris: "{{ authentik_grafana_redirect_uri }}"
+      redirect_uris:
+        - matching_mode: strict
+          url: "{{ authentik_grafana_redirect_uri }}"
       authorization_flow: "{{ authentik_authorization_flow }}"
       authentication_flow: "{{ authentik_authentication_flow }}"
+      invalidation_flow: "{{ authentik_invalidation_flow }}"
       property_mappings:
         - "{{ authentik_scope_openid }}"
         - "{{ authentik_scope_email }}"
