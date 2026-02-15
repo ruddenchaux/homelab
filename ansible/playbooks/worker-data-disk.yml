@@ -1,0 +1,5 @@
+---
+- name: Format and mount data disk on worker nodes
+  hosts: k8s_workers
+  roles:
+    - worker-data-disk

@@ -1,0 +1,29 @@
+---
+- name: Verify data disk exists
+  ansible.builtin.stat:
+    path: "{{ data_disk_device }}"
+  register: disk_stat
+
+- name: Fail if data disk not found
+  ansible.builtin.fail:
+    msg: "Data disk {{ data_disk_device }} not found. Ensure Terraform has added the disk and the VM has been rebooted."
+  when: not disk_stat.stat.exists
+
+- name: Create filesystem on data disk
+  community.general.filesystem:
+    dev: "{{ data_disk_device }}"
+    fstype: "{{ data_disk_fstype }}"
+
+- name: Create mount point
+  ansible.builtin.file:
+    path: "{{ data_disk_mount }}"
+    state: directory
+    mode: "0755"
+
+- name: Mount data disk and add to fstab
+  ansible.posix.mount:
+    path: "{{ data_disk_mount }}"
+    src: "{{ data_disk_device }}"
+    fstype: "{{ data_disk_fstype }}"
+    opts: "{{ data_disk_mount_opts }}"
+    state: mounted

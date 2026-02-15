@@ -34,6 +34,16 @@ variable "datastore_id" {
   default = "local-zfs"
 }
 
+variable "data_datastore_id" {
+  type    = string
+  default = "datapool"
+}
+
+variable "worker_data_disk_size" {
+  type    = number
+  default = 500
+}
+
 # --- Networking ---
 
 variable "network_bridge" {

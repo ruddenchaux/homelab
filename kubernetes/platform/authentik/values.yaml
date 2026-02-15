@@ -16,12 +16,14 @@ authentik:
         userPasswordKey: AUTHENTIK_POSTGRESQL__PASSWORD
     primary:
       persistence:
-        enabled: false
+        enabled: true
+        size: 8Gi
   redis:
     enabled: true
     master:
       persistence:
-        enabled: false
+        enabled: true
+        size: 2Gi
   server:
     ingress:
       enabled: true

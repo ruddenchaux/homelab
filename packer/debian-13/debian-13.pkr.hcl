@@ -37,6 +37,16 @@ source "proxmox-iso" "debian-13" {
     io_thread    = true
   }
 
+  # Data disk (HDD)
+  disks {
+    storage_pool = var.vm_data_storage
+    disk_size    = var.vm_data_disk_size
+    type         = "scsi"
+    discard      = true
+    ssd          = false
+    io_thread    = true
+  }
+
   # Network
   network_adapters {
     model    = "virtio"

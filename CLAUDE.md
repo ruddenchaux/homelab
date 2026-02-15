@@ -20,7 +20,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - H740p in eHBA mode, 4 disks as Non-RAID
 - Proxmox VE 9.1.5 (Debian Trixie) installed on ZFS mirror (2x SSD), kernel 6.17.2-1-pve
 - Enterprise repos disabled, no-subscription repos enabled (PVE + Ceph Squid)
-- ZFS datapool mirror created on 2x 4TB HDDs, mounted at /datapool
+- ZFS datapool mirror created on 2x 4TB HDDs, mounted at /datapool, registered as Proxmox storage backend
 - SSH hardened (PermitRootLogin=prohibit-password, PasswordAuthentication=no, PubkeyAuthentication=yes)
 - Server connected to MikroTik via 1G port (BCM5720) because 10G<->2.5G speed mismatch
 - VLAN segmentation configured: VLAN 10 (mgmt), VLAN 20 (trusted LAN), VLAN 30 (kubernetes)
@@ -41,6 +41,9 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Headlamp (Kubernetes dashboard) at dashboard.ruddenchaux.xyz (replaces archived kubernetes-dashboard)
 - Homepage app launcher at home.ruddenchaux.xyz (k8s service discovery, RBAC)
 - Authentik SSO at auth.ruddenchaux.xyz (identity provider, Traefik ForwardAuth middleware)
+- Worker VMs have 500GB HDD data disk (scsi1 on datapool), mounted at /data/local-path-provisioner
+- local-path-provisioner deployed as default StorageClass (`local-path`)
+- Loki persistence enabled (10Gi PVC), Authentik PostgreSQL (8Gi) + Redis (2Gi) persistence enabled
 
 ## Completed Tasks
 1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
@@ -48,6 +51,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Full system upgrade (83 packages)
    - Created ZFS datapool mirror on 2x 4TB HDDs (compression=lz4, atime=off)
    - SSH hardening (key-only auth, no X11 forwarding)
+   - Registered ZFS datapool as Proxmox storage backend (`pvesm add zfspool`, content: images,rootdir)
 2. **Ansible: Configure networking/VLANs** — `ansible/playbooks/network-vlans.yml`
    - Cleaned up leftover MikroTik guest WiFi experiment (10.10.50.0/24)
    - VLAN 10 (Management): 10.10.0.0/24 — Proxmox at 10.10.0.2, MikroTik GW 10.10.0.1
@@ -62,6 +66,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Template sysprep (machine-id truncated, SSH keys removed, cloud-init reset, root locked)
    - Build VM on VLAN 30 (10.30.0.100), Proxmox API token auth
    - Template ID 9000, stored on local-zfs
+   - Second disk (HDD, datapool) included in template for data storage
 4. **Terraform: Provision k8s VMs** — `terraform/kubernetes/`
    - bpg/proxmox provider, clones VM template 9000 (Debian 13 + cloud-init)
    - Control plane: k8s-ctrl-01 (VM 200), 10.30.0.10, 4 cores, 8GB RAM, 20GB disk
@@ -69,6 +74,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - All VMs on VLAN 30 (Kubernetes), static IPs via cloud-init
    - Cloud-init: user `debian`, SSH key injection, DNS via MikroTik GW
    - Workers use `for_each` map for stable resource addresses
+   - Workers have 500GB HDD data disk (scsi1 on datapool) for persistent storage
 5. **Ansible: Install k8s cluster** — `ansible/playbooks/kubernetes-install.yml`
    - kubeadm + containerd (from Docker repo) + Cilium CNI
    - Roles: k8s-prerequisites (all nodes), k8s-control-plane, k8s-workers
@@ -99,6 +105,15 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Traefik ForwardAuth middleware deployed (authentik-auth) for future service protection
    - Ingress at auth.ruddenchaux.xyz with Let's Encrypt TLS
    - Sync wave: 2 (parallel with loki, after cert-manager)
+9. **Storage: local-path-provisioner + persistence** — `ansible/roles/proxmox-storage/`, `ansible/roles/worker-data-disk/`, `terraform/kubernetes/`, `kubernetes/apps/templates/local-path-provisioner.yaml`
+   - Registered ZFS datapool as Proxmox storage backend (Ansible proxmox-storage role)
+   - 500GB HDD data disk added to worker VMs (Terraform scsi1, thin provisioned on datapool)
+   - ext4 formatted and mounted at /data/local-path-provisioner on workers (Ansible worker-data-disk role)
+   - local-path-provisioner (v0.0.34) deployed via ArgoCD as default StorageClass
+   - Sync wave: 0 (before all services needing PVCs)
+   - Loki persistence enabled (10Gi PVC, path_prefix /var/loki)
+   - Authentik PostgreSQL (8Gi) + Redis (2Gi) persistence enabled
+   - Packer template updated with second disk for future VM builds
 
 ## Pending Tasks (in order)
 1. **Deploy services via GitOps** (NEXT) — add service Applications to `kubernetes/`
@@ -119,7 +134,8 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 ## Architecture Decisions
 - **No RAID hardware**: eHBA mode + ZFS for checksumming, self-healing, snapshots
 - **ZFS mirror on SSDs** for boot (managed by Proxmox installer)
-- **ZFS mirror on HDDs** for bulk data (created via Ansible, mounted at /datapool)
+- **ZFS mirror on HDDs** for bulk data (created via Ansible, mounted at /datapool, registered as Proxmox storage)
+- **Kubernetes persistent storage**: local-path-provisioner on HDD data disks (500GB/worker, ext4, mounted at /data/local-path-provisioner). WaitForFirstConsumer binding, default StorageClass
 - **Future Ceph**: when second node is added (same rack), minimum 3 nodes needed. Third node at parents' house — use ZFS send/receive or Syncthing instead of Ceph for remote replication due to latency
 - **VMs for k8s**: don't run k8s directly on Proxmox host. 1 VM control plane + 1-2 VM workers
 - **GitOps with ArgoCD**: all services declared in Git

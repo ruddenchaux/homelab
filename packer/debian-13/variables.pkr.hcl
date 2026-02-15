@@ -98,6 +98,16 @@ variable "http_ip" {
   description = "IP address of the machine running Packer (reachable from build VM)"
 }
 
+variable "vm_data_storage" {
+  type    = string
+  default = "datapool"
+}
+
+variable "vm_data_disk_size" {
+  type    = string
+  default = "10G"
+}
+
 variable "ssh_password" {
   type    = string
   default = "packer"

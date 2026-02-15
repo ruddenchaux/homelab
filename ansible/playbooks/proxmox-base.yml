@@ -5,4 +5,5 @@
     - proxmox-repos
     - system-upgrade
     - zfs-datapool
+    - proxmox-storage
     - ssh-hardening

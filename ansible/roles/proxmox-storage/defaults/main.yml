@@ -1,0 +1,6 @@
+---
+proxmox_storage_name: datapool
+proxmox_storage_pool: datapool
+proxmox_storage_content:
+  - images
+  - rootdir

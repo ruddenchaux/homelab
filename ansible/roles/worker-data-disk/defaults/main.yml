@@ -1,0 +1,5 @@
+---
+data_disk_device: /dev/sdb
+data_disk_fstype: ext4
+data_disk_mount: /data/local-path-provisioner
+data_disk_mount_opts: defaults,noatime

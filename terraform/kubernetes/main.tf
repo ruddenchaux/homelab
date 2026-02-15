@@ -136,6 +136,16 @@ resource "proxmox_virtual_environment_vm" "worker" {
     iothread     = true
   }
 
+  # Data disk (HDD) — for local-path-provisioner persistent storage
+  disk {
+    interface    = "scsi1"
+    datastore_id = var.data_datastore_id
+    size         = var.worker_data_disk_size
+    discard      = "on"
+    ssd          = false
+    iothread     = true
+  }
+
   network_device {
     model   = "virtio"
     bridge  = var.network_bridge
