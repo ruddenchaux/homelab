@@ -12,8 +12,14 @@ authentik:
       secretKeys:
         adminPasswordKey: AUTHENTIK_POSTGRESQL__PASSWORD
         userPasswordKey: AUTHENTIK_POSTGRESQL__PASSWORD
+    primary:
+      persistence:
+        enabled: false
   redis:
     enabled: true
+    master:
+      persistence:
+        enabled: false
   server:
     ingress:
       enabled: true
