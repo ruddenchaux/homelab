@@ -1,0 +1,70 @@
+---
+# Create Authentik namespace and pre-generate secrets
+# Idempotent: only generates secrets if the k8s Secret doesn't exist yet
+
+- name: Create authentik namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ authentik_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: authentik_ns
+  changed_when: "'created' in authentik_ns.stdout"
+  failed_when: authentik_ns.rc != 0 and 'already exists' not in authentik_ns.stderr
+
+- name: Check if authentik-credentials secret exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ authentik_secret_name }}
+    -n {{ authentik_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: authentik_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate Authentik secret key
+  become: false
+  ansible.builtin.command: openssl rand -base64 50
+  register: authentik_secret_key_result
+  changed_when: false
+  no_log: true
+  when: authentik_secret_check.rc != 0
+
+- name: Generate PostgreSQL password
+  become: false
+  ansible.builtin.command: openssl rand -base64 30
+  register: authentik_pg_password_result
+  changed_when: false
+  no_log: true
+  when: authentik_secret_check.rc != 0
+
+- name: Template authentik-credentials secret
+  ansible.builtin.template:
+    src: authentik-credentials-secret.yml.j2
+    dest: /tmp/authentik-credentials-secret.yml
+    mode: "0600"
+  vars:
+    authentik_secret_key: "{{ authentik_secret_key_result.stdout }}"
+    authentik_pg_password: "{{ authentik_pg_password_result.stdout }}"
+  no_log: true
+  when: authentik_secret_check.rc != 0
+
+- name: Apply authentik-credentials secret
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/authentik-credentials-secret.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: authentik_secret_apply
+  changed_when: "'created' in authentik_secret_apply.stdout or 'configured' in authentik_secret_apply.stdout"
+  no_log: true
+  when: authentik_secret_check.rc != 0
+
+- name: Remove temporary authentik secret manifest
+  ansible.builtin.file:
+    path: /tmp/authentik-credentials-secret.yml
+    state: absent
+
+- name: Authentik credentials secret already exists
+  ansible.builtin.debug:
+    msg: "Secret {{ authentik_secret_name }} already exists in {{ authentik_namespace }} namespace — skipping generation"
+  when: authentik_secret_check.rc == 0

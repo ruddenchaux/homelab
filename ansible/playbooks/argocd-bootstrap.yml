@@ -4,6 +4,11 @@
   roles:
     - cilium-l2
 
+- name: Create Authentik secrets
+  hosts: k8s_control_plane
+  roles:
+    - authentik-secrets
+
 - name: Bootstrap ArgoCD and GitOps
   hosts: k8s_control_plane
   roles:

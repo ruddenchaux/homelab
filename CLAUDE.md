@@ -40,6 +40,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Loki log aggregation in loki namespace (SingleBinary mode, filesystem storage)
 - Headlamp (Kubernetes dashboard) at dashboard.ruddenchaux.xyz (replaces archived kubernetes-dashboard)
 - Homepage app launcher at home.ruddenchaux.xyz (k8s service discovery, RBAC)
+- Authentik SSO at auth.ruddenchaux.xyz (identity provider, Traefik ForwardAuth middleware)
 
 ## Completed Tasks
 1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
@@ -83,7 +84,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Root Application (app-of-apps) pointing to `kubernetes/apps/`
    - GitOps manifests in `kubernetes/` (apps + platform umbrella charts)
    - Platform services managed by ArgoCD: ArgoCD (self-managed), Traefik (LoadBalancer ingress), cert-manager (Let's Encrypt ClusterIssuers)
-   - Roles: cilium-l2 (L2 load balancing), argocd (install + bootstrap)
+   - Roles: cilium-l2 (L2 load balancing), authentik-secrets (pre-create credentials), argocd (install + bootstrap)
 7. **GitOps: Monitoring & dashboards** — `kubernetes/platform/` + `kubernetes/apps/templates/`
    - Hubble UI: enabled in Cilium via Ansible (hubble.relay + hubble.ui), ingress via ArgoCD
    - kube-prometheus-stack (chart 81.6.9): Prometheus + Grafana, Loki datasource pre-configured
@@ -92,6 +93,12 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Homepage (chart 2.1.0): app launcher with k8s service discovery, RBAC, pre-configured links
    - Sync waves: cert-manager(1) → loki(2) → monitoring(3)
    - All services exposed via Traefik ingress with Let's Encrypt TLS (DNS-01)
+8. **GitOps: Authentik SSO** — `kubernetes/platform/authentik/` + `ansible/roles/authentik-secrets/`
+   - Authentik (chart 2025.12.4): SSO identity provider with bundled PostgreSQL + Redis
+   - Secrets pre-created via Ansible role (authentik-credentials: secret_key + postgresql password)
+   - Traefik ForwardAuth middleware deployed (authentik-auth) for future service protection
+   - Ingress at auth.ruddenchaux.xyz with Let's Encrypt TLS
+   - Sync wave: 2 (parallel with loki, after cert-manager)
 
 ## Pending Tasks (in order)
 1. **Deploy services via GitOps** (NEXT) — add service Applications to `kubernetes/`

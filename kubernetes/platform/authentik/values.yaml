@@ -1,0 +1,25 @@
+authentik:
+  authentik:
+    secret_key: ""
+    existingSecret: authentik-credentials
+  postgresql:
+    enabled: true
+    auth:
+      existingSecret: authentik-credentials
+      secretKeys:
+        adminPasswordKey: authentik-postgresql-password
+        userPasswordKey: authentik-postgresql-password
+  redis:
+    enabled: true
+  server:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - auth.ruddenchaux.xyz
+      tls:
+        - secretName: authentik-tls
+          hosts:
+            - auth.ruddenchaux.xyz

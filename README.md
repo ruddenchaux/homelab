@@ -50,6 +50,7 @@ ansible/
     k8s-control-plane/          # kubeadm init, Helm, Cilium CNI
     k8s-workers/                # kubeadm join workers to cluster
     cilium-l2/                  # Cilium L2 announcements + Hubble UI for LoadBalancer
+    authentik-secrets/          # Pre-create Authentik k8s secrets
     argocd/                     # ArgoCD install + GitOps bootstrap
 packer/
   debian-13/
@@ -80,6 +81,7 @@ kubernetes/
     monitoring/                     # kube-prometheus-stack (Prometheus + Grafana)
     loki/                           # Loki log aggregation
     kubernetes-dashboard/           # Headlamp Kubernetes dashboard
+    authentik/                      # Authentik SSO
     homepage/                       # Homepage app launcher
 ```
 
@@ -100,6 +102,7 @@ kubernetes/
 | `https://grafana.ruddenchaux.xyz` | Grafana | Metrics, logs, dashboards |
 | `https://hubble.ruddenchaux.xyz` | Hubble UI | Cilium network flows |
 | `https://dashboard.ruddenchaux.xyz` | Headlamp | Cluster management |
+| `https://auth.ruddenchaux.xyz` | Authentik | SSO / identity provider |
 | `https://argocd.ruddenchaux.xyz` | ArgoCD | GitOps deployment |
 | `https://traefik.ruddenchaux.xyz` | Traefik | Ingress routing |
 
@@ -210,6 +213,11 @@ ssh debian@10.30.0.10 "kubectl get pods -n kubernetes-dashboard"
 
 # Verify Homepage
 ssh debian@10.30.0.10 "kubectl get pods -n homepage"
+
+# Verify Authentik
+ssh debian@10.30.0.10 "kubectl get pods -n authentik"
+ssh debian@10.30.0.10 "kubectl get middleware -n authentik"
+# Initial admin setup: https://auth.ruddenchaux.xyz/if/flow/initial-setup/
 ```
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and debugging commands.

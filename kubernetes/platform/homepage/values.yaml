@@ -40,6 +40,10 @@ homepage:
               href: https://hubble.ruddenchaux.xyz
               description: Network flows
               icon: cilium
+          - Authentik:
+              href: https://auth.ruddenchaux.xyz
+              description: Single sign-on
+              icon: authentik
           - Headlamp:
               href: https://dashboard.ruddenchaux.xyz
               description: Cluster management
