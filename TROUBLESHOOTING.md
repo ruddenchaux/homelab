@@ -163,6 +163,58 @@ ssh debian@10.30.0.10 "kubectl top pods -A"
 
 This is safe in a private homelab network. The flag skips kubelet certificate verification but traffic is still encrypted.
 
+## Authentik: Helm existingSecret replaces entire config
+
+The Authentik chart's `authentik.existingSecret` replaces the **entire** chart-generated Secret (which contains `AUTHENTIK_POSTGRESQL__HOST`, `AUTHENTIK_LOG_LEVEL`, and ~15 other env vars). If your secret only has the sensitive keys, Authentik falls back to defaults (PostgreSQL host = `localhost`) and crashes.
+
+**Fix:** Don't use `existingSecret`. Instead, use `global.envFrom` to inject only the sensitive values while letting the chart manage the rest:
+
+```yaml
+# values.yaml (umbrella chart)
+authentik:
+  global:
+    envFrom:
+      - secretRef:
+          name: authentik-credentials   # only AUTHENTIK_SECRET_KEY + AUTHENTIK_POSTGRESQL__PASSWORD
+  authentik:
+    secret_key: ""                      # overridden by envFrom
+    postgresql:
+      password: ""                      # overridden by envFrom
+```
+
+```bash
+# Verify the chart-generated secret has all config keys
+ssh debian@10.30.0.10 "kubectl get secret authentik -n authentik -o jsonpath='{.data}' | python3 -c \"import json,sys,base64; d=json.load(sys.stdin); [print(k) for k in sorted(d.keys())]\""
+
+# Verify the pod has AUTHENTIK_POSTGRESQL__HOST set correctly
+ssh debian@10.30.0.10 "kubectl exec deploy/authentik-server -n authentik -- env | grep AUTHENTIK_POSTGRESQL__HOST"
+```
+
+The pre-created secret must use the chart's env var naming convention:
+- `AUTHENTIK_SECRET_KEY` (not `authentik-secret-key`)
+- `AUTHENTIK_POSTGRESQL__PASSWORD` (double underscore, not `authentik-postgresql-password`)
+
+## Authentik: StatefulSet immutable field error
+
+When toggling PostgreSQL persistence (`persistence.enabled: true → false`), ArgoCD fails with:
+
+```
+StatefulSet.apps "authentik-postgresql" is invalid: spec: Forbidden: updates to statefulset spec for fields other than 'replicas', 'template', 'updateStrategy' ...
+```
+
+**Fix:** Delete the StatefulSet and its PVC so ArgoCD can recreate them:
+
+```bash
+# Delete StatefulSet and stuck PVC
+ssh debian@10.30.0.10 "kubectl delete statefulset authentik-postgresql -n authentik"
+ssh debian@10.30.0.10 "kubectl delete pvc data-authentik-postgresql-0 -n authentik"
+
+# ArgoCD self-heals and recreates the StatefulSet without persistence
+ssh debian@10.30.0.10 "kubectl get pods -n authentik -w"
+```
+
+**Note:** Like Loki, PostgreSQL with `persistence.enabled: false` uses emptyDir — all data is lost on pod deletion or node reboot. Deploy a StorageClass (local-path-provisioner or Longhorn) before running stateful services in production.
+
 ## General cluster health
 
 ```bash
