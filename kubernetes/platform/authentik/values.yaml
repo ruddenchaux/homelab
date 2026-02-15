@@ -1,8 +1,10 @@
 authentik:
+  global:
+    envFrom:
+      - secretRef:
+          name: authentik-credentials
   authentik:
     secret_key: ""
-    existingSecret:
-      secretName: authentik-credentials
     postgresql:
       password: ""
   postgresql:
