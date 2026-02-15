@@ -85,6 +85,84 @@ ssh admin@192.168.88.1 "/ip dns print"
 
 If flushing doesn't help, try a browser incognito window or restart the MikroTik DNS service. As a last resort, a server reboot clears all caches.
 
+## Loki: read-only filesystem errors
+
+Loki defaults `common.path_prefix` to `/var/loki`, but the container runs with a read-only root filesystem. Without a PersistentVolume (no StorageClass/CSI driver), Loki crashes with `mkdir /var/loki: read-only file system`.
+
+**Fix:** Redirect all Loki data paths to `/tmp/loki`, which has an existing emptyDir volume mount. In `kubernetes/platform/loki/values.yaml`:
+
+```yaml
+loki:
+  loki:
+    commonConfig:
+      path_prefix: /tmp/loki
+    storage:
+      filesystem:
+        chunks_directory: /tmp/loki/chunks
+        rules_directory: /tmp/loki/rules
+  singleBinary:
+    persistence:
+      enabled: false
+```
+
+If Loki is stuck after a values change (StatefulSet volumeClaimTemplates are immutable), delete the StatefulSet so ArgoCD recreates it:
+
+```bash
+# Check what's blocking the pod
+ssh debian@10.30.0.10 "kubectl describe pod loki-0 -n loki | tail -10"
+
+# Check Loki container logs for filesystem errors
+ssh debian@10.30.0.10 "kubectl logs loki-0 -n loki -c loki --tail=20"
+
+# Check if there's a stuck PVC
+ssh debian@10.30.0.10 "kubectl get pvc -n loki"
+
+# Delete the StatefulSet to let ArgoCD recreate it with updated config
+ssh debian@10.30.0.10 "kubectl delete statefulset loki -n loki"
+
+# Force ArgoCD to re-render the chart from latest Git
+ssh debian@10.30.0.10 "kubectl -n argocd patch application loki \
+  --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+
+# Verify the configmap has the updated paths
+ssh debian@10.30.0.10 "kubectl get configmap loki -n loki -o yaml | grep path_prefix"
+
+# Confirm pod is running
+ssh debian@10.30.0.10 "kubectl get pods -n loki"
+```
+
+**Note:** Data is ephemeral with emptyDir — logs are lost on pod restart. Add a StorageClass (e.g. local-path-provisioner or Longhorn) for persistence.
+
+## Metrics-server: kubelet TLS verification failed
+
+metrics-server can't scrape kubelets if their self-signed certificates don't include IP SANs (standard with kubeadm):
+
+```
+Failed to scrape node: tls: failed to verify certificate: x509: cannot validate certificate for 10.30.0.x because it doesn't contain any IP SANs
+```
+
+**Fix:** Add `--kubelet-insecure-tls` in `kubernetes/platform/metrics-server/values.yaml`:
+
+```yaml
+metrics-server:
+  args:
+    - --kubelet-insecure-tls
+```
+
+```bash
+# Check metrics-server logs for TLS errors
+ssh debian@10.30.0.10 "kubectl logs -n kube-system deployment/metrics-server --tail=20"
+
+# Check if the metrics API is registered
+ssh debian@10.30.0.10 "kubectl get apiservices | grep metrics"
+
+# Verify metrics are working
+ssh debian@10.30.0.10 "kubectl top nodes"
+ssh debian@10.30.0.10 "kubectl top pods -A"
+```
+
+This is safe in a private homelab network. The flag skips kubelet certificate verification but traffic is still encrypted.
+
 ## General cluster health
 
 ```bash
