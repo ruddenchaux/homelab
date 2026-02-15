@@ -38,7 +38,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Hubble UI enabled (relay + ui via Cilium Helm upgrade), ingress at hubble.ruddenchaux.xyz
 - kube-prometheus-stack (Prometheus + Grafana) in monitoring namespace, Grafana at grafana.ruddenchaux.xyz
 - Loki log aggregation in loki namespace (SingleBinary mode, filesystem storage)
-- Kubernetes Dashboard at dashboard.ruddenchaux.xyz (kong disabled, Traefik ingress)
+- Headlamp (Kubernetes dashboard) at dashboard.ruddenchaux.xyz (replaces archived kubernetes-dashboard)
 - Homepage app launcher at home.ruddenchaux.xyz (k8s service discovery, RBAC)
 
 ## Completed Tasks
@@ -88,7 +88,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Hubble UI: enabled in Cilium via Ansible (hubble.relay + hubble.ui), ingress via ArgoCD
    - kube-prometheus-stack (chart 81.6.9): Prometheus + Grafana, Loki datasource pre-configured
    - Loki (chart 6.53.0): SingleBinary mode, filesystem storage, internal only
-   - Kubernetes Dashboard (chart 7.14.0): kong disabled, Traefik ingress, cert-manager TLS
+   - Headlamp (chart 0.40.0): Kubernetes dashboard, Traefik ingress, cert-manager TLS
    - Homepage (chart 2.1.0): app launcher with k8s service discovery, RBAC, pre-configured links
    - Sync waves: cert-manager(1) → loki(2) → monitoring(3)
    - All services exposed via Traefik ingress with Let's Encrypt TLS (DNS-01)

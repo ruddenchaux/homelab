@@ -17,6 +17,8 @@ loki:
             period: 24h
   singleBinary:
     replicas: 1
+    persistence:
+      enabled: false
   read:
     replicas: 0
   write:

@@ -79,7 +79,7 @@ kubernetes/
     hubble-ui/                      # Hubble UI ingress + certificate
     monitoring/                     # kube-prometheus-stack (Prometheus + Grafana)
     loki/                           # Loki log aggregation
-    kubernetes-dashboard/           # Kubernetes Dashboard
+    kubernetes-dashboard/           # Headlamp Kubernetes dashboard
     homepage/                       # Homepage app launcher
 ```
 
@@ -99,7 +99,7 @@ kubernetes/
 | `https://home.ruddenchaux.xyz` | Homepage | App launcher |
 | `https://grafana.ruddenchaux.xyz` | Grafana | Metrics, logs, dashboards |
 | `https://hubble.ruddenchaux.xyz` | Hubble UI | Cilium network flows |
-| `https://dashboard.ruddenchaux.xyz` | K8s Dashboard | Cluster management |
+| `https://dashboard.ruddenchaux.xyz` | Headlamp | Cluster management |
 | `https://argocd.ruddenchaux.xyz` | ArgoCD | GitOps deployment |
 | `https://traefik.ruddenchaux.xyz` | Traefik | Ingress routing |
 
@@ -205,7 +205,7 @@ ssh debian@10.30.0.10 "kubectl get pods -n loki"
 # Verify Hubble UI
 ssh debian@10.30.0.10 "kubectl get pods -n kube-system | grep hubble"
 
-# Verify Kubernetes Dashboard
+# Verify Headlamp (Kubernetes dashboard)
 ssh debian@10.30.0.10 "kubectl get pods -n kubernetes-dashboard"
 
 # Verify Homepage

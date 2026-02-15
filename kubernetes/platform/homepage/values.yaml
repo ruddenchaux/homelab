@@ -40,10 +40,10 @@ homepage:
               href: https://hubble.ruddenchaux.xyz
               description: Network flows
               icon: cilium
-          - Kubernetes Dashboard:
+          - Headlamp:
               href: https://dashboard.ruddenchaux.xyz
               description: Cluster management
-              icon: kubernetes-dashboard
+              icon: headlamp
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006

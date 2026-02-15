@@ -1,8 +1,8 @@
 apiVersion: v2
 name: kubernetes-dashboard
-description: Kubernetes Dashboard umbrella chart
+description: Headlamp Kubernetes dashboard umbrella chart
 version: 0.1.0
 dependencies:
-  - name: kubernetes-dashboard
-    version: "7.14.0"
-    repository: https://kubernetes.github.io/dashboard/
+  - name: headlamp
+    version: "0.40.0"
+    repository: https://kubernetes-sigs.github.io/headlamp/

@@ -1,21 +1,17 @@
-kubernetes-dashboard:
-  kong:
-    enabled: false
-  cert-manager:
-    enabled: false
-  nginx:
-    enabled: false
-  app:
-    ingress:
-      enabled: true
-      ingressClassName: traefik
-      hosts:
-        - dashboard.ruddenchaux.xyz
-      useDefaultAnnotations: false
-      pathType: Prefix
-      tls:
-        enabled: true
-        secretName: kubernetes-dashboard-tls
-      issuer:
-        name: letsencrypt-prod
-        scope: cluster
+headlamp:
+  clusterRoleBinding:
+    create: true
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: dashboard.ruddenchaux.xyz
+        paths:
+          - path: /
+            type: Prefix
+    tls:
+      - secretName: headlamp-tls
+        hosts:
+          - dashboard.ruddenchaux.xyz
