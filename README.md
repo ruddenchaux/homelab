@@ -252,6 +252,20 @@ ssh debian@10.30.0.10 "kubectl get ingress -A"
 ssh debian@10.30.0.10 "curl -s -o /dev/null -w '%{http_code}' http://10.30.0.200"
 ```
 
+### Subdomains not resolving (DNS)
+
+Cloudflare A records pointing to private IPs (e.g. `10.30.0.200`) can get stuck in DNS caches — both on MikroTik and in the browser. If a subdomain was queried before the Cloudflare record existed, the negative response gets cached.
+
+```bash
+# Flush MikroTik DNS cache
+ssh admin@192.168.88.1 "/ip dns cache flush"
+
+# Check what DNS servers MikroTik is using
+ssh admin@192.168.88.1 "/ip dns print"
+```
+
+If flushing doesn't help, try a browser incognito window or restart the MikroTik DNS service. As a last resort, a server reboot clears all caches.
+
 ### General cluster health
 
 ```bash
