@@ -35,6 +35,11 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Traefik ingress controller (LoadBalancer service, Cilium L2 IP)
 - cert-manager with Cloudflare DNS-01, ClusterIssuers: letsencrypt-staging + letsencrypt-prod
 - GitOps manifests in `kubernetes/` (apps/ = root app-of-apps, platform/ = umbrella charts)
+- Hubble UI enabled (relay + ui via Cilium Helm upgrade), ingress at hubble.ruddenchaux.xyz
+- kube-prometheus-stack (Prometheus + Grafana) in monitoring namespace, Grafana at grafana.ruddenchaux.xyz
+- Loki log aggregation in loki namespace (SingleBinary mode, filesystem storage)
+- Kubernetes Dashboard at dashboard.ruddenchaux.xyz (kong disabled, Traefik ingress)
+- Homepage app launcher at home.ruddenchaux.xyz (k8s service discovery, RBAC)
 
 ## Completed Tasks
 1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
@@ -79,6 +84,14 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - GitOps manifests in `kubernetes/` (apps + platform umbrella charts)
    - Platform services managed by ArgoCD: ArgoCD (self-managed), Traefik (LoadBalancer ingress), cert-manager (Let's Encrypt ClusterIssuers)
    - Roles: cilium-l2 (L2 load balancing), argocd (install + bootstrap)
+7. **GitOps: Monitoring & dashboards** — `kubernetes/platform/` + `kubernetes/apps/templates/`
+   - Hubble UI: enabled in Cilium via Ansible (hubble.relay + hubble.ui), ingress via ArgoCD
+   - kube-prometheus-stack (chart 81.6.9): Prometheus + Grafana, Loki datasource pre-configured
+   - Loki (chart 6.53.0): SingleBinary mode, filesystem storage, internal only
+   - Kubernetes Dashboard (chart 7.14.0): kong disabled, Traefik ingress, cert-manager TLS
+   - Homepage (chart 2.1.0): app launcher with k8s service discovery, RBAC, pre-configured links
+   - Sync waves: cert-manager(1) → loki(2) → monitoring(3)
+   - All services exposed via Traefik ingress with Let's Encrypt TLS (DNS-01)
 
 ## Pending Tasks (in order)
 1. **Deploy services via GitOps** (NEXT) — add service Applications to `kubernetes/`
@@ -87,7 +100,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Media server (Servarr stack)
 - Storage/backup (Nextcloud)
 - Home Assistant
-- InfluxDB + Grafana + Node-RED
+- Node-RED (Grafana already deployed for dashboards)
 - Inventory app
 - Git server (Forgejo) — bootstrap problem: needed before GitOps
 - VPN mesh

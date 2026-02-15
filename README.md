@@ -49,7 +49,7 @@ ansible/
     k8s-prerequisites/          # Containerd, kubeadm, kubelet, kernel modules
     k8s-control-plane/          # kubeadm init, Helm, Cilium CNI
     k8s-workers/                # kubeadm join workers to cluster
-    cilium-l2/                  # Cilium L2 announcements for LoadBalancer
+    cilium-l2/                  # Cilium L2 announcements + Hubble UI for LoadBalancer
     argocd/                     # ArgoCD install + GitOps bootstrap
 packer/
   debian-13/
@@ -76,6 +76,11 @@ kubernetes/
     argocd/                         # ArgoCD self-managed umbrella chart
     traefik/                        # Traefik ingress umbrella chart
     cert-manager/                   # cert-manager + ClusterIssuers
+    hubble-ui/                      # Hubble UI ingress + certificate
+    monitoring/                     # kube-prometheus-stack (Prometheus + Grafana)
+    loki/                           # Loki log aggregation
+    kubernetes-dashboard/           # Kubernetes Dashboard
+    homepage/                       # Homepage app launcher
 ```
 
 ## Network
@@ -86,6 +91,19 @@ kubernetes/
 | 10 | Management | 10.10.0.0/24 | 10.10.0.1 |
 | 20 | Trusted LAN | 10.20.0.0/24 | 10.20.0.1 |
 | 30 | Kubernetes | 10.30.0.0/24 | 10.30.0.1 |
+
+## Services
+
+| URL | Service | Purpose |
+|-----|---------|---------|
+| `https://home.ruddenchaux.xyz` | Homepage | App launcher |
+| `https://grafana.ruddenchaux.xyz` | Grafana | Metrics, logs, dashboards |
+| `https://hubble.ruddenchaux.xyz` | Hubble UI | Cilium network flows |
+| `https://dashboard.ruddenchaux.xyz` | K8s Dashboard | Cluster management |
+| `https://argocd.ruddenchaux.xyz` | ArgoCD | GitOps deployment |
+| `https://traefik.ruddenchaux.xyz` | Traefik | Ingress routing |
+
+All services require Cloudflare DNS A records pointing to `10.30.0.200` (Cilium L2 LoadBalancer IP).
 
 ## Prerequisites
 
@@ -177,6 +195,21 @@ ssh debian@10.30.0.10 "kubectl get svc -n traefik"
 # Verify cert-manager and ClusterIssuers
 ssh debian@10.30.0.10 "kubectl get pods -n cert-manager"
 ssh debian@10.30.0.10 "kubectl get clusterissuer"
+
+# Verify monitoring stack (Prometheus + Grafana)
+ssh debian@10.30.0.10 "kubectl get pods -n monitoring"
+
+# Verify Loki
+ssh debian@10.30.0.10 "kubectl get pods -n loki"
+
+# Verify Hubble UI
+ssh debian@10.30.0.10 "kubectl get pods -n kube-system | grep hubble"
+
+# Verify Kubernetes Dashboard
+ssh debian@10.30.0.10 "kubectl get pods -n kubernetes-dashboard"
+
+# Verify Homepage
+ssh debian@10.30.0.10 "kubectl get pods -n homepage"
 ```
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and debugging commands.
@@ -189,4 +222,5 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and debugging com
 4. ~~Terraform VM provisioning~~ (done)
 5. ~~Kubernetes cluster install~~ (done)
 6. ~~ArgoCD + GitOps platform~~ (done)
-7. Service deployment
+7. ~~Monitoring & dashboards~~ (done)
+8. Service deployment

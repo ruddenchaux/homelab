@@ -1,0 +1,22 @@
+kube-prometheus-stack:
+  grafana:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - grafana.ruddenchaux.xyz
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - grafana.ruddenchaux.xyz
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        url: http://loki.loki.svc:3100
+        access: proxy
+        isDefault: false
+  prometheus:
+    prometheusSpec:
+      retention: 15d

@@ -1,0 +1,4 @@
+apiVersion: v2
+name: hubble-ui
+description: Hubble UI ingress and certificate (Hubble is managed by Cilium)
+version: 0.1.0

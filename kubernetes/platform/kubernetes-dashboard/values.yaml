@@ -1,0 +1,21 @@
+kubernetes-dashboard:
+  kong:
+    enabled: false
+  cert-manager:
+    enabled: false
+  nginx:
+    enabled: false
+  app:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - dashboard.ruddenchaux.xyz
+      useDefaultAnnotations: false
+      pathType: Prefix
+      tls:
+        enabled: true
+        secretName: kubernetes-dashboard-tls
+      issuer:
+        name: letsencrypt-prod
+        scope: cluster

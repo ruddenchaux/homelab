@@ -1,0 +1,61 @@
+homepage:
+  enableRbac: true
+  serviceAccount:
+    create: true
+  env:
+    HOMEPAGE_ALLOWED_HOSTS: home.ruddenchaux.xyz
+  ingress:
+    main:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - host: home.ruddenchaux.xyz
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: homepage-tls
+          hosts:
+            - home.ruddenchaux.xyz
+  config:
+    kubernetes:
+      mode: cluster
+    services:
+      - Infrastructure:
+          - ArgoCD:
+              href: https://argocd.ruddenchaux.xyz
+              description: GitOps deployment
+              icon: argocd
+          - Traefik:
+              href: https://traefik.ruddenchaux.xyz
+              description: Ingress controller
+              icon: traefik
+          - Grafana:
+              href: https://grafana.ruddenchaux.xyz
+              description: Metrics & dashboards
+              icon: grafana
+          - Hubble UI:
+              href: https://hubble.ruddenchaux.xyz
+              description: Network flows
+              icon: cilium
+          - Kubernetes Dashboard:
+              href: https://dashboard.ruddenchaux.xyz
+              description: Cluster management
+              icon: kubernetes-dashboard
+      - Management:
+          - Proxmox:
+              href: https://10.10.0.2:8006
+              description: Hypervisor
+              icon: proxmox
+          - MikroTik:
+              href: http://192.168.88.1
+              description: Router
+              icon: mikrotik
+    widgets:
+      - kubernetes:
+          cluster:
+            show: true
+            cpu: true
+            memory: true

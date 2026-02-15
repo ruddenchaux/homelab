@@ -9,6 +9,8 @@
     --version {{ cilium_version }}
     --set l2announcements.enabled=true
     --set externalIPs.enabled=true
+    --set hubble.relay.enabled=true
+    --set hubble.ui.enabled=true
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: cilium_upgrade
