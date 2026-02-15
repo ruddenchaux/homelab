@@ -1,6 +1,7 @@
 ---
 # Create Authentik namespace and pre-generate secrets
 # Idempotent: only generates secrets if the k8s Secret doesn't exist yet
+# Also ensures AUTHENTIK_BOOTSTRAP_TOKEN is present (patches if missing)
 
 - name: Create authentik namespace
   become: false
@@ -22,6 +23,19 @@
   changed_when: false
   failed_when: false
 
+- name: Check if bootstrap token key exists in secret
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ authentik_secret_name }}
+    -n {{ authentik_namespace }}
+    -o jsonpath='{.data.AUTHENTIK_BOOTSTRAP_TOKEN}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: authentik_token_check
+  changed_when: false
+  failed_when: false
+  when: authentik_secret_check.rc == 0
+
 - name: Generate Authentik secret key
   become: false
   ansible.builtin.command: openssl rand -base64 50
@@ -38,7 +52,17 @@
   no_log: true
   when: authentik_secret_check.rc != 0
 
-- name: Template authentik-credentials secret
+- name: Generate bootstrap token
+  become: false
+  ansible.builtin.command: openssl rand -hex 32
+  register: authentik_bootstrap_token_result
+  changed_when: false
+  no_log: true
+  when: >-
+    authentik_secret_check.rc != 0 or
+    (authentik_token_check.stdout | default('') == '')
+
+- name: Template authentik-credentials secret (new)
   ansible.builtin.template:
     src: authentik-credentials-secret.yml.j2
     dest: /tmp/authentik-credentials-secret.yml
@@ -46,10 +70,11 @@
   vars:
     authentik_secret_key: "{{ authentik_secret_key_result.stdout }}"
     authentik_pg_password: "{{ authentik_pg_password_result.stdout }}"
+    authentik_bootstrap_token: "{{ authentik_bootstrap_token_result.stdout }}"
   no_log: true
   when: authentik_secret_check.rc != 0
 
-- name: Apply authentik-credentials secret
+- name: Apply authentik-credentials secret (new)
   become: false
   ansible.builtin.command: kubectl apply -f /tmp/authentik-credentials-secret.yml
   environment:
@@ -64,7 +89,47 @@
     path: /tmp/authentik-credentials-secret.yml
     state: absent
 
-- name: Authentik credentials secret already exists
+- name: Patch bootstrap token into existing secret
+  become: false
+  ansible.builtin.command: >-
+    kubectl patch secret {{ authentik_secret_name }}
+    -n {{ authentik_namespace }}
+    --type merge
+    -p '{"stringData":{"AUTHENTIK_BOOTSTRAP_TOKEN":"{{ authentik_bootstrap_token_result.stdout }}"}}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  no_log: true
+  when: >-
+    authentik_secret_check.rc == 0 and
+    (authentik_token_check.stdout | default('') == '')
+
+- name: Restart Authentik server to pick up bootstrap token
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout restart deployment/authentik-server
+    -n {{ authentik_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  when: >-
+    authentik_secret_check.rc != 0 or
+    (authentik_token_check.stdout | default('') == '')
+
+- name: Wait for Authentik server to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout status deployment/authentik-server
+    -n {{ authentik_namespace }}
+    --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  when: >-
+    authentik_secret_check.rc != 0 or
+    (authentik_token_check.stdout | default('') == '')
+
+- name: Authentik credentials secret already exists with bootstrap token
   ansible.builtin.debug:
-    msg: "Secret {{ authentik_secret_name }} already exists in {{ authentik_namespace }} namespace — skipping generation"
-  when: authentik_secret_check.rc == 0
+    msg: "Secret {{ authentik_secret_name }} already exists with bootstrap token — skipping generation"
+  when: >-
+    authentik_secret_check.rc == 0 and
+    (authentik_token_check.stdout | default('') != '')

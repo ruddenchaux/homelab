@@ -41,6 +41,10 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Headlamp (Kubernetes dashboard) at dashboard.ruddenchaux.xyz (replaces archived kubernetes-dashboard)
 - Homepage app launcher at home.ruddenchaux.xyz (k8s service discovery, RBAC)
 - Authentik SSO at auth.ruddenchaux.xyz (identity provider, Traefik ForwardAuth middleware)
+- Authentik SSO configured: ForwardAuth (forward-domain mode, *.ruddenchaux.xyz), OIDC for Grafana + ArgoCD
+- All ingresses protected by ForwardAuth middleware (authentik-authentik-auth@kubernetescrd)
+- Grafana OIDC: generic_oauth with Authentik, admin role mapping, envFromSecrets grafana-oidc
+- ArgoCD OIDC: Authentik issuer, RBAC policy (authentik Admins → role:admin, default → role:readonly)
 - Worker VMs have 500GB HDD data disk (scsi1 on datapool), mounted at /data/local-path-provisioner
 - local-path-provisioner deployed as default StorageClass (`local-path`)
 - Loki persistence enabled (10Gi PVC), Authentik PostgreSQL (8Gi) persistence enabled
@@ -101,7 +105,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - All services exposed via Traefik ingress with Let's Encrypt TLS (DNS-01)
 8. **GitOps: Authentik SSO** — `kubernetes/platform/authentik/` + `ansible/roles/authentik-secrets/`
    - Authentik (chart 2025.12.4): SSO identity provider with bundled PostgreSQL + Redis
-   - Secrets pre-created via Ansible role (authentik-credentials: secret_key + postgresql password)
+   - Secrets pre-created via Ansible role (authentik-credentials: secret_key + postgresql password + bootstrap token)
    - Traefik ForwardAuth middleware deployed (authentik-auth) for future service protection
    - Ingress at auth.ruddenchaux.xyz with Let's Encrypt TLS
    - Sync wave: 2 (parallel with loki, after cert-manager)
@@ -114,6 +118,17 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Loki persistence enabled (10Gi PVC, path_prefix /var/loki)
    - Authentik PostgreSQL (8Gi) persistence enabled (chart has no Redis subchart)
    - Packer template updated with second disk for future VM builds
+10. **Ansible: Authentik SSO configuration** — `ansible/roles/authentik-config/` + `ansible/roles/authentik-secrets/`
+   - Bootstrap API token generated and stored in authentik-credentials secret
+   - Authentik configured via REST API (port-forward to authentik-server)
+   - Forward-domain proxy provider: single SSO cookie for *.ruddenchaux.xyz
+   - Grafana OAuth2 provider + application, k8s secret (grafana-oidc in monitoring)
+   - ArgoCD OAuth2 provider + application, k8s secret (argocd-oidc in argocd), argocd-secret patched
+   - Embedded outpost linked to all applications
+   - ForwardAuth annotation added to all service ingresses (hubble, dashboard, homepage, grafana, argocd)
+   - Grafana OIDC: generic_oauth, role mapping (admin group → Admin), signout redirect
+   - ArgoCD OIDC: Authentik issuer, RBAC (authentik Admins → role:admin, default readonly)
+   - Roles: authentik-secrets (bootstrap token), authentik-config (API configuration)
 
 ## Pending Tasks (in order)
 1. **Deploy services via GitOps** (NEXT) — add service Applications to `kubernetes/`

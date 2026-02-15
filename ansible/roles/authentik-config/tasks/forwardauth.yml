@@ -1,0 +1,63 @@
+---
+# Create forward-domain proxy provider and application for ForwardAuth
+
+- name: Check if ForwardAuth proxy provider exists
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/proxy/?name={{ authentik_forwardauth_provider_name | urlencode }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: forwardauth_provider_check
+  no_log: true
+
+- name: Create ForwardAuth proxy provider
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/proxy/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ authentik_forwardauth_provider_name }}"
+      mode: forward_domain
+      external_host: "{{ authentik_external_url }}"
+      cookie_domain: "{{ authentik_domain }}"
+      authorization_flow: "{{ authentik_authorization_flow }}"
+      authentication_flow: "{{ authentik_authentication_flow }}"
+    status_code: 201
+  register: forwardauth_provider_created
+  no_log: true
+  when: forwardauth_provider_check.json.pagination.count == 0
+
+- name: Set ForwardAuth provider PK
+  ansible.builtin.set_fact:
+    forwardauth_provider_pk: >-
+      {{ (forwardauth_provider_check.json.pagination.count > 0)
+         | ternary(forwardauth_provider_check.json.results[0].pk,
+                   forwardauth_provider_created.json.pk) }}
+
+- name: Check if ForwardAuth application exists
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/?slug={{ authentik_forwardauth_app_slug }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: forwardauth_app_check
+  no_log: true
+
+- name: Create ForwardAuth application
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ authentik_forwardauth_app_name }}"
+      slug: "{{ authentik_forwardauth_app_slug }}"
+      provider: "{{ forwardauth_provider_pk }}"
+    status_code: 201
+  no_log: true
+  when: forwardauth_app_check.json.pagination.count == 0

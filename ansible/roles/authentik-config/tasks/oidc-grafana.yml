@@ -1,0 +1,148 @@
+---
+# Create Grafana OAuth2 provider, application, and k8s secret
+
+- name: Check if Grafana OIDC secret exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ authentik_grafana_secret_name }}
+    -n {{ authentik_grafana_secret_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: grafana_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate Grafana client credentials
+  when: grafana_secret_check.rc != 0
+  block:
+    - name: Generate Grafana client ID
+      become: false
+      ansible.builtin.command: openssl rand -hex 20
+      register: grafana_client_id_result
+      changed_when: false
+      no_log: true
+
+    - name: Generate Grafana client secret
+      become: false
+      ansible.builtin.command: openssl rand -hex 40
+      register: grafana_client_secret_result
+      changed_when: false
+      no_log: true
+
+    - name: Set Grafana client credentials
+      ansible.builtin.set_fact:
+        grafana_client_id: "{{ grafana_client_id_result.stdout }}"
+        grafana_client_secret: "{{ grafana_client_secret_result.stdout }}"
+      no_log: true
+
+- name: Load existing Grafana client credentials from secret
+  when: grafana_secret_check.rc == 0
+  block:
+    - name: Read Grafana client ID from secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ authentik_grafana_secret_name }}
+        -n {{ authentik_grafana_secret_namespace }}
+        -o jsonpath='{.data.GF_AUTH_GENERIC_OAUTH_CLIENT_ID}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: grafana_existing_id
+      changed_when: false
+      no_log: true
+
+    - name: Read Grafana client secret from secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ authentik_grafana_secret_name }}
+        -n {{ authentik_grafana_secret_namespace }}
+        -o jsonpath='{.data.GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: grafana_existing_secret
+      changed_when: false
+      no_log: true
+
+    - name: Set Grafana client credentials from existing secret
+      ansible.builtin.set_fact:
+        grafana_client_id: "{{ grafana_existing_id.stdout | b64decode }}"
+        grafana_client_secret: "{{ grafana_existing_secret.stdout | b64decode }}"
+      no_log: true
+
+- name: Check if Grafana OAuth2 provider exists
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/oauth2/?name={{ authentik_grafana_provider_name | urlencode }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: grafana_provider_check
+  no_log: true
+
+- name: Create Grafana OAuth2 provider
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/oauth2/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ authentik_grafana_provider_name }}"
+      client_type: confidential
+      client_id: "{{ grafana_client_id }}"
+      client_secret: "{{ grafana_client_secret }}"
+      redirect_uris: "{{ authentik_grafana_redirect_uri }}"
+      authorization_flow: "{{ authentik_authorization_flow }}"
+      authentication_flow: "{{ authentik_authentication_flow }}"
+      property_mappings:
+        - "{{ authentik_scope_openid }}"
+        - "{{ authentik_scope_email }}"
+        - "{{ authentik_scope_profile }}"
+    status_code: 201
+  register: grafana_provider_created
+  no_log: true
+  when: grafana_provider_check.json.pagination.count == 0
+
+- name: Set Grafana provider PK
+  ansible.builtin.set_fact:
+    grafana_provider_pk: >-
+      {{ (grafana_provider_check.json.pagination.count > 0)
+         | ternary(grafana_provider_check.json.results[0].pk,
+                   grafana_provider_created.json.pk) }}
+
+- name: Check if Grafana application exists
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/?slug={{ authentik_grafana_app_slug }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: grafana_app_check
+  no_log: true
+
+- name: Create Grafana application
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ authentik_grafana_provider_name }}"
+      slug: "{{ authentik_grafana_app_slug }}"
+      provider: "{{ grafana_provider_pk }}"
+      meta_launch_url: "https://grafana.{{ authentik_domain }}"
+    status_code: 201
+  no_log: true
+  when: grafana_app_check.json.pagination.count == 0
+
+- name: Create Grafana OIDC k8s secret
+  become: false
+  ansible.builtin.command: >-
+    kubectl create secret generic {{ authentik_grafana_secret_name }}
+    -n {{ authentik_grafana_secret_namespace }}
+    --from-literal=GF_AUTH_GENERIC_OAUTH_CLIENT_ID={{ grafana_client_id }}
+    --from-literal=GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET={{ grafana_client_secret }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  no_log: true
+  when: grafana_secret_check.rc != 0

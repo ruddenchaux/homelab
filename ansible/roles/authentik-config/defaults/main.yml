@@ -1,0 +1,25 @@
+---
+authentik_external_url: "https://auth.ruddenchaux.xyz"
+authentik_domain: "ruddenchaux.xyz"
+authentik_namespace: "authentik"
+authentik_secret_name: "authentik-credentials"
+authentik_local_port: 9000
+
+# ForwardAuth
+authentik_forwardauth_provider_name: "forward-domain-provider"
+authentik_forwardauth_app_name: "Forward Domain"
+authentik_forwardauth_app_slug: "forward-domain"
+
+# Grafana OIDC
+authentik_grafana_provider_name: "Grafana"
+authentik_grafana_app_slug: "grafana"
+authentik_grafana_redirect_uri: "https://grafana.ruddenchaux.xyz/login/generic_oauth"
+authentik_grafana_secret_name: "grafana-oidc"
+authentik_grafana_secret_namespace: "monitoring"
+
+# ArgoCD OIDC
+authentik_argocd_provider_name: "ArgoCD"
+authentik_argocd_app_slug: "argocd"
+authentik_argocd_redirect_uri: "https://argocd.ruddenchaux.xyz/auth/callback"
+authentik_argocd_secret_name: "argocd-oidc"
+authentik_argocd_secret_namespace: "argocd"

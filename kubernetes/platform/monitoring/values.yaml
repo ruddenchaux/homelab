@@ -5,12 +5,29 @@ kube-prometheus-stack:
       ingressClassName: traefik
       annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod
+        traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-auth@kubernetescrd
       hosts:
         - grafana.ruddenchaux.xyz
       tls:
         - secretName: grafana-tls
           hosts:
             - grafana.ruddenchaux.xyz
+    envFromSecrets:
+      - name: grafana-oidc
+    grafana.ini:
+      server:
+        root_url: https://grafana.ruddenchaux.xyz
+      auth.generic_oauth:
+        enabled: true
+        name: Authentik
+        scopes: openid profile email
+        auth_url: https://auth.ruddenchaux.xyz/application/o/authorize/
+        token_url: https://auth.ruddenchaux.xyz/application/o/token/
+        api_url: https://auth.ruddenchaux.xyz/application/o/userinfo/
+        role_attribute_path: "contains(groups[*], 'admin') && 'Admin' || 'Viewer'"
+        allow_assign_grafana_admin: true
+      auth:
+        signout_redirect_url: https://auth.ruddenchaux.xyz/application/o/grafana/end-session/
     additionalDataSources:
       - name: Loki
         type: loki

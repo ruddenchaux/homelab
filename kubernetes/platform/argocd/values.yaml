@@ -2,6 +2,18 @@ argo-cd:
   configs:
     params:
       server.insecure: true
+    cm:
+      url: https://argocd.ruddenchaux.xyz
+      oidc.config: |
+        name: Authentik
+        issuer: https://auth.ruddenchaux.xyz/application/o/argocd/
+        clientID: $oidc.authentik.clientID
+        clientSecret: $oidc.authentik.clientSecret
+        requestedScopes: ["openid", "profile", "email", "groups"]
+    rbacConfig:
+      policy.default: role:readonly
+      policy.csv: |
+        g, authentik Admins, role:admin
   server:
     ingress:
       enabled: true
@@ -10,3 +22,4 @@ argo-cd:
       tls: true
       annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod
+        traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-auth@kubernetescrd

@@ -1,0 +1,45 @@
+---
+# Configure embedded outpost to serve all applications
+
+- name: Get embedded outpost
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/outposts/instances/?managed=goauthentik.io/outposts/embedded"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: embedded_outpost
+  no_log: true
+
+- name: Set embedded outpost PK
+  ansible.builtin.set_fact:
+    outpost_pk: "{{ embedded_outpost.json.results[0].pk }}"
+
+- name: Get all Authentik applications
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/?page_size=100"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: all_apps
+  no_log: true
+
+- name: Collect application PKs that have providers
+  ansible.builtin.set_fact:
+    all_app_pks: "{{ all_apps.json.results | selectattr('provider', 'ne', None) | map(attribute='pk') | list }}"
+
+- name: Update embedded outpost with all applications
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/outposts/instances/{{ outpost_pk }}/"
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      providers: >-
+        {{ all_apps.json.results
+           | selectattr('provider', 'ne', None)
+           | map(attribute='provider')
+           | list }}
+    status_code: 200
+  no_log: true

@@ -1,3 +1,4 @@
 ---
 authentik_namespace: "authentik"
 authentik_secret_name: "authentik-credentials"
+authentik_bootstrap_token_name: "ansible-bootstrap-token"
