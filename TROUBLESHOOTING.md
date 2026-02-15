@@ -215,6 +215,158 @@ ssh debian@10.30.0.10 "kubectl get pods -n authentik -w"
 
 **Note:** Like Loki, PostgreSQL with `persistence.enabled: false` uses emptyDir — all data is lost on pod deletion or node reboot. Deploy a StorageClass (local-path-provisioner or Longhorn) before running stateful services in production.
 
+## Authentik: AUTHENTIK_BOOTSTRAP_TOKEN only works on first startup
+
+The `AUTHENTIK_BOOTSTRAP_TOKEN` environment variable only creates an API token during the **initial database bootstrap** (first startup with empty database). If Authentik has already been started, adding the env var and restarting has no effect — the token won't be created.
+
+**Fix:** Create the token via Django shell (`ak shell`) instead:
+
+```bash
+ssh debian@10.30.0.10 'kubectl exec -n authentik deployment/authentik-server -- ak shell -c "
+from authentik.core.models import Token, TokenIntents, User
+user = User.objects.get(username=\"akadmin\")
+token, created = Token.objects.get_or_create(
+    identifier=\"my-api-token\",
+    defaults={
+        \"user\": user,
+        \"intent\": TokenIntents.INTENT_API,
+        \"key\": \"your-token-value-here\",
+        \"expiring\": False,
+    }
+)
+print(f\"Token created: {created}, key: {token.key[:8]}...\")
+"'
+```
+
+In Ansible, pipe via heredoc since `ak shell -c` has quoting issues over SSH:
+
+```yaml
+- name: Ensure API token exists in Authentik database
+  become: false
+  ansible.builtin.shell: |
+    cat <<'PYEOF' | kubectl exec -i -n authentik deployment/authentik-server -- ak shell
+    from authentik.core.models import Token, TokenIntents, User
+    user = User.objects.get(username="akadmin")
+    token, created = Token.objects.get_or_create(
+        identifier="my-api-token",
+        defaults={
+            "user": user,
+            "intent": TokenIntents.INTENT_API,
+            "key": "{{ my_token_var }}",
+            "expiring": False,
+        }
+    )
+    print(f"Token created: {created}")
+    PYEOF
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+```
+
+## Authentik API: invalidation_flow and redirect_uris format (2025.12+)
+
+Authentik 2025.12 introduced **required** fields that weren't needed in earlier versions. API calls to create providers will fail with 400 errors if these are missing.
+
+**`invalidation_flow` is required** for all provider types (proxy, OAuth2):
+
+```json
+{"invalidation_flow": ["This field is required."]}
+```
+
+**Fix:** Fetch the default invalidation flow and include it in all provider creation requests:
+
+```bash
+# Get the invalidation flow UUID
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:9000/api/v3/flows/instances/?designation=invalidation \
+  | jq '.results[0].pk'
+```
+
+**`redirect_uris` must be a list of objects**, not strings:
+
+```json
+{"redirect_uris": {"non_field_errors": ["Expected a list of items but got type \"str\"."]}}
+```
+
+**Fix:** Each redirect URI needs `matching_mode` and `url` fields:
+
+```yaml
+# Wrong
+redirect_uris: "https://grafana.example.com/login/generic_oauth"
+
+# Also wrong
+redirect_uris:
+  - "https://grafana.example.com/login/generic_oauth"
+
+# Correct
+redirect_uris:
+  - matching_mode: strict
+    url: "https://grafana.example.com/login/generic_oauth"
+```
+
+## Ansible: background port-forward dies between tasks
+
+Using `&` to background `kubectl port-forward` in an Ansible `shell` task doesn't work — the process gets killed when the SSH channel for that task closes.
+
+```yaml
+# Broken — port-forward dies after this task completes
+- name: Start port-forward
+  ansible.builtin.shell: >-
+    kubectl port-forward svc/my-svc 9000:80 &
+    echo $!
+```
+
+**Fix:** Use `nohup` and redirect output to a file:
+
+```yaml
+- name: Start port-forward
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/my-svc 9000:80
+    > /tmp/pf.log 2>&1 &
+    echo $!
+  register: pf_pid
+
+- name: Wait for port-forward
+  become: false
+  ansible.builtin.wait_for:
+    port: 9000
+    host: 127.0.0.1
+    timeout: 30
+
+# ... do work ...
+
+- name: Kill port-forward
+  become: false
+  ansible.builtin.command: "kill {{ pf_pid.stdout_lines[-1] }}"
+  failed_when: false
+```
+
+## ArgoCD Helm chart: configs.rbac vs configs.rbacConfig
+
+The argo-cd Helm chart uses `configs.rbac` for RBAC policy configuration. Using `configs.rbacConfig` (which appears in some older docs/examples) silently does nothing — the configmap gets default empty values.
+
+```yaml
+# Wrong — silently ignored
+argo-cd:
+  configs:
+    rbacConfig:
+      policy.default: role:readonly
+
+# Correct
+argo-cd:
+  configs:
+    rbac:
+      policy.default: role:readonly
+      policy.csv: |
+        g, authentik Admins, role:admin
+```
+
+Verify the RBAC config was applied:
+
+```bash
+kubectl get configmap argocd-rbac-cm -n argocd -o jsonpath='{.data}'
+```
+
 ## General cluster health
 
 ```bash
