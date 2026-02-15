@@ -1,6 +1,13 @@
 headlamp:
   clusterRoleBinding:
     create: true
+  config:
+    oidc:
+      secret:
+        create: false
+      externalSecret:
+        enabled: true
+        name: headlamp-oidc
   ingress:
     enabled: true
     ingressClassName: traefik

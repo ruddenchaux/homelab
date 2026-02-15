@@ -24,3 +24,10 @@ authentik_argocd_app_slug: "argocd"
 authentik_argocd_redirect_uri: "https://argocd.ruddenchaux.xyz/auth/callback"
 authentik_argocd_secret_name: "argocd-oidc"
 authentik_argocd_secret_namespace: "argocd"
+
+# Headlamp OIDC
+authentik_headlamp_provider_name: "Headlamp"
+authentik_headlamp_app_slug: "headlamp"
+authentik_headlamp_redirect_uri: "https://dashboard.ruddenchaux.xyz/oidc-callback"
+authentik_headlamp_secret_name: "headlamp-oidc"
+authentik_headlamp_secret_namespace: "kubernetes-dashboard"

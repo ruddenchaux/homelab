@@ -147,6 +147,9 @@
 - name: Configure ArgoCD OIDC provider and application
   ansible.builtin.include_tasks: oidc-argocd.yml
 
+- name: Configure Headlamp OIDC provider and application
+  ansible.builtin.include_tasks: oidc-headlamp.yml
+
 - name: Configure embedded outpost
   ansible.builtin.include_tasks: outpost.yml
 
