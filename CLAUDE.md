@@ -43,7 +43,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Authentik SSO at auth.ruddenchaux.xyz (identity provider, Traefik ForwardAuth middleware)
 - Worker VMs have 500GB HDD data disk (scsi1 on datapool), mounted at /data/local-path-provisioner
 - local-path-provisioner deployed as default StorageClass (`local-path`)
-- Loki persistence enabled (10Gi PVC), Authentik PostgreSQL (8Gi) + Redis (2Gi) persistence enabled
+- Loki persistence enabled (10Gi PVC), Authentik PostgreSQL (8Gi) persistence enabled
 
 ## Completed Tasks
 1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
@@ -112,7 +112,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - local-path-provisioner (v0.0.34) deployed via ArgoCD as default StorageClass
    - Sync wave: 0 (before all services needing PVCs)
    - Loki persistence enabled (10Gi PVC, path_prefix /var/loki)
-   - Authentik PostgreSQL (8Gi) + Redis (2Gi) persistence enabled
+   - Authentik PostgreSQL (8Gi) persistence enabled (chart has no Redis subchart)
    - Packer template updated with second disk for future VM builds
 
 ## Pending Tasks (in order)

@@ -20,10 +20,6 @@ authentik:
         size: 8Gi
   redis:
     enabled: true
-    master:
-      persistence:
-        enabled: true
-        size: 2Gi
   server:
     ingress:
       enabled: true
