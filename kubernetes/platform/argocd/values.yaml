@@ -10,7 +10,7 @@ argo-cd:
         clientID: $oidc.authentik.clientID
         clientSecret: $oidc.authentik.clientSecret
         requestedScopes: ["openid", "profile", "email", "groups"]
-    rbacConfig:
+    rbac:
       policy.default: role:readonly
       policy.csv: |
         g, authentik Admins, role:admin
