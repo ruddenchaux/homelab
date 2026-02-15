@@ -4,6 +4,7 @@ loki:
     auth_enabled: false
     commonConfig:
       replication_factor: 1
+      path_prefix: /tmp/loki
     storage:
       type: filesystem
       filesystem:
