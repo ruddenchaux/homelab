@@ -1,6 +1,9 @@
 ---
 media_namespace: "media"
 
+# qBittorrent admin password (set after initial temp password)
+media_qbt_admin_password: "adminadmin"
+
 # Service ports (must match k8s Service definitions)
 media_qbittorrent_port: 8080
 media_radarr_port: 7878

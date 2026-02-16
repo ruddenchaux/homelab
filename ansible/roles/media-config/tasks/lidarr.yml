@@ -25,6 +25,8 @@
     body:
       path: "{{ media_music_path }}"
       name: Music
+      defaultQualityProfileId: 1
+      defaultMetadataProfileId: 1
     status_code: 201
   no_log: true
   when: media_music_path not in (lidarr_root_folders.json | map(attribute='path') | list)
@@ -54,6 +56,7 @@
       name: qBittorrent
       implementation: QBittorrent
       configContract: QBittorrentSettings
+      priority: 1
       fields:
         - name: host
           value: "qbittorrent.{{ media_namespace }}.svc.cluster.local"
@@ -62,19 +65,19 @@
         - name: username
           value: admin
         - name: password
-          value: adminadmin
+          value: "{{ media_qbt_admin_password }}"
         - name: musicCategory
           value: music
-        - name: musicImportedCategory
-          value: ""
-        - name: recentMusicPriority
-          value: 0
-        - name: olderMusicPriority
-          value: 0
-        - name: initialState
-          value: 0
         - name: useSsl
           value: false
-    status_code: 201
+    status_code:
+      - 201
+      - 400
+  register: lidarr_qbt_result
   no_log: true
   when: "'qBittorrent' not in (lidarr_download_clients.json | map(attribute='name') | list)"
+
+- name: Warn if qBittorrent connection failed for Lidarr
+  ansible.builtin.debug:
+    msg: "qBittorrent download client not added to Lidarr - configure qBittorrent password first, then re-run"
+  when: lidarr_qbt_result.status | default(0) == 400

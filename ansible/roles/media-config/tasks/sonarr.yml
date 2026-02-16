@@ -53,6 +53,7 @@
       name: qBittorrent
       implementation: QBittorrent
       configContract: QBittorrentSettings
+      priority: 1
       fields:
         - name: host
           value: "qbittorrent.{{ media_namespace }}.svc.cluster.local"
@@ -61,19 +62,19 @@
         - name: username
           value: admin
         - name: password
-          value: adminadmin
+          value: "{{ media_qbt_admin_password }}"
         - name: tvCategory
           value: tv
-        - name: tvImportedCategory
-          value: ""
-        - name: recentTvPriority
-          value: 0
-        - name: olderTvPriority
-          value: 0
-        - name: initialState
-          value: 0
         - name: useSsl
           value: false
-    status_code: 201
+    status_code:
+      - 201
+      - 400
+  register: sonarr_qbt_result
   no_log: true
   when: "'qBittorrent' not in (sonarr_download_clients.json | map(attribute='name') | list)"
+
+- name: Warn if qBittorrent connection failed for Sonarr
+  ansible.builtin.debug:
+    msg: "qBittorrent download client not added to Sonarr - configure qBittorrent password first, then re-run"
+  when: sonarr_qbt_result.status | default(0) == 400
