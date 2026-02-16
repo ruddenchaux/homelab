@@ -57,7 +57,7 @@ lidarr:
 
 # Readarr (books)
 readarr:
-  image: lscr.io/linuxserver/readarr:develop
+  image: ghcr.io/hotio/readarr:release
   port: 8787
   subdomain: readarr
 
