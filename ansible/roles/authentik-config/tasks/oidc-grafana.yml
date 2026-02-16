@@ -98,6 +98,7 @@
       authorization_flow: "{{ authentik_authorization_flow }}"
       authentication_flow: "{{ authentik_authentication_flow }}"
       invalidation_flow: "{{ authentik_invalidation_flow }}"
+      signing_key: "{{ authentik_signing_key }}"
       property_mappings:
         - "{{ authentik_scope_openid }}"
         - "{{ authentik_scope_email }}"

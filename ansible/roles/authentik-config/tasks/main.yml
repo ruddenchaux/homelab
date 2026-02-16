@@ -138,6 +138,41 @@
     authentik_scope_openid: "{{ scope_mappings.json.results | selectattr('scope_name', 'equalto', 'openid') | map(attribute='pk') | first }}"
     authentik_scope_profile: "{{ scope_mappings.json.results | selectattr('scope_name', 'equalto', 'profile') | map(attribute='pk') | first }}"
 
+- name: Check if JWT signing certificate exists
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/crypto/certificatekeypairs/?name={{ authentik_jwt_cert_name | urlencode }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: jwt_certs
+  no_log: true
+
+- name: Generate JWT signing certificate
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/crypto/certificatekeypairs/generate/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      common_name: "{{ authentik_jwt_cert_name }}"
+      subject_alt_name: "{{ authentik_jwt_cert_name }}"
+      validity_days: 3650
+    status_code: 201
+  register: jwt_cert_created
+  no_log: true
+  when: jwt_certs.json.pagination.count == 0
+
+- name: Set JWT signing certificate UUID
+  ansible.builtin.set_fact:
+    authentik_signing_key: >-
+      {{ (jwt_certs.json.pagination.count > 0)
+         | ternary(jwt_certs.json.results[0].pk,
+                   jwt_cert_created.json.pk) }}
+
 - name: Configure ForwardAuth provider and application
   ansible.builtin.include_tasks: forwardauth.yml
 

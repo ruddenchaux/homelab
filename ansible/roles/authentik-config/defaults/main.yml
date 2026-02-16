@@ -5,6 +5,7 @@ authentik_namespace: "authentik"
 authentik_secret_name: "authentik-credentials"
 authentik_bootstrap_token_name: "ansible-bootstrap-token"
 authentik_local_port: 9000
+authentik_jwt_cert_name: "authentik JWT Signing Key"
 
 # ForwardAuth
 authentik_forwardauth_provider_name: "forward-domain-provider"

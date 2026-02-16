@@ -367,6 +367,35 @@ Verify the RBAC config was applied:
 kubectl get configmap argocd-rbac-cm -n argocd -o jsonpath='{.data}'
 ```
 
+## Authentik OAuth2: HS256 instead of RS256 signing
+
+Authentik OAuth2 providers default to HS256 (symmetric) JWT signing when no `signing_key` is set, or when `signing_key` references a **non-existent certificate UUID**. OIDC clients that require RS256 (e.g. Headlamp) will fail with:
+
+```
+oidc: malformed jwt: go-jose/go-jose: unexpected signature algorithm "HS256"; expected ["RS256"]
+```
+
+This can happen when a certificate is lost (e.g. PostgreSQL data reset before persistence was enabled) — the provider still references the old UUID but the certificate no longer exists, so Authentik silently falls back to HS256.
+
+**Fix:** Generate a new signing certificate and update all providers:
+
+```bash
+# Generate a new RSA keypair for JWT signing
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  http://localhost:9000/api/v3/crypto/certificatekeypairs/generate/ \
+  -d '{"common_name": "authentik JWT Signing Key", "subject_alt_name": "authentik JWT Signing Key", "validity_days": 3650}' \
+  | jq '.pk'
+
+# Patch each OAuth2 provider with the new signing key UUID
+curl -s -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  http://localhost:9000/api/v3/providers/oauth2/<provider-pk>/ \
+  -d '{"signing_key": "<new-cert-uuid>"}'
+```
+
+In Ansible, the `authentik-config` role finds or creates the certificate by name (`authentik JWT Signing Key`) and includes `signing_key` in all OAuth2 provider creation requests.
+
 ## General cluster health
 
 ```bash
