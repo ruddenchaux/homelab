@@ -36,6 +36,7 @@ spec:
               mkdir -p /data/media/tv
               mkdir -p /data/media/music
               mkdir -p /data/media/books
+              chown -R {{ .Values.linuxserver.puid }}:{{ .Values.linuxserver.pgid }} /data/media
           volumeMounts:
             {{- include "media.mediaVolumeMount" . | nindent 12 }}
       containers:

@@ -58,7 +58,7 @@
         - name: host
           value: "qbittorrent.{{ media_namespace }}.svc.cluster.local"
         - name: port
-          value: {{ media_qbittorrent_port }}
+          value: "{{ media_qbittorrent_port }}"
         - name: username
           value: admin
         - name: password

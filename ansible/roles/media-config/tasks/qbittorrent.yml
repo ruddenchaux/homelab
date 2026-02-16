@@ -1,9 +1,9 @@
 ---
 # Configure qBittorrent via Web API
 # API docs: https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)
-# Default credentials: admin / adminadmin (on first launch)
+# qBittorrent 4.6+ generates a random temp password on each start
 
-- name: Login to qBittorrent
+- name: Try login to qBittorrent with known password
   become: false
   ansible.builtin.uri:
     url: "{{ media_qbt_url }}/api/v2/auth/login"
@@ -11,19 +11,67 @@
     body_format: form-urlencoded
     body:
       username: admin
-      password: adminadmin
+      password: "{{ media_qbt_admin_password }}"
     status_code:
       - 200
     return_content: true
-  register: qbt_login
-  until: qbt_login.status == 200
-  retries: 5
-  delay: 10
+  register: qbt_login_known
+  failed_when: false
+  no_log: true
+
+- name: Read qBittorrent temp password from logs
+  become: false
+  ansible.builtin.shell: >-
+    kubectl logs deploy/qbittorrent -n {{ media_namespace }} -c qbittorrent
+    | sed -n 's/.*A temporary password is provided for this session: //p'
+    | tail -1
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: qbt_temp_password
+  changed_when: false
+  no_log: true
+  when: "'Ok' not in (qbt_login_known.content | default(''))"
+
+- name: Login to qBittorrent with temp password
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/auth/login"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: admin
+      password: "{{ qbt_temp_password.stdout | trim }}"
+    status_code:
+      - 200
+    return_content: true
+  register: qbt_login_temp
+  until: qbt_login_temp.status == 200 and 'Ok' in qbt_login_temp.content
+  retries: 3
+  delay: 5
+  no_log: true
+  when: "'Ok' not in (qbt_login_known.content | default(''))"
 
 - name: Store qBittorrent SID cookie
   ansible.builtin.set_fact:
-    qbt_cookie: "{{ qbt_login.cookies_string }}"
+    qbt_cookie: >-
+      {{ ('Ok' in (qbt_login_known.content | default('')))
+         | ternary(qbt_login_known.cookies_string,
+                   qbt_login_temp.cookies_string | default('')) }}
   no_log: true
+
+- name: Set known admin password
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/app/setPreferences"
+    method: POST
+    headers:
+      Cookie: "{{ qbt_cookie }}"
+    body_format: form-urlencoded
+    body:
+      json: '{"web_ui_password":"{{ media_qbt_admin_password }}"}'
+    status_code: 200
+  no_log: true
+  when: "'Ok' not in (qbt_login_known.content | default(''))"
 
 - name: Set qBittorrent download preferences
   become: false

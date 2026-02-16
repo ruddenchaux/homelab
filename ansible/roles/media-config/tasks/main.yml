@@ -25,7 +25,7 @@
   become: false
   ansible.builtin.command: >-
     kubectl exec deploy/radarr -n {{ media_namespace }}
-    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+    -- sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: radarr_api_key_result
@@ -38,7 +38,7 @@
   become: false
   ansible.builtin.command: >-
     kubectl exec deploy/sonarr -n {{ media_namespace }}
-    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+    -- sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: sonarr_api_key_result
@@ -51,7 +51,7 @@
   become: false
   ansible.builtin.command: >-
     kubectl exec deploy/prowlarr -n {{ media_namespace }}
-    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+    -- sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: prowlarr_api_key_result
@@ -64,7 +64,7 @@
   become: false
   ansible.builtin.command: >-
     kubectl exec deploy/lidarr -n {{ media_namespace }}
-    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+    -- sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: lidarr_api_key_result
@@ -77,7 +77,7 @@
   become: false
   ansible.builtin.command: >-
     kubectl exec deploy/readarr -n {{ media_namespace }}
-    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+    -- sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: readarr_api_key_result
@@ -88,17 +88,16 @@
 
 - name: Read Bazarr API key
   become: false
-  ansible.builtin.shell: >-
+  ansible.builtin.command: >-
     kubectl exec deploy/bazarr -n {{ media_namespace }}
-    -- sqlite3 /config/db/bazarr.db
-    "SELECT value FROM system WHERE key='auth_apikey';"
+    -- sed -n '/^auth:/,/^[a-z]/{ s/^  apikey: //p; }' /config/config/config.yaml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: bazarr_api_key_result
   changed_when: false
   retries: 5
   delay: 15
-  until: bazarr_api_key_result.rc == 0
+  until: bazarr_api_key_result.rc == 0 and bazarr_api_key_result.stdout | trim | length > 0
 
 - name: Store API keys
   ansible.builtin.set_fact:
@@ -239,8 +238,9 @@
     - "{{ media_pf_base_port + 6 }}"
 
 # Configure each service
-- name: Configure qBittorrent
-  ansible.builtin.include_tasks: qbittorrent.yml
+# qBittorrent is configured manually via WebUI
+# - name: Configure qBittorrent
+#   ansible.builtin.include_tasks: qbittorrent.yml
 
 - name: Configure Radarr
   ansible.builtin.include_tasks: radarr.yml

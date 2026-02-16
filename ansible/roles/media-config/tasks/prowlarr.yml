@@ -39,7 +39,7 @@
         - name: apiKey
           value: "{{ media_radarr_api_key }}"
         - name: syncCategories
-          value: {{ media_prowlarr_sync_categories.radarr | to_json }}
+          value: "{{ media_prowlarr_sync_categories.radarr | to_json }}"
     status_code: 201
   no_log: true
   when: "'Radarr' not in prowlarr_existing_apps"
@@ -66,7 +66,7 @@
         - name: apiKey
           value: "{{ media_sonarr_api_key }}"
         - name: syncCategories
-          value: {{ media_prowlarr_sync_categories.sonarr | to_json }}
+          value: "{{ media_prowlarr_sync_categories.sonarr | to_json }}"
     status_code: 201
   no_log: true
   when: "'Sonarr' not in prowlarr_existing_apps"
@@ -93,7 +93,7 @@
         - name: apiKey
           value: "{{ media_lidarr_api_key }}"
         - name: syncCategories
-          value: {{ media_prowlarr_sync_categories.lidarr | to_json }}
+          value: "{{ media_prowlarr_sync_categories.lidarr | to_json }}"
     status_code: 201
   no_log: true
   when: "'Lidarr' not in prowlarr_existing_apps"
@@ -120,7 +120,7 @@
         - name: apiKey
           value: "{{ media_readarr_api_key }}"
         - name: syncCategories
-          value: {{ media_prowlarr_sync_categories.readarr | to_json }}
+          value: "{{ media_prowlarr_sync_categories.readarr | to_json }}"
     status_code: 201
   no_log: true
   when: "'Readarr' not in prowlarr_existing_apps"
