@@ -61,6 +61,8 @@ spec:
               value: {{ .Values.qbittorrent.port | quote }}
             - name: DOT
               value: "off"
+            - name: HEALTH_SERVER_ADDRESS
+              value: "0.0.0.0:9999"
           ports:
             - name: qbt-web
               containerPort: {{ .Values.qbittorrent.port }}

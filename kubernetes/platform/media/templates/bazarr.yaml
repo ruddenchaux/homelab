@@ -30,14 +30,12 @@ spec:
               containerPort: {{ .Values.bazarr.port }}
               protocol: TCP
           livenessProbe:
-            httpGet:
-              path: /api/system/health
+            tcpSocket:
               port: http
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
-            httpGet:
-              path: /api/system/health
+            tcpSocket:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
