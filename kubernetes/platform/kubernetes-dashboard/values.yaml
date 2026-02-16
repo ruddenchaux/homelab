@@ -3,6 +3,7 @@ headlamp:
     create: true
   config:
     oidc:
+      callbackURL: "https://dashboard.ruddenchaux.xyz/oidc-callback"
       secret:
         create: false
       externalSecret:
