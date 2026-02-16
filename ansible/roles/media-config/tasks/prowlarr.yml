@@ -1,0 +1,126 @@
+---
+# Configure Prowlarr via API v1
+# - Add all *arr apps as sync targets (applications)
+# Prowlarr will auto-sync indexers to connected apps
+
+- name: Check existing Prowlarr applications
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/applications"
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_apps
+  no_log: true
+
+- name: Set existing Prowlarr app names
+  ansible.builtin.set_fact:
+    prowlarr_existing_apps: "{{ prowlarr_apps.json | map(attribute='name') | list }}"
+
+- name: Add Radarr to Prowlarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/applications"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      syncLevel: fullSync
+      name: Radarr
+      implementation: Radarr
+      configContract: RadarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://prowlarr.{{ media_namespace }}.svc.cluster.local:{{ media_prowlarr_port }}"
+        - name: baseUrl
+          value: "http://radarr.{{ media_namespace }}.svc.cluster.local:{{ media_radarr_port }}"
+        - name: apiKey
+          value: "{{ media_radarr_api_key }}"
+        - name: syncCategories
+          value: {{ media_prowlarr_sync_categories.radarr | to_json }}
+    status_code: 201
+  no_log: true
+  when: "'Radarr' not in prowlarr_existing_apps"
+
+- name: Add Sonarr to Prowlarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/applications"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      syncLevel: fullSync
+      name: Sonarr
+      implementation: Sonarr
+      configContract: SonarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://prowlarr.{{ media_namespace }}.svc.cluster.local:{{ media_prowlarr_port }}"
+        - name: baseUrl
+          value: "http://sonarr.{{ media_namespace }}.svc.cluster.local:{{ media_sonarr_port }}"
+        - name: apiKey
+          value: "{{ media_sonarr_api_key }}"
+        - name: syncCategories
+          value: {{ media_prowlarr_sync_categories.sonarr | to_json }}
+    status_code: 201
+  no_log: true
+  when: "'Sonarr' not in prowlarr_existing_apps"
+
+- name: Add Lidarr to Prowlarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/applications"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      syncLevel: fullSync
+      name: Lidarr
+      implementation: Lidarr
+      configContract: LidarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://prowlarr.{{ media_namespace }}.svc.cluster.local:{{ media_prowlarr_port }}"
+        - name: baseUrl
+          value: "http://lidarr.{{ media_namespace }}.svc.cluster.local:{{ media_lidarr_port }}"
+        - name: apiKey
+          value: "{{ media_lidarr_api_key }}"
+        - name: syncCategories
+          value: {{ media_prowlarr_sync_categories.lidarr | to_json }}
+    status_code: 201
+  no_log: true
+  when: "'Lidarr' not in prowlarr_existing_apps"
+
+- name: Add Readarr to Prowlarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/applications"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      syncLevel: fullSync
+      name: Readarr
+      implementation: Readarr
+      configContract: ReadarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://prowlarr.{{ media_namespace }}.svc.cluster.local:{{ media_prowlarr_port }}"
+        - name: baseUrl
+          value: "http://readarr.{{ media_namespace }}.svc.cluster.local:{{ media_readarr_port }}"
+        - name: apiKey
+          value: "{{ media_readarr_api_key }}"
+        - name: syncCategories
+          value: {{ media_prowlarr_sync_categories.readarr | to_json }}
+    status_code: 201
+  no_log: true
+  when: "'Readarr' not in prowlarr_existing_apps"

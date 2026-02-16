@@ -1,0 +1,68 @@
+domain: ruddenchaux.xyz
+
+# Node pinning — all media pods on same worker for shared local-path PVC
+nodeSelector:
+  kubernetes.io/hostname: k8s-worker-01
+
+# Shared environment for LinuxServer.io containers
+linuxserver:
+  puid: "1000"
+  pgid: "1000"
+  tz: "Europe/Rome"
+
+# Storage
+storage:
+  mediaLibrary:
+    size: 400Gi
+    storageClass: local-path
+  configSize: 2Gi
+
+# Gluetun VPN
+gluetun:
+  image: ghcr.io/qdm12/gluetun:v3
+  vpnServiceProvider: nordvpn
+  vpnType: wireguard
+  # NordVPN server selection
+  serverCountries: "Netherlands"
+
+# qBittorrent
+qbittorrent:
+  image: lscr.io/linuxserver/qbittorrent:latest
+  port: 8080
+  subdomain: qbittorrent
+
+# Radarr (movies)
+radarr:
+  image: lscr.io/linuxserver/radarr:latest
+  port: 7878
+  subdomain: radarr
+
+# Sonarr (TV)
+sonarr:
+  image: lscr.io/linuxserver/sonarr:latest
+  port: 8989
+  subdomain: sonarr
+
+# Prowlarr (indexer manager)
+prowlarr:
+  image: lscr.io/linuxserver/prowlarr:latest
+  port: 9696
+  subdomain: prowlarr
+
+# Lidarr (music)
+lidarr:
+  image: lscr.io/linuxserver/lidarr:latest
+  port: 8686
+  subdomain: lidarr
+
+# Readarr (books)
+readarr:
+  image: lscr.io/linuxserver/readarr:latest
+  port: 8787
+  subdomain: readarr
+
+# Bazarr (subtitles)
+bazarr:
+  image: lscr.io/linuxserver/bazarr:latest
+  port: 6767
+  subdomain: bazarr

@@ -1,0 +1,80 @@
+---
+# Configure Lidarr via API v1
+# - Add root folder for music
+# - Add qBittorrent as download client
+
+- name: Check existing Lidarr root folders
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/rootfolder"
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+    return_content: true
+  register: lidarr_root_folders
+  no_log: true
+
+- name: Add Lidarr root folder
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/rootfolder"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      path: "{{ media_music_path }}"
+      name: Music
+    status_code: 201
+  no_log: true
+  when: media_music_path not in (lidarr_root_folders.json | map(attribute='path') | list)
+
+- name: Check existing Lidarr download clients
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/downloadclient"
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+    return_content: true
+  register: lidarr_download_clients
+  no_log: true
+
+- name: Add qBittorrent to Lidarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: torrent
+      name: qBittorrent
+      implementation: QBittorrent
+      configContract: QBittorrentSettings
+      fields:
+        - name: host
+          value: "qbittorrent.{{ media_namespace }}.svc.cluster.local"
+        - name: port
+          value: {{ media_qbittorrent_port }}
+        - name: username
+          value: admin
+        - name: password
+          value: adminadmin
+        - name: musicCategory
+          value: music
+        - name: musicImportedCategory
+          value: ""
+        - name: recentMusicPriority
+          value: 0
+        - name: olderMusicPriority
+          value: 0
+        - name: initialState
+          value: 0
+        - name: useSsl
+          value: false
+    status_code: 201
+  no_log: true
+  when: "'qBittorrent' not in (lidarr_download_clients.json | map(attribute='name') | list)"

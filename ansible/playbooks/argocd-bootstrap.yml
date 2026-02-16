@@ -9,6 +9,11 @@
   roles:
     - authentik-secrets
 
+- name: Create media secrets
+  hosts: k8s_control_plane
+  roles:
+    - media-secrets
+
 - name: Bootstrap ArgoCD and GitOps
   hosts: k8s_control_plane
   roles:
@@ -18,3 +23,10 @@
   hosts: k8s_control_plane
   roles:
     - authentik-config
+
+- name: Configure media stack inter-service connections
+  hosts: k8s_control_plane
+  tags:
+    - media-config
+  roles:
+    - media-config

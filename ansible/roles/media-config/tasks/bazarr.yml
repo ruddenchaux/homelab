@@ -1,0 +1,46 @@
+---
+# Configure Bazarr via API
+# - Add Radarr connection (movies subtitles)
+# - Add Sonarr connection (TV subtitles)
+
+- name: Check existing Bazarr Radarr connection
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_bazarr_url }}/api/system/settings"
+    headers:
+      X-API-KEY: "{{ media_bazarr_api_key }}"
+    return_content: true
+  register: bazarr_settings
+  no_log: true
+
+- name: Configure Bazarr Radarr connection
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_bazarr_url }}/api/system/settings"
+    method: POST
+    headers:
+      X-API-KEY: "{{ media_bazarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      radarr:
+        ip: "radarr.{{ media_namespace }}.svc.cluster.local"
+        port: "{{ media_radarr_port }}"
+        apikey: "{{ media_radarr_api_key }}"
+        base_url: ""
+        ssl: false
+        only_monitored: false
+      sonarr:
+        ip: "sonarr.{{ media_namespace }}.svc.cluster.local"
+        port: "{{ media_sonarr_port }}"
+        apikey: "{{ media_sonarr_api_key }}"
+        base_url: ""
+        ssl: false
+        only_monitored: false
+    status_code:
+      - 200
+      - 204
+  no_log: true
+  when: >-
+    bazarr_settings.json.radarr.ip | default('') == '' or
+    bazarr_settings.json.sonarr.ip | default('') == ''

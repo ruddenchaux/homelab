@@ -1,0 +1,80 @@
+---
+# Configure qBittorrent via Web API
+# API docs: https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)
+# Default credentials: admin / adminadmin (on first launch)
+
+- name: Login to qBittorrent
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/auth/login"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: admin
+      password: adminadmin
+    status_code:
+      - 200
+    return_content: true
+  register: qbt_login
+  until: qbt_login.status == 200
+  retries: 5
+  delay: 10
+
+- name: Store qBittorrent SID cookie
+  ansible.builtin.set_fact:
+    qbt_cookie: "{{ qbt_login.cookies_string }}"
+  no_log: true
+
+- name: Set qBittorrent download preferences
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/app/setPreferences"
+    method: POST
+    headers:
+      Cookie: "{{ qbt_cookie }}"
+    body_format: form-urlencoded
+    body:
+      json: "{{ media_qbt_preferences | to_json }}"
+    status_code: 200
+
+- name: Get existing qBittorrent categories
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/torrents/categories"
+    method: GET
+    headers:
+      Cookie: "{{ qbt_cookie }}"
+    return_content: true
+  register: qbt_existing_categories
+
+- name: Create qBittorrent categories
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/torrents/createCategory"
+    method: POST
+    headers:
+      Cookie: "{{ qbt_cookie }}"
+    body_format: form-urlencoded
+    body:
+      category: "{{ item.key }}"
+      savePath: "{{ item.value.savePath }}"
+    status_code:
+      - 200
+  loop: "{{ media_qbt_categories | dict2items }}"
+  when: item.key not in (qbt_existing_categories.json | default({}))
+
+- name: Update qBittorrent category save paths
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_qbt_url }}/api/v2/torrents/editCategory"
+    method: POST
+    headers:
+      Cookie: "{{ qbt_cookie }}"
+    body_format: form-urlencoded
+    body:
+      category: "{{ item.key }}"
+      savePath: "{{ item.value.savePath }}"
+    status_code:
+      - 200
+  loop: "{{ media_qbt_categories | dict2items }}"
+  when: item.key in (qbt_existing_categories.json | default({}))

@@ -49,6 +49,35 @@ homepage:
               href: https://dashboard.ruddenchaux.xyz
               description: Cluster management
               icon: headlamp
+      - Media:
+          - Radarr:
+              href: https://radarr.ruddenchaux.xyz
+              description: Movies
+              icon: radarr
+          - Sonarr:
+              href: https://sonarr.ruddenchaux.xyz
+              description: TV shows
+              icon: sonarr
+          - Lidarr:
+              href: https://lidarr.ruddenchaux.xyz
+              description: Music
+              icon: lidarr
+          - Readarr:
+              href: https://readarr.ruddenchaux.xyz
+              description: Books
+              icon: readarr
+          - Prowlarr:
+              href: https://prowlarr.ruddenchaux.xyz
+              description: Indexer manager
+              icon: prowlarr
+          - Bazarr:
+              href: https://bazarr.ruddenchaux.xyz
+              description: Subtitles
+              icon: bazarr
+          - qBittorrent:
+              href: https://qbittorrent.ruddenchaux.xyz
+              description: Download client
+              icon: qbittorrent
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006

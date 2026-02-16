@@ -1,0 +1,59 @@
+---
+# Allow intra-namespace pod-to-pod traffic
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: media-default
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: media-stack
+  ingress:
+    # Allow traffic from other media pods
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/part-of: media-stack
+    # Allow traffic from Traefik ingress controller
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: traefik
+  egress:
+    # Allow traffic to other media pods
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/part-of: media-stack
+    # Allow DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Allow HTTPS egress for metadata APIs (TVDB, TMDB, etc.)
+    - toCIDR:
+        - 0.0.0.0/0
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Additional egress for Gluetun VPN pod (WireGuard)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: media-gluetun-vpn
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: qbittorrent
+  egress:
+    # Allow WireGuard UDP traffic
+    - toCIDR:
+        - 0.0.0.0/0
+      toPorts:
+        - ports:
+            - port: "51820"
+              protocol: UDP

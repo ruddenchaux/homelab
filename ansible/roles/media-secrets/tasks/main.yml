@@ -1,0 +1,52 @@
+---
+# Create media namespace and NordVPN WireGuard credentials secret
+# Idempotent: only creates secret if it doesn't exist yet
+# Requires: nordvpn_wireguard_private_key variable at runtime
+
+- name: Create media namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ media_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: media_ns
+  changed_when: "'created' in media_ns.stdout"
+  failed_when: media_ns.rc != 0 and 'already exists' not in media_ns.stderr
+
+- name: Check if NordVPN credentials secret exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ media_vpn_secret_name }}
+    -n {{ media_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: vpn_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Template NordVPN credentials secret
+  ansible.builtin.template:
+    src: nordvpn-credentials-secret.yml.j2
+    dest: /tmp/nordvpn-credentials-secret.yml
+    mode: "0600"
+  no_log: true
+  when: vpn_secret_check.rc != 0
+
+- name: Apply NordVPN credentials secret
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/nordvpn-credentials-secret.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: vpn_secret_apply
+  changed_when: "'created' in vpn_secret_apply.stdout or 'configured' in vpn_secret_apply.stdout"
+  no_log: true
+  when: vpn_secret_check.rc != 0
+
+- name: Remove temporary VPN secret manifest
+  ansible.builtin.file:
+    path: /tmp/nordvpn-credentials-secret.yml
+    state: absent
+
+- name: NordVPN credentials secret already exists
+  ansible.builtin.debug:
+    msg: "Secret {{ media_vpn_secret_name }} already exists — skipping creation"
+  when: vpn_secret_check.rc == 0

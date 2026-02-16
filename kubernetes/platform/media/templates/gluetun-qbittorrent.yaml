@@ -1,0 +1,121 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: qbittorrent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "media.selectorLabels" "qbittorrent" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "media.selectorLabels" "qbittorrent" | nindent 8 }}
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      initContainers:
+        - name: init-media-dirs
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /data/media/downloads/complete/movies
+              mkdir -p /data/media/downloads/complete/tv
+              mkdir -p /data/media/downloads/complete/music
+              mkdir -p /data/media/downloads/complete/books
+              mkdir -p /data/media/downloads/incomplete
+              mkdir -p /data/media/movies
+              mkdir -p /data/media/tv
+              mkdir -p /data/media/music
+              mkdir -p /data/media/books
+          volumeMounts:
+            {{- include "media.mediaVolumeMount" . | nindent 12 }}
+      containers:
+        - name: gluetun
+          image: {{ .Values.gluetun.image }}
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          env:
+            - name: VPN_SERVICE_PROVIDER
+              value: {{ .Values.gluetun.vpnServiceProvider }}
+            - name: VPN_TYPE
+              value: {{ .Values.gluetun.vpnType }}
+            - name: SERVER_COUNTRIES
+              value: {{ .Values.gluetun.serverCountries | quote }}
+            - name: WIREGUARD_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nordvpn-credentials
+                  key: WIREGUARD_PRIVATE_KEY
+          ports:
+            - name: qbt-web
+              containerPort: {{ .Values.qbittorrent.port }}
+              protocol: TCP
+            - name: health
+              containerPort: 9999
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+        - name: qbittorrent
+          image: {{ .Values.qbittorrent.image }}
+          env:
+            {{- include "media.linuxserverEnv" . | nindent 12 }}
+            - name: WEBUI_PORT
+              value: {{ .Values.qbittorrent.port | quote }}
+          volumeMounts:
+            {{- include "media.mediaVolumeMount" . | nindent 12 }}
+            - name: qbittorrent-config
+              mountPath: /config
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 200m
+            limits:
+              memory: 1Gi
+      volumes:
+        {{- include "media.mediaVolume" . | nindent 8 }}
+        - name: qbittorrent-config
+          persistentVolumeClaim:
+            claimName: qbittorrent-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: qbittorrent
+spec:
+  selector:
+    {{- include "media.selectorLabels" "qbittorrent" | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.qbittorrent.port }}
+      targetPort: qbt-web
+      protocol: TCP

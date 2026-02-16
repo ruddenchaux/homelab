@@ -1,0 +1,84 @@
+---
+media_namespace: "media"
+
+# Service ports (must match k8s Service definitions)
+media_qbittorrent_port: 8080
+media_radarr_port: 7878
+media_sonarr_port: 8989
+media_prowlarr_port: 9696
+media_lidarr_port: 8686
+media_readarr_port: 8787
+media_bazarr_port: 6767
+
+# Local port-forward base (each service gets base + offset)
+media_pf_base_port: 19000
+
+# Media paths (must match PVC mount structure)
+media_download_path: "/data/media/downloads"
+media_movies_path: "/data/media/movies"
+media_tv_path: "/data/media/tv"
+media_music_path: "/data/media/music"
+media_books_path: "/data/media/books"
+
+# qBittorrent categories and save paths
+media_qbt_categories:
+  movies:
+    savePath: "/data/media/downloads/complete/movies"
+  tv:
+    savePath: "/data/media/downloads/complete/tv"
+  music:
+    savePath: "/data/media/downloads/complete/music"
+  books:
+    savePath: "/data/media/downloads/complete/books"
+
+# qBittorrent preferences
+media_qbt_preferences:
+  save_path: "/data/media/downloads/complete"
+  temp_path: "/data/media/downloads/incomplete"
+  temp_path_enabled: true
+  auto_tmm_enabled: false
+  max_ratio: -1
+  max_seeding_time: -1
+
+# Prowlarr category mappings
+# Radarr: Movies (2000-2999)
+# Sonarr: TV (5000-5999)
+# Lidarr: Audio (3000-3999)
+# Readarr: Books (7000-7999)
+media_prowlarr_sync_categories:
+  radarr:
+    - 2000
+    - 2010
+    - 2020
+    - 2030
+    - 2040
+    - 2045
+    - 2050
+    - 2060
+    - 2070
+    - 2080
+  sonarr:
+    - 5000
+    - 5010
+    - 5020
+    - 5030
+    - 5040
+    - 5045
+    - 5050
+    - 5060
+    - 5070
+    - 5080
+  lidarr:
+    - 3000
+    - 3010
+    - 3020
+    - 3030
+    - 3040
+  readarr:
+    - 7000
+    - 7010
+    - 7020
+    - 7030
+    - 7040
+    - 7050
+    - 7060

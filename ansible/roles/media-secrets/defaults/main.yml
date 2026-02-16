@@ -1,0 +1,3 @@
+---
+media_namespace: "media"
+media_vpn_secret_name: "nordvpn-credentials"

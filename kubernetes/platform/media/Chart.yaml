@@ -1,0 +1,4 @@
+apiVersion: v2
+name: media
+description: Servarr media stack (Radarr, Sonarr, Prowlarr, Lidarr, Readarr, Bazarr, qBittorrent + Gluetun VPN)
+version: 0.1.0

@@ -1,0 +1,79 @@
+---
+# Configure Sonarr via API v3
+# - Add root folder for TV shows
+# - Add qBittorrent as download client
+
+- name: Check existing Sonarr root folders
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/rootfolder"
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+    return_content: true
+  register: sonarr_root_folders
+  no_log: true
+
+- name: Add Sonarr root folder
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/rootfolder"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      path: "{{ media_tv_path }}"
+    status_code: 201
+  no_log: true
+  when: media_tv_path not in (sonarr_root_folders.json | map(attribute='path') | list)
+
+- name: Check existing Sonarr download clients
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/downloadclient"
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+    return_content: true
+  register: sonarr_download_clients
+  no_log: true
+
+- name: Add qBittorrent to Sonarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: torrent
+      name: qBittorrent
+      implementation: QBittorrent
+      configContract: QBittorrentSettings
+      fields:
+        - name: host
+          value: "qbittorrent.{{ media_namespace }}.svc.cluster.local"
+        - name: port
+          value: {{ media_qbittorrent_port }}
+        - name: username
+          value: admin
+        - name: password
+          value: adminadmin
+        - name: tvCategory
+          value: tv
+        - name: tvImportedCategory
+          value: ""
+        - name: recentTvPriority
+          value: 0
+        - name: olderTvPriority
+          value: 0
+        - name: initialState
+          value: 0
+        - name: useSsl
+          value: false
+    status_code: 201
+  no_log: true
+  when: "'qBittorrent' not in (sonarr_download_clients.json | map(attribute='name') | list)"

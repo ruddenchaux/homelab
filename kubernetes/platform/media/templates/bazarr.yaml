@@ -1,0 +1,74 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bazarr
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: bazarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "media.selectorLabels" "bazarr" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "media.selectorLabels" "bazarr" | nindent 8 }}
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+        - name: bazarr
+          image: {{ .Values.bazarr.image }}
+          env:
+            {{- include "media.linuxserverEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.bazarr.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/system/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/system/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            {{- include "media.mediaVolumeMount" . | nindent 12 }}
+            - name: config
+              mountPath: /config
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+      volumes:
+        {{- include "media.mediaVolume" . | nindent 8 }}
+        - name: config
+          persistentVolumeClaim:
+            claimName: bazarr-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bazarr
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: bazarr
+spec:
+  selector:
+    {{- include "media.selectorLabels" "bazarr" | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.bazarr.port }}
+      targetPort: http
+      protocol: TCP

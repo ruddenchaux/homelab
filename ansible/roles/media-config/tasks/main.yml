@@ -1,0 +1,269 @@
+---
+# Configure inter-service connections for the Servarr media stack
+# Pattern: port-forward to each service, read API keys, configure via REST API
+
+- name: Wait for all media deployments to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout status deployment/{{ item }}
+    -n {{ media_namespace }}
+    --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  loop:
+    - qbittorrent
+    - radarr
+    - sonarr
+    - prowlarr
+    - lidarr
+    - readarr
+    - bazarr
+  changed_when: false
+
+# Read API keys from config.xml files (*arr apps)
+- name: Read Radarr API key
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/radarr -n {{ media_namespace }}
+    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: radarr_api_key_result
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: radarr_api_key_result.rc == 0
+
+- name: Read Sonarr API key
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/sonarr -n {{ media_namespace }}
+    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: sonarr_api_key_result
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: sonarr_api_key_result.rc == 0
+
+- name: Read Prowlarr API key
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/prowlarr -n {{ media_namespace }}
+    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: prowlarr_api_key_result
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: prowlarr_api_key_result.rc == 0
+
+- name: Read Lidarr API key
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/lidarr -n {{ media_namespace }}
+    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: lidarr_api_key_result
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: lidarr_api_key_result.rc == 0
+
+- name: Read Readarr API key
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/readarr -n {{ media_namespace }}
+    -- grep -oP '<ApiKey>\K[^<]+' /config/config.xml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: readarr_api_key_result
+  changed_when: false
+  retries: 3
+  delay: 10
+  until: readarr_api_key_result.rc == 0
+
+- name: Read Bazarr API key
+  become: false
+  ansible.builtin.shell: >-
+    kubectl exec deploy/bazarr -n {{ media_namespace }}
+    -- sqlite3 /config/db/bazarr.db
+    "SELECT value FROM system WHERE key='auth_apikey';"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: bazarr_api_key_result
+  changed_when: false
+  retries: 5
+  delay: 15
+  until: bazarr_api_key_result.rc == 0
+
+- name: Store API keys
+  ansible.builtin.set_fact:
+    media_radarr_api_key: "{{ radarr_api_key_result.stdout | trim }}"
+    media_sonarr_api_key: "{{ sonarr_api_key_result.stdout | trim }}"
+    media_prowlarr_api_key: "{{ prowlarr_api_key_result.stdout | trim }}"
+    media_lidarr_api_key: "{{ lidarr_api_key_result.stdout | trim }}"
+    media_readarr_api_key: "{{ readarr_api_key_result.stdout | trim }}"
+    media_bazarr_api_key: "{{ bazarr_api_key_result.stdout | trim }}"
+  no_log: true
+
+# Start port-forwards for all services
+- name: Start port-forward to qBittorrent
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/qbittorrent
+    -n {{ media_namespace }}
+    {{ media_pf_base_port }}:{{ media_qbittorrent_port }}
+    > /tmp/media-pf-qbt.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_qbt_pid
+  changed_when: false
+
+- name: Start port-forward to Radarr
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/radarr
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 1 }}:{{ media_radarr_port }}
+    > /tmp/media-pf-radarr.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_radarr_pid
+  changed_when: false
+
+- name: Start port-forward to Sonarr
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/sonarr
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 2 }}:{{ media_sonarr_port }}
+    > /tmp/media-pf-sonarr.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_sonarr_pid
+  changed_when: false
+
+- name: Start port-forward to Prowlarr
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/prowlarr
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 3 }}:{{ media_prowlarr_port }}
+    > /tmp/media-pf-prowlarr.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_prowlarr_pid
+  changed_when: false
+
+- name: Start port-forward to Lidarr
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/lidarr
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 4 }}:{{ media_lidarr_port }}
+    > /tmp/media-pf-lidarr.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_lidarr_pid
+  changed_when: false
+
+- name: Start port-forward to Readarr
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/readarr
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 5 }}:{{ media_readarr_port }}
+    > /tmp/media-pf-readarr.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_readarr_pid
+  changed_when: false
+
+- name: Start port-forward to Bazarr
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/bazarr
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 6 }}:{{ media_bazarr_port }}
+    > /tmp/media-pf-bazarr.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_bazarr_pid
+  changed_when: false
+
+- name: Store port-forward PIDs
+  ansible.builtin.set_fact:
+    media_pf_pids:
+      - "{{ pf_qbt_pid.stdout_lines[-1] }}"
+      - "{{ pf_radarr_pid.stdout_lines[-1] }}"
+      - "{{ pf_sonarr_pid.stdout_lines[-1] }}"
+      - "{{ pf_prowlarr_pid.stdout_lines[-1] }}"
+      - "{{ pf_lidarr_pid.stdout_lines[-1] }}"
+      - "{{ pf_readarr_pid.stdout_lines[-1] }}"
+      - "{{ pf_bazarr_pid.stdout_lines[-1] }}"
+
+- name: Store local URLs
+  ansible.builtin.set_fact:
+    media_qbt_url: "http://localhost:{{ media_pf_base_port }}"
+    media_radarr_url: "http://localhost:{{ media_pf_base_port + 1 }}"
+    media_sonarr_url: "http://localhost:{{ media_pf_base_port + 2 }}"
+    media_prowlarr_url: "http://localhost:{{ media_pf_base_port + 3 }}"
+    media_lidarr_url: "http://localhost:{{ media_pf_base_port + 4 }}"
+    media_readarr_url: "http://localhost:{{ media_pf_base_port + 5 }}"
+    media_bazarr_url: "http://localhost:{{ media_pf_base_port + 6 }}"
+
+- name: Wait for all port-forwards to be ready
+  become: false
+  ansible.builtin.wait_for:
+    port: "{{ item }}"
+    host: 127.0.0.1
+    timeout: 30
+  loop:
+    - "{{ media_pf_base_port }}"
+    - "{{ media_pf_base_port + 1 }}"
+    - "{{ media_pf_base_port + 2 }}"
+    - "{{ media_pf_base_port + 3 }}"
+    - "{{ media_pf_base_port + 4 }}"
+    - "{{ media_pf_base_port + 5 }}"
+    - "{{ media_pf_base_port + 6 }}"
+
+# Configure each service
+- name: Configure qBittorrent
+  ansible.builtin.include_tasks: qbittorrent.yml
+
+- name: Configure Radarr
+  ansible.builtin.include_tasks: radarr.yml
+
+- name: Configure Sonarr
+  ansible.builtin.include_tasks: sonarr.yml
+
+- name: Configure Lidarr
+  ansible.builtin.include_tasks: lidarr.yml
+
+- name: Configure Readarr
+  ansible.builtin.include_tasks: readarr.yml
+
+- name: Configure Prowlarr
+  ansible.builtin.include_tasks: prowlarr.yml
+
+- name: Configure Bazarr
+  ansible.builtin.include_tasks: bazarr.yml
+
+# Cleanup port-forwards
+- name: Kill all port-forward processes
+  become: false
+  ansible.builtin.command: "kill {{ item }}"
+  loop: "{{ media_pf_pids }}"
+  changed_when: false
+  failed_when: false

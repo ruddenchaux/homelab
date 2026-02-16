@@ -1,0 +1,74 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidarr
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: lidarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "media.selectorLabels" "lidarr" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "media.selectorLabels" "lidarr" | nindent 8 }}
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      containers:
+        - name: lidarr
+          image: {{ .Values.lidarr.image }}
+          env:
+            {{- include "media.linuxserverEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.lidarr.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            {{- include "media.mediaVolumeMount" . | nindent 12 }}
+            - name: config
+              mountPath: /config
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+      volumes:
+        {{- include "media.mediaVolume" . | nindent 8 }}
+        - name: config
+          persistentVolumeClaim:
+            claimName: lidarr-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lidarr
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: lidarr
+spec:
+  selector:
+    {{- include "media.selectorLabels" "lidarr" | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.lidarr.port }}
+      targetPort: http
+      protocol: TCP

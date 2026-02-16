@@ -1,0 +1,35 @@
+---
+# Shared media library — downloads + organized library on the same filesystem for hardlinks
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-library
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.mediaLibrary.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.mediaLibrary.size }}
+---
+# Config PVCs — one per service
+{{- $services := list "qbittorrent" "radarr" "sonarr" "prowlarr" "lidarr" "readarr" "bazarr" }}
+{{- range $svc := $services }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $svc }}-config
+  labels:
+    {{- include "media.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ $svc }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ $.Values.storage.mediaLibrary.storageClass }}
+  resources:
+    requests:
+      storage: {{ $.Values.storage.configSize }}
+{{- end }}

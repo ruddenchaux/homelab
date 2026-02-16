@@ -1,0 +1,39 @@
+{{- $services := dict
+    "qbittorrent" (dict "port" (.Values.qbittorrent.port | int) "subdomain" .Values.qbittorrent.subdomain)
+    "radarr" (dict "port" (.Values.radarr.port | int) "subdomain" .Values.radarr.subdomain)
+    "sonarr" (dict "port" (.Values.sonarr.port | int) "subdomain" .Values.sonarr.subdomain)
+    "prowlarr" (dict "port" (.Values.prowlarr.port | int) "subdomain" .Values.prowlarr.subdomain)
+    "lidarr" (dict "port" (.Values.lidarr.port | int) "subdomain" .Values.lidarr.subdomain)
+    "readarr" (dict "port" (.Values.readarr.port | int) "subdomain" .Values.readarr.subdomain)
+    "bazarr" (dict "port" (.Values.bazarr.port | int) "subdomain" .Values.bazarr.subdomain)
+}}
+{{- range $name, $svc := $services }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "media.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {{ $svc.subdomain }}.{{ $.Values.domain }}
+      secretName: {{ $name }}-tls
+  rules:
+    - host: {{ $svc.subdomain }}.{{ $.Values.domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  number: {{ $svc.port }}
+{{- end }}
