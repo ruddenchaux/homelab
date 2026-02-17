@@ -238,9 +238,8 @@
     - "{{ media_pf_base_port + 6 }}"
 
 # Configure each service
-# qBittorrent is configured manually via WebUI
-# - name: Configure qBittorrent
-#   ansible.builtin.include_tasks: qbittorrent.yml
+- name: Configure qBittorrent
+  ansible.builtin.include_tasks: qbittorrent.yml
 
 - name: Configure Radarr
   ansible.builtin.include_tasks: radarr.yml

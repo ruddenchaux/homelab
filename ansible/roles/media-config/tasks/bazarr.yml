@@ -1,9 +1,10 @@
 ---
-# Configure Bazarr via API
-# - Add Radarr connection (movies subtitles)
-# - Add Sonarr connection (TV subtitles)
+# Configure Bazarr via config file editing
+# The REST API (POST /api/system/settings) silently discards updates in v1.5.5
+# - Enable Radarr + Sonarr integrations (use_radarr, use_sonarr)
+# - Set connection details (ip, port, apikey)
 
-- name: Check existing Bazarr Radarr connection
+- name: Check Bazarr config
   become: false
   ansible.builtin.uri:
     url: "{{ media_bazarr_url }}/api/system/settings"
@@ -13,34 +14,84 @@
   register: bazarr_settings
   no_log: true
 
-- name: Configure Bazarr Radarr connection
-  become: false
-  ansible.builtin.uri:
-    url: "{{ media_bazarr_url }}/api/system/settings"
-    method: POST
-    headers:
-      X-API-KEY: "{{ media_bazarr_api_key }}"
-      Content-Type: application/json
-    body_format: json
-    body:
-      radarr:
-        ip: "radarr.{{ media_namespace }}.svc.cluster.local"
-        port: "{{ media_radarr_port }}"
-        apikey: "{{ media_radarr_api_key }}"
-        base_url: ""
-        ssl: false
-        only_monitored: false
-      sonarr:
-        ip: "sonarr.{{ media_namespace }}.svc.cluster.local"
-        port: "{{ media_sonarr_port }}"
-        apikey: "{{ media_sonarr_api_key }}"
-        base_url: ""
-        ssl: false
-        only_monitored: false
-    status_code:
-      - 200
-      - 204
-  no_log: true
+- name: Configure Bazarr via config file
   when: >-
-    bazarr_settings.json.radarr.ip | default('') == '' or
-    bazarr_settings.json.sonarr.ip | default('') == ''
+    bazarr_settings.json.radarr.apikey | default('') == '' or
+    bazarr_settings.json.sonarr.apikey | default('') == '' or
+    not (bazarr_settings.json.general.use_radarr | default(false)) or
+    not (bazarr_settings.json.general.use_sonarr | default(false))
+  block:
+    - name: Get Bazarr pod name
+      become: false
+      ansible.builtin.command: >-
+        kubectl get pod -n {{ media_namespace }}
+        -l app.kubernetes.io/name=bazarr
+        -o jsonpath='{.items[0].metadata.name}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: bazarr_pod
+      changed_when: false
+
+    - name: Copy Bazarr config from pod
+      become: false
+      ansible.builtin.command: >-
+        kubectl cp {{ media_namespace }}/{{ bazarr_pod.stdout }}:/config/config/config.yaml
+        /tmp/bazarr-config.yaml
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      changed_when: false
+
+    - name: Update Bazarr config file
+      become: false
+      ansible.builtin.shell: |
+        python3 -c "
+        import yaml
+        with open('/tmp/bazarr-config.yaml') as f:
+            cfg = yaml.safe_load(f)
+        cfg['radarr']['ip'] = 'radarr.{{ media_namespace }}.svc.cluster.local'
+        cfg['radarr']['port'] = {{ media_radarr_port }}
+        cfg['radarr']['apikey'] = '{{ media_radarr_api_key }}'
+        cfg['radarr']['ssl'] = False
+        cfg['sonarr']['ip'] = 'sonarr.{{ media_namespace }}.svc.cluster.local'
+        cfg['sonarr']['port'] = {{ media_sonarr_port }}
+        cfg['sonarr']['apikey'] = '{{ media_sonarr_api_key }}'
+        cfg['sonarr']['ssl'] = False
+        cfg['general']['use_radarr'] = True
+        cfg['general']['use_sonarr'] = True
+        with open('/tmp/bazarr-config.yaml', 'w') as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=True)
+        print('Bazarr config updated')
+        "
+      changed_when: true
+
+    - name: Copy config back to Bazarr pod
+      become: false
+      ansible.builtin.command: >-
+        kubectl cp /tmp/bazarr-config.yaml
+        {{ media_namespace }}/{{ bazarr_pod.stdout }}:/config/config/config.yaml
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      changed_when: true
+
+    - name: Restart Bazarr to apply config
+      become: false
+      ansible.builtin.command: >-
+        kubectl rollout restart deployment/bazarr -n {{ media_namespace }}
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      changed_when: true
+
+    - name: Wait for Bazarr rollout
+      become: false
+      ansible.builtin.command: >-
+        kubectl rollout status deployment/bazarr
+        -n {{ media_namespace }}
+        --timeout=120s
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      changed_when: false
+
+    - name: Clean up temp config
+      ansible.builtin.file:
+        path: /tmp/bazarr-config.yaml
+        state: absent

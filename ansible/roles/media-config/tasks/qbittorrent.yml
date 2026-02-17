@@ -1,128 +1,77 @@
 ---
-# Configure qBittorrent via Web API
+# Configure qBittorrent via Web API using kubectl exec (localhost auth bypass)
 # API docs: https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)
-# qBittorrent 4.6+ generates a random temp password on each start
+# qBittorrent has WebUI\LocalHostAuth=false, so requests from inside the
+# container bypass authentication. This avoids temp password issues.
 
-- name: Try login to qBittorrent with known password
-  become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/auth/login"
-    method: POST
-    body_format: form-urlencoded
-    body:
-      username: admin
-      password: "{{ media_qbt_admin_password }}"
-    status_code:
-      - 200
-    return_content: true
-  register: qbt_login_known
-  failed_when: false
-  no_log: true
-
-- name: Read qBittorrent temp password from logs
+- name: Login to qBittorrent via localhost
   become: false
   ansible.builtin.shell: >-
-    kubectl logs deploy/qbittorrent -n {{ media_namespace }} -c qbittorrent
-    | sed -n 's/.*A temporary password is provided for this session: //p'
-    | tail -1
+    kubectl exec deploy/qbittorrent -c qbittorrent -n {{ media_namespace }}
+    -- curl -sf -X POST http://localhost:{{ media_qbittorrent_port }}/api/v2/auth/login
+    -d 'username=admin&password=admin' -c /tmp/cookies.txt
   environment:
     KUBECONFIG: /home/debian/.kube/config
-  register: qbt_temp_password
   changed_when: false
-  no_log: true
-  when: "'Ok' not in (qbt_login_known.content | default(''))"
-
-- name: Login to qBittorrent with temp password
-  become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/auth/login"
-    method: POST
-    body_format: form-urlencoded
-    body:
-      username: admin
-      password: "{{ qbt_temp_password.stdout | trim }}"
-    status_code:
-      - 200
-    return_content: true
-  register: qbt_login_temp
-  until: qbt_login_temp.status == 200 and 'Ok' in qbt_login_temp.content
-  retries: 3
-  delay: 5
-  no_log: true
-  when: "'Ok' not in (qbt_login_known.content | default(''))"
-
-- name: Store qBittorrent SID cookie
-  ansible.builtin.set_fact:
-    qbt_cookie: >-
-      {{ ('Ok' in (qbt_login_known.content | default('')))
-         | ternary(qbt_login_known.cookies_string,
-                   qbt_login_temp.cookies_string | default('')) }}
-  no_log: true
 
 - name: Set known admin password
   become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/app/setPreferences"
-    method: POST
-    headers:
-      Cookie: "{{ qbt_cookie }}"
-    body_format: form-urlencoded
-    body:
-      json: '{"web_ui_password":"{{ media_qbt_admin_password }}"}'
-    status_code: 200
+  ansible.builtin.shell: >-
+    kubectl exec deploy/qbittorrent -c qbittorrent -n {{ media_namespace }}
+    -- curl -sf -X POST http://localhost:{{ media_qbittorrent_port }}/api/v2/app/setPreferences
+    -b /tmp/cookies.txt
+    -d 'json={"web_ui_password":"{{ media_qbt_admin_password }}"}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
   no_log: true
-  when: "'Ok' not in (qbt_login_known.content | default(''))"
 
 - name: Set qBittorrent download preferences
   become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/app/setPreferences"
-    method: POST
-    headers:
-      Cookie: "{{ qbt_cookie }}"
-    body_format: form-urlencoded
-    body:
-      json: "{{ media_qbt_preferences | to_json }}"
-    status_code: 200
+  ansible.builtin.shell: >-
+    kubectl exec deploy/qbittorrent -c qbittorrent -n {{ media_namespace }}
+    -- curl -sf -X POST http://localhost:{{ media_qbittorrent_port }}/api/v2/app/setPreferences
+    -b /tmp/cookies.txt
+    -d 'json={{ media_qbt_preferences | to_json }}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
 
 - name: Get existing qBittorrent categories
   become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/torrents/categories"
-    method: GET
-    headers:
-      Cookie: "{{ qbt_cookie }}"
-    return_content: true
+  ansible.builtin.shell: >-
+    kubectl exec deploy/qbittorrent -c qbittorrent -n {{ media_namespace }}
+    -- curl -sf http://localhost:{{ media_qbittorrent_port }}/api/v2/torrents/categories
+    -b /tmp/cookies.txt
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
   register: qbt_existing_categories
+  changed_when: false
 
 - name: Create qBittorrent categories
   become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/torrents/createCategory"
-    method: POST
-    headers:
-      Cookie: "{{ qbt_cookie }}"
-    body_format: form-urlencoded
-    body:
-      category: "{{ item.key }}"
-      savePath: "{{ item.value.savePath }}"
-    status_code:
-      - 200
+  ansible.builtin.shell: >-
+    kubectl exec deploy/qbittorrent -c qbittorrent -n {{ media_namespace }}
+    -- curl -sf -X POST http://localhost:{{ media_qbittorrent_port }}/api/v2/torrents/createCategory
+    -b /tmp/cookies.txt
+    -d 'category={{ item.key }}&savePath={{ item.value.savePath }}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
   loop: "{{ media_qbt_categories | dict2items }}"
-  when: item.key not in (qbt_existing_categories.json | default({}))
+  when: item.key not in (qbt_existing_categories.stdout | from_json | default({}))
+  changed_when: true
 
 - name: Update qBittorrent category save paths
   become: false
-  ansible.builtin.uri:
-    url: "{{ media_qbt_url }}/api/v2/torrents/editCategory"
-    method: POST
-    headers:
-      Cookie: "{{ qbt_cookie }}"
-    body_format: form-urlencoded
-    body:
-      category: "{{ item.key }}"
-      savePath: "{{ item.value.savePath }}"
-    status_code:
-      - 200
+  ansible.builtin.shell: >-
+    kubectl exec deploy/qbittorrent -c qbittorrent -n {{ media_namespace }}
+    -- curl -s -X POST http://localhost:{{ media_qbittorrent_port }}/api/v2/torrents/editCategory
+    -b /tmp/cookies.txt
+    -d 'category={{ item.key }}&savePath={{ item.value.savePath }}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
   loop: "{{ media_qbt_categories | dict2items }}"
-  when: item.key in (qbt_existing_categories.json | default({}))
+  when: >-
+    item.key in (qbt_existing_categories.stdout | from_json | default({})) and
+    (qbt_existing_categories.stdout | from_json)[item.key].savePath != item.value.savePath
+  changed_when: true
