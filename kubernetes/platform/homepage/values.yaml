@@ -78,6 +78,14 @@ homepage:
               href: https://qbittorrent.ruddenchaux.xyz
               description: Download client
               icon: qbittorrent
+          - Jellyfin:
+              href: https://jellyfin.ruddenchaux.xyz
+              description: Media server
+              icon: jellyfin
+          - Seerr:
+              href: https://seerr.ruddenchaux.xyz
+              description: Media requests
+              icon: overseerr
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006
