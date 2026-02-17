@@ -1,5 +1,5 @@
 ---
-data_disk_device: /dev/sdb
+data_disk_device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
 data_disk_fstype: ext4
 data_disk_mount: /data/local-path-provisioner
 data_disk_mount_opts: defaults,noatime,nofail

@@ -20,6 +20,13 @@
     state: directory
     mode: "0755"
 
+- name: Remove legacy /dev/sdb fstab entry
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^/dev/sdb\s+{{ data_disk_mount }}\s'
+    state: absent
+  when: data_disk_device != "/dev/sdb"
+
 - name: Mount data disk and add to fstab
   ansible.posix.mount:
     path: "{{ data_disk_mount }}"
