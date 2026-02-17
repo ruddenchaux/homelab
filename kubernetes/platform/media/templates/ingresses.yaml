@@ -1,13 +1,13 @@
 {{- $services := dict
-    "qbittorrent" (dict "port" (.Values.qbittorrent.port | int) "subdomain" .Values.qbittorrent.subdomain)
-    "radarr" (dict "port" (.Values.radarr.port | int) "subdomain" .Values.radarr.subdomain)
-    "sonarr" (dict "port" (.Values.sonarr.port | int) "subdomain" .Values.sonarr.subdomain)
-    "prowlarr" (dict "port" (.Values.prowlarr.port | int) "subdomain" .Values.prowlarr.subdomain)
-    "lidarr" (dict "port" (.Values.lidarr.port | int) "subdomain" .Values.lidarr.subdomain)
-    "readarr" (dict "port" (.Values.readarr.port | int) "subdomain" .Values.readarr.subdomain)
-    "bazarr" (dict "port" (.Values.bazarr.port | int) "subdomain" .Values.bazarr.subdomain)
-    "jellyfin" (dict "port" (.Values.jellyfin.port | int) "subdomain" .Values.jellyfin.subdomain)
-    "seerr" (dict "port" (.Values.seerr.port | int) "subdomain" .Values.seerr.subdomain)
+    "qbittorrent" .Values.qbittorrent
+    "radarr" .Values.radarr
+    "sonarr" .Values.sonarr
+    "prowlarr" .Values.prowlarr
+    "lidarr" .Values.lidarr
+    "readarr" .Values.readarr
+    "bazarr" .Values.bazarr
+    "jellyfin" .Values.jellyfin
+    "seerr" .Values.seerr
 }}
 {{- range $name, $svc := $services }}
 ---
@@ -20,7 +20,9 @@ metadata:
     app.kubernetes.io/name: {{ $name }}
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    {{- if ne ($svc.forwardAuth | toString) "false" }}
     traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-auth@kubernetescrd
+    {{- end }}
 spec:
   ingressClassName: traefik
   tls:

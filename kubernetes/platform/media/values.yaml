@@ -72,12 +72,14 @@ jellyfin:
   image: lscr.io/linuxserver/jellyfin:10.11.6
   port: 8096
   subdomain: jellyfin
+  forwardAuth: false  # has built-in auth; ForwardAuth breaks native apps (Android, TV)
 
 # Seerr (media requests)
 seerr:
   image: ghcr.io/seerr-team/seerr:v3.0.1
   port: 5055
   subdomain: seerr
+  forwardAuth: false  # has built-in auth; ForwardAuth breaks native apps
 
 # FlareSolverr (Cloudflare bypass for Prowlarr)
 flaresolverr:
