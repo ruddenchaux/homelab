@@ -96,14 +96,12 @@ spec:
             - name: WEBUI_PORT
               value: {{ .Values.qbittorrent.port | quote }}
           livenessProbe:
-            httpGet:
-              path: /api/v2/app/version
+            tcpSocket:
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
-            httpGet:
-              path: /api/v2/app/version
+            tcpSocket:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
