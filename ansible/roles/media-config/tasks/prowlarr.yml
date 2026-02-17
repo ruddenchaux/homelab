@@ -1,8 +1,77 @@
 ---
 # Configure Prowlarr via API v1
+# - Add FlareSolverr as indexer proxy
 # - Add all *arr apps as sync targets (applications)
 # Prowlarr will auto-sync indexers to connected apps
 
+# --- FlareSolverr indexer proxy ---
+- name: Check existing Prowlarr tags
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/tag"
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_tags
+  no_log: true
+
+- name: Create flaresolverr tag
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/tag"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      label: flaresolverr
+    status_code: 201
+  register: flaresolverr_tag_result
+  no_log: true
+  when: "'flaresolverr' not in (prowlarr_tags.json | map(attribute='label') | list)"
+
+- name: Store flaresolverr tag ID
+  ansible.builtin.set_fact:
+    media_flaresolverr_tag_id: >-
+      {{ (flaresolverr_tag_result.json.id | default(0)) if flaresolverr_tag_result is changed
+         else (prowlarr_tags.json | selectattr('label', 'equalto', 'flaresolverr') | map(attribute='id') | first | default(0)) }}
+
+- name: Check existing Prowlarr indexer proxies
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/indexerProxy"
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_proxies
+  no_log: true
+
+- name: Add FlareSolverr indexer proxy
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_prowlarr_url }}/api/v1/indexerProxy"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: FlareSolverr
+      implementation: FlareSolverr
+      configContract: FlareSolverrSettings
+      fields:
+        - name: host
+          value: "http://flaresolverr.{{ media_namespace }}.svc.cluster.local:{{ media_flaresolverr_port }}/"
+        - name: requestTimeout
+          value: 60
+      tags:
+        - "{{ media_flaresolverr_tag_id | int }}"
+    status_code: 201
+  no_log: true
+  when: "'FlareSolverr' not in (prowlarr_proxies.json | map(attribute='name') | list)"
+
+# --- Applications ---
 - name: Check existing Prowlarr applications
   become: false
   ansible.builtin.uri:
