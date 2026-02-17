@@ -34,8 +34,8 @@
 - name: Store flaresolverr tag ID
   ansible.builtin.set_fact:
     media_flaresolverr_tag_id: >-
-      {{ (flaresolverr_tag_result.json.id | default(0)) if flaresolverr_tag_result is changed
-         else (prowlarr_tags.json | selectattr('label', 'equalto', 'flaresolverr') | map(attribute='id') | first | default(0)) }}
+      {{ (flaresolverr_tag_result.json.id) if flaresolverr_tag_result is not skipped
+         else (prowlarr_tags.json | selectattr('label', 'equalto', 'flaresolverr') | map(attribute='id') | first) }}
 
 - name: Check existing Prowlarr indexer proxies
   become: false
