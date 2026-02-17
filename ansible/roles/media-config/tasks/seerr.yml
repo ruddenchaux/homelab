@@ -1,0 +1,202 @@
+---
+# Configure Seerr (Jellyseerr) via REST API
+# - Complete initialization (if not done)
+# - Connect to Jellyfin, Radarr, and Sonarr
+#
+# Handles three states:
+# 1. Fresh Seerr (not initialized, no Jellyfin configured) → full setup flow
+# 2. Partially configured (not initialized, Jellyfin hostname already set) → re-login + initialize
+# 3. Fully initialized → skip to Radarr/Sonarr configuration
+
+# --- Check initialization status ---
+- name: Check Seerr initialization status
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/public"
+    return_content: true
+  register: seerr_public_settings
+
+- name: Store Seerr initialization status
+  ansible.builtin.set_fact:
+    seerr_initialized: "{{ seerr_public_settings.json.initialized | default(false) }}"
+
+# --- Initialization (only if not done) ---
+# First attempt: authenticate and configure Jellyfin hostname
+# Returns 500 if hostname was already configured (partial setup from previous run)
+- name: Authenticate Seerr with Jellyfin
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/auth/jellyfin"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      username: "{{ media_jellyfin_admin_user }}"
+      password: "{{ media_jellyfin_admin_password }}"
+      hostname: "http://jellyfin.{{ media_namespace }}.svc.cluster.local:{{ media_jellyfin_port }}"
+    return_content: true
+    status_code:
+      - 200
+      - 500
+  register: seerr_auth_result
+  no_log: true
+  when: not seerr_initialized
+
+# If hostname was already configured, re-login without hostname to get a session
+- name: Re-login to Seerr with Jellyfin (hostname already configured)
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/auth/jellyfin"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      username: "{{ media_jellyfin_admin_user }}"
+      password: "{{ media_jellyfin_admin_password }}"
+    return_content: true
+  register: seerr_reauth_result
+  no_log: true
+  when: not seerr_initialized and seerr_auth_result.status | default(0) == 500
+
+- name: Store Seerr session cookie
+  ansible.builtin.set_fact:
+    seerr_session_cookie: >-
+      {{ (seerr_reauth_result.cookies_string if seerr_auth_result.status | default(0) == 500
+          else seerr_auth_result.cookies_string) }}
+  no_log: true
+  when: not seerr_initialized
+
+- name: Configure Seerr Jellyfin connection
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/jellyfin"
+    method: POST
+    headers:
+      Content-Type: application/json
+      Cookie: "{{ seerr_session_cookie }}"
+    body_format: json
+    body:
+      hostname: "http://jellyfin.{{ media_namespace }}.svc.cluster.local:{{ media_jellyfin_port }}"
+      externalHostname: "https://jellyfin.ruddenchaux.xyz"
+    return_content: true
+  no_log: true
+  when: not seerr_initialized
+
+- name: Fetch Seerr Jellyfin libraries
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/jellyfin/library"
+    method: GET
+    headers:
+      Cookie: "{{ seerr_session_cookie }}"
+    return_content: true
+  register: seerr_jellyfin_libraries
+  when: not seerr_initialized
+
+- name: Initialize Seerr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/initialize"
+    method: POST
+    headers:
+      Cookie: "{{ seerr_session_cookie }}"
+    status_code:
+      - 200
+      - 204
+  when: not seerr_initialized
+
+# --- Get API key (from config file) ---
+- name: Read Seerr API key from config
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/seerr -n {{ media_namespace }}
+    -- sh -c "cat /app/config/settings.json"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: seerr_config_result
+  changed_when: false
+  retries: 3
+  delay: 5
+  until: seerr_config_result.rc == 0
+
+- name: Store Seerr API key
+  ansible.builtin.set_fact:
+    media_seerr_api_key: "{{ (seerr_config_result.stdout | from_json).main.apiKey }}"
+  no_log: true
+
+# --- Configure Radarr ---
+- name: Check existing Seerr Radarr servers
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/radarr"
+    headers:
+      X-Api-Key: "{{ media_seerr_api_key }}"
+    return_content: true
+  register: seerr_radarr_servers
+
+- name: Add Radarr to Seerr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/radarr"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_seerr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: Radarr
+      hostname: "radarr.{{ media_namespace }}.svc.cluster.local"
+      port: "{{ media_radarr_port }}"
+      apiKey: "{{ media_radarr_api_key }}"
+      useSsl: false
+      activeProfileId: 1
+      activeProfileName: Any
+      activeDirectory: "{{ media_movies_path }}"
+      is4k: false
+      minimumAvailability: released
+      isDefault: true
+    status_code:
+      - 200
+      - 201
+  no_log: true
+  when: seerr_radarr_servers.json | length == 0
+
+# --- Configure Sonarr ---
+- name: Check existing Seerr Sonarr servers
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/sonarr"
+    headers:
+      X-Api-Key: "{{ media_seerr_api_key }}"
+    return_content: true
+  register: seerr_sonarr_servers
+
+- name: Add Sonarr to Seerr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_seerr_url }}/api/v1/settings/sonarr"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_seerr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: Sonarr
+      hostname: "sonarr.{{ media_namespace }}.svc.cluster.local"
+      port: "{{ media_sonarr_port }}"
+      apiKey: "{{ media_sonarr_api_key }}"
+      useSsl: false
+      activeProfileId: 1
+      activeProfileName: Any
+      activeDirectory: "{{ media_tv_path }}"
+      activeLanguageProfileId: 1
+      enableSeasonFolders: true
+      is4k: false
+      isDefault: true
+    status_code:
+      - 200
+      - 201
+  no_log: true
+  when: seerr_sonarr_servers.json | length == 0

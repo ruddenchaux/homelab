@@ -1,0 +1,218 @@
+---
+# Configure Jellyfin via REST API
+# - Complete startup wizard (if not done)
+# - Authenticate and obtain access token
+# - Add media libraries (Movies, TV Shows, Music, Books)
+# - Generate API key for Seerr integration
+
+# --- Check wizard status ---
+- name: Check Jellyfin startup wizard status
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/System/Info/Public"
+    return_content: true
+  register: jellyfin_public_info
+
+- name: Store wizard status
+  ansible.builtin.set_fact:
+    jellyfin_wizard_completed: "{{ jellyfin_public_info.json.StartupWizardCompleted | default(false) }}"
+
+# --- Startup wizard (only if not completed) ---
+- name: Create Jellyfin admin user (wizard)
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Startup/User"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      Name: "{{ media_jellyfin_admin_user }}"
+      Password: "{{ media_jellyfin_admin_password }}"
+    status_code: 204
+  no_log: true
+  when: not jellyfin_wizard_completed
+
+- name: Set Jellyfin metadata configuration (wizard)
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Startup/Configuration"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      UICulture: "en-US"
+      MetadataCountryCode: "IT"
+      PreferredMetadataLanguage: "en"
+    status_code: 204
+  when: not jellyfin_wizard_completed
+
+- name: Enable Jellyfin remote access (wizard)
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Startup/RemoteAccess"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      EnableRemoteAccess: true
+    status_code: 204
+  when: not jellyfin_wizard_completed
+
+- name: Complete Jellyfin startup wizard
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Startup/Complete"
+    method: POST
+    status_code: 204
+  when: not jellyfin_wizard_completed
+
+# --- Authenticate ---
+- name: Authenticate to Jellyfin
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Users/AuthenticateByName"
+    method: POST
+    headers:
+      Content-Type: application/json
+      Authorization: 'MediaBrowser Client="Ansible", DeviceId="ansible-media-config", Device="Ansible", Version="1.0.0"'
+    body_format: json
+    body:
+      Username: "{{ media_jellyfin_admin_user }}"
+      Pw: "{{ media_jellyfin_admin_password }}"
+    return_content: true
+  register: jellyfin_auth_result
+  no_log: true
+
+- name: Store Jellyfin access token
+  ansible.builtin.set_fact:
+    jellyfin_token: "{{ jellyfin_auth_result.json.AccessToken }}"
+  no_log: true
+
+- name: Set Jellyfin auth header
+  ansible.builtin.set_fact:
+    jellyfin_auth_header: >-
+      MediaBrowser Token="{{ jellyfin_token }}", Client="Ansible", DeviceId="ansible-media-config", Device="Ansible", Version="1.0.0"
+  no_log: true
+
+# --- Media libraries ---
+- name: Get existing Jellyfin libraries
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Library/VirtualFolders"
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+    return_content: true
+  register: jellyfin_libraries
+  no_log: true
+
+- name: Store existing library names
+  ansible.builtin.set_fact:
+    jellyfin_existing_libraries: "{{ jellyfin_libraries.json | map(attribute='Name') | list }}"
+
+- name: Add Movies library
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=false"
+    method: POST
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      LibraryOptions:
+        PathInfos:
+          - Path: "{{ media_movies_path }}"
+    status_code: 204
+  no_log: true
+  when: "'Movies' not in jellyfin_existing_libraries"
+
+- name: Add TV Shows library
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Library/VirtualFolders?name=TV%20Shows&collectionType=tvshows&refreshLibrary=false"
+    method: POST
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      LibraryOptions:
+        PathInfos:
+          - Path: "{{ media_tv_path }}"
+    status_code: 204
+  no_log: true
+  when: "'TV Shows' not in jellyfin_existing_libraries"
+
+- name: Add Music library
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Library/VirtualFolders?name=Music&collectionType=music&refreshLibrary=false"
+    method: POST
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      LibraryOptions:
+        PathInfos:
+          - Path: "{{ media_music_path }}"
+    status_code: 204
+  no_log: true
+  when: "'Music' not in jellyfin_existing_libraries"
+
+- name: Add Books library
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Library/VirtualFolders?name=Books&collectionType=books&refreshLibrary=false"
+    method: POST
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      LibraryOptions:
+        PathInfos:
+          - Path: "{{ media_books_path }}"
+    status_code: 204
+  no_log: true
+  when: "'Books' not in jellyfin_existing_libraries"
+
+# --- API key for Seerr ---
+- name: Get existing Jellyfin API keys
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Auth/Keys"
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+    return_content: true
+  register: jellyfin_api_keys
+  no_log: true
+
+- name: Create Seerr API key
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Auth/Keys?app=seerr"
+    method: POST
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+    status_code: 204
+  no_log: true
+  when: "'seerr' not in (jellyfin_api_keys.json.Items | map(attribute='AppName') | list)"
+
+- name: Get Jellyfin API keys (after creation)
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_jellyfin_url }}/Auth/Keys"
+    headers:
+      Authorization: "{{ jellyfin_auth_header }}"
+    return_content: true
+  register: jellyfin_api_keys_final
+  no_log: true
+
+- name: Store Jellyfin API key for Seerr
+  ansible.builtin.set_fact:
+    media_jellyfin_api_key: "{{ jellyfin_api_keys_final.json.Items | selectattr('AppName', 'equalto', 'seerr') | map(attribute='AccessToken') | first }}"
+  no_log: true

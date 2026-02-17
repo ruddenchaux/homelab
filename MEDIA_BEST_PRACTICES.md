@@ -1,7 +1,10 @@
 # Media Stack Best Practices — Manual Steps
 
-This document covers manual configuration steps that cannot be automated via Ansible or GitOps.
+This document covers manual configuration steps that are not yet automated via Ansible or GitOps.
 These should be completed after the media stack is deployed and the `media-config` Ansible role has run.
+
+> **Note:** Jellyfin initial setup (wizard, libraries, API key) and Seerr initialization
+> (Jellyfin/Radarr/Sonarr connections) are now automated by the `media-config` role.
 
 ## 1. Add Indexers to Prowlarr
 
@@ -34,19 +37,7 @@ Bazarr needs at least one subtitle provider account to download subtitles.
 - Each provider requires its own account credentials
 - Go to **Settings > Languages** and configure desired subtitle languages
 
-## 4. Set Up Seerr (First-Run Wizard)
-
-Seerr requires initial setup through its web UI wizard.
-
-- Open https://seerr.ruddenchaux.xyz
-- Complete the first-run wizard:
-  1. Sign in with your Jellyfin account
-  2. Connect to Jellyfin: `http://jellyfin.media.svc.cluster.local:8096`
-  3. Connect to Radarr: `http://radarr.media.svc.cluster.local:7878` (use API key from config)
-  4. Connect to Sonarr: `http://sonarr.media.svc.cluster.local:8989` (use API key from config)
-  5. Configure default quality profiles and root folders
-
-## 5. Configure Health Notifications
+## 4. Configure Health Notifications
 
 Set up notifications for download failures, disk space warnings, and health check alerts.
 
@@ -59,7 +50,7 @@ Example Discord webhook setup:
 - Create a webhook in your Discord server
 - Add the webhook URL in each *arr app's notification settings
 
-## 6. Config PVC Backup Strategy
+## 5. Config PVC Backup Strategy
 
 Config PVCs contain application databases and settings. Losing them means reconfiguring everything.
 
@@ -73,7 +64,7 @@ Recommended approach for this single-node setup:
 2. Use `restic` or `rclone` to push backups to cloud storage (e.g., Backblaze B2, Wasabi)
 3. Schedule daily backups with 7-day retention
 
-## 7. Readarr Retirement Note
+## 6. Readarr Retirement Note
 
 Readarr development has stalled significantly. The project has had minimal updates and the `develop` branch is the only release channel.
 
@@ -83,7 +74,7 @@ Plan accordingly:
 - Consider alternatives if the project is officially abandoned
 - Do not invest heavily in Readarr-specific automation
 
-## 8. Recyclarr Verification
+## 7. Recyclarr Verification
 
 After deployment, verify Recyclarr is working:
 
@@ -101,14 +92,3 @@ kubectl logs job/recyclarr-manual -n media
 # Radarr: Settings > Quality Profiles — should see "HD Bluray + WEB" profile
 # Sonarr: Settings > Quality Profiles — should see "WEB-1080p" profile
 ```
-
-## 9. Jellyfin Initial Setup
-
-- Open https://jellyfin.ruddenchaux.xyz
-- Complete the first-run wizard (language, admin account)
-- Add media libraries:
-  - Movies: `/data/media/movies`
-  - TV Shows: `/data/media/tv`
-  - Music: `/data/media/music`
-  - Books: `/data/media/books`
-- Configure transcoding settings based on available CPU resources
