@@ -27,3 +27,17 @@
     fstype: "{{ data_disk_fstype }}"
     opts: "{{ data_disk_mount_opts }}"
     state: mounted
+
+- name: Create kubelet drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    mode: "0755"
+
+- name: Ensure kubelet waits for data disk mount
+  ansible.builtin.template:
+    src: kubelet-data-disk.conf.j2
+    dest: /etc/systemd/system/kubelet.service.d/10-data-disk.conf
+    mode: "0644"
+  notify:
+    - Reload systemd and restart kubelet
