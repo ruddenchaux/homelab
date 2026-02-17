@@ -259,6 +259,25 @@
 - name: Configure Bazarr
   ansible.builtin.include_tasks: bazarr.yml
 
+- name: Configure media management settings
+  ansible.builtin.include_tasks: media-management.yml
+
+- name: Configure naming schemes
+  ansible.builtin.include_tasks: naming.yml
+
+- name: Create Recyclarr API keys secret
+  become: false
+  ansible.builtin.shell: |
+    kubectl create secret generic recyclarr-keys \
+      -n {{ media_namespace }} \
+      --from-literal=radarr_api_key={{ media_radarr_api_key }} \
+      --from-literal=sonarr_api_key={{ media_sonarr_api_key }} \
+      --dry-run=client -o yaml | kubectl apply -f -
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  no_log: true
+
 # Cleanup port-forwards
 - name: Kill all port-forward processes
   become: false

@@ -1,0 +1,78 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recyclarr-config
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: recyclarr
+data:
+  recyclarr.yml: |
+    sonarr:
+      tv-hd:
+        base_url: http://sonarr.media.svc.cluster.local:{{ .Values.sonarr.port }}
+        api_key: !env_var SONARR_API_KEY
+        include:
+          - template: sonarr-quality-definition-series
+          - template: sonarr-v4-quality-profile-web-1080p
+          - template: sonarr-v4-custom-formats-web-1080p
+    radarr:
+      movies-hd:
+        base_url: http://radarr.media.svc.cluster.local:{{ .Values.radarr.port }}
+        api_key: !env_var RADARR_API_KEY
+        include:
+          - template: radarr-quality-definition-movie
+          - template: radarr-quality-profile-hd-bluray-web
+          - template: radarr-custom-formats-hd-bluray-web
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: recyclarr
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: recyclarr
+spec:
+  schedule: {{ .Values.recyclarr.schedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            {{- include "media.selectorLabels" "recyclarr" | nindent 12 }}
+        spec:
+          nodeSelector:
+            {{- toYaml .Values.nodeSelector | nindent 12 }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          restartPolicy: Never
+          containers:
+            - name: recyclarr
+              image: {{ .Values.recyclarr.image }}
+              args: ["sync"]
+              env:
+                - name: TZ
+                  value: {{ .Values.linuxserver.tz | quote }}
+                - name: RADARR_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: recyclarr-keys
+                      key: radarr_api_key
+                - name: SONARR_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: recyclarr-keys
+                      key: sonarr_api_key
+              volumeMounts:
+                - name: config
+                  mountPath: /config/recyclarr.yml
+                  subPath: recyclarr.yml
+                  readOnly: true
+          volumes:
+            - name: config
+              configMap:
+                name: recyclarr-config

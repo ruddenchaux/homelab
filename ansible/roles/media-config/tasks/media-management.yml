@@ -1,0 +1,126 @@
+---
+# Configure media management settings (Propers/Repacks + extra files)
+# TRaSH Guides: set "Do Not Prefer" for Propers/Repacks (Recyclarr handles quality)
+# Also enable import of subtitle extra files for Radarr/Sonarr
+
+# --- Radarr (API v3) ---
+- name: Get Radarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_radarr_url }}/api/v3/config/mediamanagement"
+    headers:
+      X-Api-Key: "{{ media_radarr_api_key }}"
+    return_content: true
+  register: radarr_media_mgmt
+  no_log: true
+
+- name: Update Radarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_radarr_url }}/api/v3/config/mediamanagement"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_radarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {{ radarr_media_mgmt.json | combine({
+        'downloadPropersAndRepacks': 'doNotPrefer',
+        'importExtraFiles': true,
+        'extraFileExtensions': 'srt,sub,ass,idx'
+      }) }}
+    status_code: 202
+  no_log: true
+  when: >-
+    radarr_media_mgmt.json.downloadPropersAndRepacks != 'doNotPrefer' or
+    not radarr_media_mgmt.json.importExtraFiles or
+    radarr_media_mgmt.json.extraFileExtensions != 'srt,sub,ass,idx'
+
+# --- Sonarr (API v3) ---
+- name: Get Sonarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/config/mediamanagement"
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+    return_content: true
+  register: sonarr_media_mgmt
+  no_log: true
+
+- name: Update Sonarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/config/mediamanagement"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {{ sonarr_media_mgmt.json | combine({
+        'downloadPropersAndRepacks': 'doNotPrefer',
+        'importExtraFiles': true,
+        'extraFileExtensions': 'srt,sub,ass,idx'
+      }) }}
+    status_code: 202
+  no_log: true
+  when: >-
+    sonarr_media_mgmt.json.downloadPropersAndRepacks != 'doNotPrefer' or
+    not sonarr_media_mgmt.json.importExtraFiles or
+    sonarr_media_mgmt.json.extraFileExtensions != 'srt,sub,ass,idx'
+
+# --- Lidarr (API v1) ---
+- name: Get Lidarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/config/mediamanagement"
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+    return_content: true
+  register: lidarr_media_mgmt
+  no_log: true
+
+- name: Update Lidarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/config/mediamanagement"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {{ lidarr_media_mgmt.json | combine({
+        'downloadPropersAndRepacks': 'doNotPrefer'
+      }) }}
+    status_code: 202
+  no_log: true
+  when: lidarr_media_mgmt.json.downloadPropersAndRepacks != 'doNotPrefer'
+
+# --- Readarr (API v1) ---
+- name: Get Readarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_readarr_url }}/api/v1/config/mediamanagement"
+    headers:
+      X-Api-Key: "{{ media_readarr_api_key }}"
+    return_content: true
+  register: readarr_media_mgmt
+  no_log: true
+
+- name: Update Readarr media management config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_readarr_url }}/api/v1/config/mediamanagement"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_readarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {{ readarr_media_mgmt.json | combine({
+        'downloadPropersAndRepacks': 'doNotPrefer'
+      }) }}
+    status_code: 202
+  no_log: true
+  when: readarr_media_mgmt.json.downloadPropersAndRepacks != 'doNotPrefer'

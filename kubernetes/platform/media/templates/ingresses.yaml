@@ -6,6 +6,8 @@
     "lidarr" (dict "port" (.Values.lidarr.port | int) "subdomain" .Values.lidarr.subdomain)
     "readarr" (dict "port" (.Values.readarr.port | int) "subdomain" .Values.readarr.subdomain)
     "bazarr" (dict "port" (.Values.bazarr.port | int) "subdomain" .Values.bazarr.subdomain)
+    "jellyfin" (dict "port" (.Values.jellyfin.port | int) "subdomain" .Values.jellyfin.subdomain)
+    "seerr" (dict "port" (.Values.seerr.port | int) "subdomain" .Values.seerr.subdomain)
 }}
 {{- range $name, $svc := $services }}
 ---

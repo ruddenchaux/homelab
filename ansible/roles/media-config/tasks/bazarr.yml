@@ -19,7 +19,12 @@
     bazarr_settings.json.radarr.apikey | default('') == '' or
     bazarr_settings.json.sonarr.apikey | default('') == '' or
     not (bazarr_settings.json.general.use_radarr | default(false)) or
-    not (bazarr_settings.json.general.use_sonarr | default(false))
+    not (bazarr_settings.json.general.use_sonarr | default(false)) or
+    not (bazarr_settings.json.general.serie_default_enabled | default(false)) or
+    not (bazarr_settings.json.general.movie_default_enabled | default(false)) or
+    not (bazarr_settings.json.general.adaptive_searching | default(false)) or
+    not (bazarr_settings.json.general.use_embedded_subs | default(false)) or
+    not (bazarr_settings.json.general.embedded_subs_show_desired | default(false))
   block:
     - name: Get Bazarr pod name
       become: false
@@ -58,6 +63,11 @@
         cfg['sonarr']['ssl'] = False
         cfg['general']['use_radarr'] = True
         cfg['general']['use_sonarr'] = True
+        cfg['general']['serie_default_enabled'] = True
+        cfg['general']['movie_default_enabled'] = True
+        cfg['general']['adaptive_searching'] = True
+        cfg['general']['use_embedded_subs'] = True
+        cfg['general']['embedded_subs_show_desired'] = True
         with open('/tmp/bazarr-config.yaml', 'w') as f:
             yaml.dump(cfg, f, default_flow_style=False, sort_keys=True)
         print('Bazarr config updated')

@@ -57,3 +57,20 @@ spec:
         - ports:
             - port: "51820"
               protocol: UDP
+---
+# Additional egress for FlareSolverr (HTTP proxy to Cloudflare-challenged sites)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: media-flaresolverr
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: flaresolverr
+  egress:
+    - toCIDR:
+        - 0.0.0.0/0
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP

@@ -95,6 +95,18 @@ spec:
             {{- include "media.linuxserverEnv" . | nindent 12 }}
             - name: WEBUI_PORT
               value: {{ .Values.qbittorrent.port | quote }}
+          livenessProbe:
+            httpGet:
+              path: /api/v2/app/version
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v2/app/version
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
           volumeMounts:
             {{- include "media.mediaVolumeMount" . | nindent 12 }}
             - name: qbittorrent-config

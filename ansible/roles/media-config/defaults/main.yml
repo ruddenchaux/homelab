@@ -12,6 +12,9 @@ media_prowlarr_port: 9696
 media_lidarr_port: 8686
 media_readarr_port: 8787
 media_bazarr_port: 6767
+media_jellyfin_port: 8096
+media_seerr_port: 5055
+media_flaresolverr_port: 8191
 
 # Local port-forward base (each service gets base + offset)
 media_pf_base_port: 19000

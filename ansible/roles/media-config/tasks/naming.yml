@@ -1,0 +1,74 @@
+---
+# Configure TRaSH Guides recommended naming schemes
+# https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/
+# https://trash-guides.info/Sonarr/Sonarr-recommended-naming-scheme/
+
+# --- Radarr (API v3) ---
+- name: Get Radarr naming config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_radarr_url }}/api/v3/config/naming"
+    headers:
+      X-Api-Key: "{{ media_radarr_api_key }}"
+    return_content: true
+  register: radarr_naming
+  no_log: true
+
+- name: Set Radarr TRaSH naming scheme
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_radarr_url }}/api/v3/config/naming"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_radarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {{ radarr_naming.json | combine({
+        'renameMovies': true,
+        'standardMovieFormat': '{Movie CleanTitle} {(Release Year)} {edition-{Edition Tags}} {[Custom Formats]}{[Quality Full]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{[Mediainfo VideoCodec]}{-Release Group}',
+        'movieFolderFormat': '{Movie CleanTitle} ({Release Year}) [imdbid-{ImdbId}]'
+      }) }}
+    status_code: 202
+  no_log: true
+  when: >-
+    not radarr_naming.json.renameMovies or
+    radarr_naming.json.standardMovieFormat != '{Movie CleanTitle} {(Release Year)} {edition-{Edition Tags}} {[Custom Formats]}{[Quality Full]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{[Mediainfo VideoCodec]}{-Release Group}' or
+    radarr_naming.json.movieFolderFormat != '{Movie CleanTitle} ({Release Year}) [imdbid-{ImdbId}]'
+
+# --- Sonarr (API v3) ---
+- name: Get Sonarr naming config
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/config/naming"
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+    return_content: true
+  register: sonarr_naming
+  no_log: true
+
+- name: Set Sonarr TRaSH naming scheme
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/config/naming"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >-
+      {{ sonarr_naming.json | combine({
+        'renameEpisodes': true,
+        'standardEpisodeFormat': '{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{[Mediainfo VideoCodec]}{-Release Group}',
+        'seriesFolderFormat': '{Series TitleYear}',
+        'seasonFolderFormat': 'Season {season:00}',
+        'multiEpisodeStyle': 5
+      }) }}
+    status_code: 202
+  no_log: true
+  when: >-
+    not sonarr_naming.json.renameEpisodes or
+    sonarr_naming.json.standardEpisodeFormat != '{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{[Mediainfo VideoCodec]}{-Release Group}' or
+    sonarr_naming.json.seriesFolderFormat != '{Series TitleYear}' or
+    sonarr_naming.json.seasonFolderFormat != 'Season {season:00}' or
+    sonarr_naming.json.multiEpisodeStyle != 5
