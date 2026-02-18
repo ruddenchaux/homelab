@@ -95,6 +95,49 @@
   register: seerr_jellyfin_libraries
   when: not seerr_initialized
 
+# Enable all Jellyfin libraries in Seerr config before initialization.
+# The libraries field is read-only via API after init, so we patch the
+# config file directly and restart the pod to pick up the changes.
+- name: Enable Jellyfin libraries in Seerr config
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/seerr -n {{ media_namespace }}
+    -- sh -c "python3 -c \"
+    import json;
+    f=open('/app/config/settings.json');
+    cfg=json.load(f);
+    f.close();
+    [lib.update({'enabled':True}) for lib in cfg.get('jellyfin',{}).get('libraries',[])];
+    f=open('/app/config/settings.json','w');
+    json.dump(cfg,f,indent=2);
+    f.close();
+    print('enabled',len(cfg.get('jellyfin',{}).get('libraries',[])))
+    \""
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: seerr_enable_libs
+  changed_when: "'enabled' in seerr_enable_libs.stdout"
+  when: not seerr_initialized
+
+- name: Restart Seerr to pick up library changes
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout restart deployment/seerr -n {{ media_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  when: not seerr_initialized and seerr_enable_libs is changed
+
+- name: Wait for Seerr restart
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout status deployment/seerr
+    -n {{ media_namespace }}
+    --timeout=120s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  when: not seerr_initialized and seerr_enable_libs is changed
+
 - name: Initialize Seerr
   become: false
   ansible.builtin.uri:

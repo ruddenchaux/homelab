@@ -17,7 +17,7 @@ spec:
       storage: {{ .Values.storage.mediaLibrary.size }}
 ---
 # Config PVCs — one per service
-{{- $services := list "qbittorrent" "radarr" "sonarr" "prowlarr" "lidarr" "readarr" "bazarr" "jellyfin" "seerr" }}
+{{- $services := list "qbittorrent" "nzbget" "radarr" "sonarr" "prowlarr" "lidarr" "readarr" "bazarr" "jellyfin" "seerr" }}
 {{- range $svc := $services }}
 ---
 apiVersion: v1

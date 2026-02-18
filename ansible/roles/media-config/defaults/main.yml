@@ -4,6 +4,10 @@ media_namespace: "media"
 # qBittorrent admin password (set after initial temp password)
 media_qbt_admin_password: "adminadmin"
 
+# NZBGet admin credentials (NZBGet defaults)
+media_nzbget_admin_user: "nzbget"
+media_nzbget_admin_password: "tegbzn6789"
+
 # Jellyfin admin credentials
 media_jellyfin_admin_user: "admin"
 media_jellyfin_admin_password: "adminadmin"
@@ -18,6 +22,7 @@ media_readarr_port: 8787
 media_bazarr_port: 6767
 media_jellyfin_port: 8096
 media_seerr_port: 5055
+media_nzbget_port: 6789
 media_flaresolverr_port: 8191
 
 # Local port-forward base (each service gets base + offset)

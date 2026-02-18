@@ -81,6 +81,13 @@ seerr:
   subdomain: seerr
   forwardAuth: false  # has built-in auth; ForwardAuth breaks native apps
 
+# NZBGet (Usenet downloader)
+nzbget:
+  image: ghcr.io/nzbgetcom/nzbget:v26.0
+  port: 6789
+  subdomain: nzbget
+  forwardAuth: false  # has built-in auth; basic auth conflicts with ForwardAuth
+
 # FlareSolverr (Cloudflare bypass for Prowlarr)
 flaresolverr:
   image: ghcr.io/flaresolverr/flaresolverr:v3.4.6

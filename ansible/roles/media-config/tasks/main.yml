@@ -12,6 +12,7 @@
     KUBECONFIG: /home/debian/.kube/config
   loop:
     - qbittorrent
+    - nzbget
     - radarr
     - sonarr
     - prowlarr
@@ -229,6 +230,19 @@
   register: pf_seerr_pid
   changed_when: false
 
+- name: Start port-forward to NZBGet
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/nzbget
+    -n {{ media_namespace }}
+    {{ media_pf_base_port + 9 }}:{{ media_nzbget_port }}
+    > /tmp/media-pf-nzbget.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: pf_nzbget_pid
+  changed_when: false
+
 - name: Store port-forward PIDs
   ansible.builtin.set_fact:
     media_pf_pids:
@@ -241,6 +255,7 @@
       - "{{ pf_bazarr_pid.stdout_lines[-1] }}"
       - "{{ pf_jellyfin_pid.stdout_lines[-1] }}"
       - "{{ pf_seerr_pid.stdout_lines[-1] }}"
+      - "{{ pf_nzbget_pid.stdout_lines[-1] }}"
 
 - name: Store local URLs
   ansible.builtin.set_fact:
@@ -253,6 +268,7 @@
     media_bazarr_url: "http://localhost:{{ media_pf_base_port + 6 }}"
     media_jellyfin_url: "http://localhost:{{ media_pf_base_port + 7 }}"
     media_seerr_url: "http://localhost:{{ media_pf_base_port + 8 }}"
+    media_nzbget_url: "http://localhost:{{ media_pf_base_port + 9 }}"
 
 - name: Wait for all port-forwards to be ready
   become: false
@@ -270,6 +286,7 @@
     - "{{ media_pf_base_port + 6 }}"
     - "{{ media_pf_base_port + 7 }}"
     - "{{ media_pf_base_port + 8 }}"
+    - "{{ media_pf_base_port + 9 }}"
 
 # Configure each service
 - name: Configure qBittorrent
@@ -298,6 +315,9 @@
 
 - name: Configure Seerr
   ansible.builtin.include_tasks: seerr.yml
+
+- name: Configure NZBGet
+  ansible.builtin.include_tasks: nzbget.yml
 
 - name: Configure media management settings
   ansible.builtin.include_tasks: media-management.yml

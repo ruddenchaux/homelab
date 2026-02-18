@@ -1,5 +1,6 @@
 {{- $services := dict
     "qbittorrent" .Values.qbittorrent
+    "nzbget" .Values.nzbget
     "radarr" .Values.radarr
     "sonarr" .Values.sonarr
     "prowlarr" .Values.prowlarr

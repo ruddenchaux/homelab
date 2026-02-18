@@ -1,0 +1,270 @@
+---
+# Configure NZBGet via config file patching
+# - Set download paths and categories
+# - Add NZBGet as download client to Radarr, Sonarr, Lidarr, Readarr
+#
+# NZBGet's saveconfig API replaces the entire config file, so we patch
+# the config file directly via kubectl exec to preserve default settings.
+
+# --- Patch NZBGet config file ---
+
+- name: Check NZBGet MainDir config
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/nzbget -n {{ media_namespace }}
+    -- grep -c '^MainDir=/data/media/downloads$' /config/nzbget.conf
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: nzbget_maindir_check
+  changed_when: false
+  failed_when: false
+
+- name: Patch NZBGet config file
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec deploy/nzbget -n {{ media_namespace }}
+    -- sh -c "sed -i
+    -e 's|^MainDir=.*|MainDir=/data/media/downloads|'
+    -e 's|^InterDir=.*|InterDir=/data/media/downloads/intermediate|'
+    -e 's|^Category1.Name=.*|Category1.Name=movies|'
+    -e 's|^Category1.DestDir=.*|Category1.DestDir=/data/media/downloads/complete/movies|'
+    -e 's|^Category2.Name=.*|Category2.Name=tv|'
+    -e 's|^Category2.DestDir=.*|Category2.DestDir=/data/media/downloads/complete/tv|'
+    -e 's|^Category3.Name=.*|Category3.Name=music|'
+    -e 's|^Category3.DestDir=.*|Category3.DestDir=/data/media/downloads/complete/music|'
+    -e 's|^Category4.Name=.*|Category4.Name=books|'
+    -e 's|^Category4.DestDir=.*|Category4.DestDir=/data/media/downloads/complete/books|'
+    /config/nzbget.conf"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: nzbget_patch_result
+  when: nzbget_maindir_check.stdout | trim | default('0') != '1'
+
+- name: Restart NZBGet to apply config
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout restart deployment/nzbget -n {{ media_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  when: nzbget_patch_result is changed
+
+- name: Wait for NZBGet restart
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout status deployment/nzbget
+    -n {{ media_namespace }}
+    --timeout=120s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+  when: nzbget_patch_result is changed
+
+# --- Add NZBGet as download client to *arr apps ---
+
+# Radarr (API v3)
+- name: Check existing Radarr download clients for NZBGet
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_radarr_url }}/api/v3/downloadclient"
+    headers:
+      X-Api-Key: "{{ media_radarr_api_key }}"
+    return_content: true
+  register: radarr_nzbget_check
+  no_log: true
+
+- name: Add NZBGet to Radarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_radarr_url }}/api/v3/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_radarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: usenet
+      name: NZBGet
+      implementation: Nzbget
+      configContract: NzbgetSettings
+      priority: 1
+      fields:
+        - name: host
+          value: "nzbget.{{ media_namespace }}.svc.cluster.local"
+        - name: port
+          value: "{{ media_nzbget_port }}"
+        - name: username
+          value: "{{ media_nzbget_admin_user }}"
+        - name: password
+          value: "{{ media_nzbget_admin_password }}"
+        - name: movieCategory
+          value: movies
+        - name: useSsl
+          value: false
+    status_code:
+      - 201
+      - 400
+  register: radarr_nzbget_result
+  no_log: true
+  when: "'NZBGet' not in (radarr_nzbget_check.json | map(attribute='name') | list)"
+
+- name: Warn if NZBGet connection failed for Radarr
+  ansible.builtin.debug:
+    msg: "NZBGet download client not added to Radarr - check NZBGet is running and credentials are correct"
+  when: radarr_nzbget_result.status | default(0) == 400
+
+# Sonarr (API v3)
+- name: Check existing Sonarr download clients for NZBGet
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/downloadclient"
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+    return_content: true
+  register: sonarr_nzbget_check
+  no_log: true
+
+- name: Add NZBGet to Sonarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_sonarr_url }}/api/v3/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: usenet
+      name: NZBGet
+      implementation: Nzbget
+      configContract: NzbgetSettings
+      priority: 1
+      fields:
+        - name: host
+          value: "nzbget.{{ media_namespace }}.svc.cluster.local"
+        - name: port
+          value: "{{ media_nzbget_port }}"
+        - name: username
+          value: "{{ media_nzbget_admin_user }}"
+        - name: password
+          value: "{{ media_nzbget_admin_password }}"
+        - name: tvCategory
+          value: tv
+        - name: useSsl
+          value: false
+    status_code:
+      - 201
+      - 400
+  register: sonarr_nzbget_result
+  no_log: true
+  when: "'NZBGet' not in (sonarr_nzbget_check.json | map(attribute='name') | list)"
+
+- name: Warn if NZBGet connection failed for Sonarr
+  ansible.builtin.debug:
+    msg: "NZBGet download client not added to Sonarr - check NZBGet is running and credentials are correct"
+  when: sonarr_nzbget_result.status | default(0) == 400
+
+# Lidarr (API v1)
+- name: Check existing Lidarr download clients for NZBGet
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/downloadclient"
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+    return_content: true
+  register: lidarr_nzbget_check
+  no_log: true
+
+- name: Add NZBGet to Lidarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: usenet
+      name: NZBGet
+      implementation: Nzbget
+      configContract: NzbgetSettings
+      priority: 1
+      fields:
+        - name: host
+          value: "nzbget.{{ media_namespace }}.svc.cluster.local"
+        - name: port
+          value: "{{ media_nzbget_port }}"
+        - name: username
+          value: "{{ media_nzbget_admin_user }}"
+        - name: password
+          value: "{{ media_nzbget_admin_password }}"
+        - name: musicCategory
+          value: music
+        - name: useSsl
+          value: false
+    status_code:
+      - 201
+      - 400
+  register: lidarr_nzbget_result
+  no_log: true
+  when: "'NZBGet' not in (lidarr_nzbget_check.json | map(attribute='name') | list)"
+
+- name: Warn if NZBGet connection failed for Lidarr
+  ansible.builtin.debug:
+    msg: "NZBGet download client not added to Lidarr - check NZBGet is running and credentials are correct"
+  when: lidarr_nzbget_result.status | default(0) == 400
+
+# Readarr (API v1)
+- name: Check existing Readarr download clients for NZBGet
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_readarr_url }}/api/v1/downloadclient"
+    headers:
+      X-Api-Key: "{{ media_readarr_api_key }}"
+    return_content: true
+  register: readarr_nzbget_check
+  no_log: true
+
+- name: Add NZBGet to Readarr
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_readarr_url }}/api/v1/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ media_readarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: usenet
+      name: NZBGet
+      implementation: Nzbget
+      configContract: NzbgetSettings
+      priority: 1
+      fields:
+        - name: host
+          value: "nzbget.{{ media_namespace }}.svc.cluster.local"
+        - name: port
+          value: "{{ media_nzbget_port }}"
+        - name: username
+          value: "{{ media_nzbget_admin_user }}"
+        - name: password
+          value: "{{ media_nzbget_admin_password }}"
+        - name: musicCategory
+          value: books
+        - name: useSsl
+          value: false
+    status_code:
+      - 201
+      - 400
+  register: readarr_nzbget_result
+  no_log: true
+  when: "'NZBGet' not in (readarr_nzbget_check.json | map(attribute='name') | list)"
+
+- name: Warn if NZBGet connection failed for Readarr
+  ansible.builtin.debug:
+    msg: "NZBGet download client not added to Readarr - check NZBGet is running and credentials are correct"
+  when: readarr_nzbget_result.status | default(0) == 400

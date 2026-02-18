@@ -76,8 +76,12 @@ homepage:
               icon: bazarr
           - qBittorrent:
               href: https://qbittorrent.ruddenchaux.xyz
-              description: Download client
+              description: Torrent client
               icon: qbittorrent
+          - NZBGet:
+              href: https://nzbget.ruddenchaux.xyz
+              description: Usenet downloader
+              icon: nzbget
           - Jellyfin:
               href: https://jellyfin.ruddenchaux.xyz
               description: Media server
