@@ -48,6 +48,16 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Worker VMs have 500GB HDD data disk (scsi1 on datapool), mounted at /data/local-path-provisioner
 - local-path-provisioner deployed as default StorageClass (`local-path`)
 - Loki persistence enabled (10Gi PVC), Authentik PostgreSQL (8Gi) persistence enabled
+- Media stack (Servarr) deployed in `media` namespace, all pods pinned to k8s-worker-01 for shared local-path PVC
+  - qBittorrent (torrent) via Gluetun VPN sidecar (NordVPN WireGuard, Netherlands)
+  - NZBGet (Usenet downloader) at nzbget.ruddenchaux.xyz (ForwardAuth disabled, built-in basic auth)
+  - Radarr (movies), Sonarr (TV), Lidarr (music), Readarr (books), Prowlarr (indexer manager)
+  - FlareSolverr (Cloudflare bypass proxy for Prowlarr)
+  - Bazarr (subtitles), Jellyfin (media server), Seerr (media requests)
+  - Recyclarr (TRaSH Guides auto-sync, daily cron)
+  - Ansible role `media-config`: configures inter-service connections via REST APIs + port-forwards
+  - Shared 400Gi `media-library` PVC at `/data/media`, per-service 2Gi config PVCs
+  - All services on Homepage dashboard, most behind ForwardAuth (except Jellyfin, Seerr, NZBGet which have built-in auth)
 
 ## Completed Tasks
 1. **Ansible: Configure Proxmox base** — `ansible/playbooks/proxmox-base.yml`
@@ -129,12 +139,29 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - Grafana OIDC: generic_oauth, role mapping (admin group → Admin), signout redirect
    - ArgoCD OIDC: Authentik issuer, RBAC (authentik Admins → role:admin, default readonly)
    - Roles: authentik-secrets (bootstrap token), authentik-config (API configuration)
+11. **GitOps: Media stack (Servarr)** — `kubernetes/platform/media/` + `ansible/roles/media-config/`
+    - Helm umbrella chart with templates for all services (Deployment + Service + Ingress + PVC per service)
+    - Shared helpers: `_helpers.tpl` (labels, selectors, LinuxServer env, volume mounts, ingress generation)
+    - qBittorrent behind Gluetun VPN sidecar (NordVPN WireGuard), NZBGet standalone (Usenet is SSL-encrypted)
+    - Prowlarr with FlareSolverr indexer proxy, Recyclarr daily TRaSH Guides sync via CronJob
+    - Jellyfin media server, Seerr media requests UI
+    - Ansible `media-config` role: reads API keys from config.xml, port-forwards to all services, configures via REST APIs
+    - qBittorrent configured as torrent download client in Radarr, Sonarr, Lidarr, Readarr
+    - NZBGet configured as Usenet download client in Radarr, Sonarr, Lidarr, Readarr
+    - NZBGet config patched via `sed` (kubectl exec) — saveconfig API replaces entire config, not safe for partial updates
+    - Prowlarr synced to all *arr apps, FlareSolverr added as indexer proxy
+    - Bazarr connected to Radarr + Sonarr for subtitle management
+    - Jellyfin libraries configured, Seerr linked to Jellyfin + Radarr + Sonarr
+    - Media management settings (rename, hardlinks, root folders) + naming schemes configured per *arr app
+    - Recyclarr API keys secret created for TRaSH Guides sync
+    - ForwardAuth disabled on Jellyfin, Seerr, NZBGet ingresses (built-in auth, conflicts with ForwardAuth headers)
+    - All services added to Homepage dashboard
 
 ## Pending Tasks (in order)
 1. **Deploy services via GitOps** (NEXT) — add service Applications to `kubernetes/`
 
 ## Services to Deploy (on k8s)
-- Media server (Servarr stack)
+- ~~Media server (Servarr stack)~~
 - Storage/backup (Nextcloud)
 - Home Assistant
 - Node-RED (Grafana already deployed for dashboards)
@@ -192,3 +219,6 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Power consumption: ~150-200W idle, ~400W full load. Estimate ~€30-50/month electricity in Milan.
 - Server is noisy (2U) — consider soundproofing or dedicated room.
 - The user has a public domain that should be used for hostnames and certificates.
+- MikroTik firewall blocks non-standard outbound ports from k8s VMs (e.g., port 563/NNTPS blocked). Use standard ports like 443 when available.
+- Services with built-in basic auth (e.g., NZBGet) conflict with Traefik ForwardAuth — the `Authorization` header causes 503. Disable ForwardAuth on these ingresses.
+- NZBGet's `saveconfig` JSON-RPC API replaces the entire config file (not a merge). Use `sed` via kubectl exec for partial config updates.
