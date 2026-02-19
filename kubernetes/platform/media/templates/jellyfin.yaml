@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "jellyfin" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: jellyfin
           image: {{ .Values.jellyfin.image }}

@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "prowlarr" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: prowlarr
           image: {{ .Values.prowlarr.image }}

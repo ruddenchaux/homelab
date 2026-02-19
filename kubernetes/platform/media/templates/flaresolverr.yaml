@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "flaresolverr" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: flaresolverr
           image: {{ .Values.flaresolverr.image }}

@@ -1,4 +1,25 @@
 ---
+# Static NFS PV — bound directly to /datapool/media on Proxmox, no provisioner needed
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-library-nfs
+spec:
+  capacity:
+    storage: {{ .Values.storage.mediaLibrary.size }}
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - timeo=600
+    - retrans=2
+  nfs:
+    server: {{ .Values.storage.mediaLibrary.nfsServer }}
+    path: {{ .Values.storage.mediaLibrary.nfsPath }}
+---
 # Shared media library — downloads + organized library on the same filesystem for hardlinks
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -10,13 +31,14 @@ metadata:
     {{- include "media.labels" . | nindent 4 }}
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: {{ .Values.storage.mediaLibrary.storageClass }}
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: media-library-nfs
   resources:
     requests:
       storage: {{ .Values.storage.mediaLibrary.size }}
 ---
-# Config PVCs — one per service
+# Config PVCs — one per service, local-path (ReadWriteOnce, per-node)
 {{- $services := list "qbittorrent" "nzbget" "radarr" "sonarr" "prowlarr" "lidarr" "readarr" "bazarr" "jellyfin" "seerr" }}
 {{- range $svc := $services }}
 ---
@@ -32,7 +54,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: {{ $.Values.storage.mediaLibrary.storageClass }}
+  storageClassName: {{ $.Values.storage.configStorageClass }}
   resources:
     requests:
       storage: {{ $.Values.storage.configSize }}

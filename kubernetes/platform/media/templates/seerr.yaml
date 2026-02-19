@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "seerr" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

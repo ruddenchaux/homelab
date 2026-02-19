@@ -1,0 +1,15 @@
+---
+- name: Configure NFS server on Proxmox
+  hosts: proxmox
+  roles:
+    - proxmox-nfs
+
+- name: Install NFS client on Kubernetes workers
+  hosts: k8s_workers
+  become: true
+  tasks:
+    - name: Install nfs-common
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+        update_cache: true

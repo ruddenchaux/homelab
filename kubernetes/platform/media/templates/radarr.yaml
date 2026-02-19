@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "radarr" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: radarr
           image: {{ .Values.radarr.image }}

@@ -39,6 +39,9 @@ variable "data_datastore_id" {
   default = "datapool"
 }
 
+# Kept at 500 for existing workers — ZFS zvols cannot be shrunk without recreating the VM.
+# Thin provisioned: actual pool usage is only what's written (~20GB config PVCs).
+# New workers should use 200 (enough for config PVCs + Phase 2 Longhorn).
 variable "worker_data_disk_size" {
   type    = number
   default = 500

@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "sonarr" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: sonarr
           image: {{ .Values.sonarr.image }}

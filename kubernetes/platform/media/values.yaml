@@ -1,9 +1,5 @@
 domain: ruddenchaux.xyz
 
-# Node pinning — all media pods on same worker for shared local-path PVC
-nodeSelector:
-  kubernetes.io/hostname: k8s-worker-01
-
 # Shared environment for LinuxServer.io containers
 linuxserver:
   puid: "1000"
@@ -13,8 +9,10 @@ linuxserver:
 # Storage
 storage:
   mediaLibrary:
-    size: 400Gi
-    storageClass: local-path
+    size: 3T
+    nfsServer: 10.10.0.2
+    nfsPath: /datapool/media
+  configStorageClass: local-path
   configSize: 2Gi
 
 # Gluetun VPN

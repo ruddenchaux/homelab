@@ -18,8 +18,6 @@ spec:
       labels:
         {{- include "media.selectorLabels" "lidarr" | nindent 8 }}
     spec:
-      nodeSelector:
-        {{- toYaml .Values.nodeSelector | nindent 8 }}
       containers:
         - name: lidarr
           image: {{ .Values.lidarr.image }}
