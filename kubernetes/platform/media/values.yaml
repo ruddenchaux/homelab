@@ -8,11 +8,9 @@ linuxserver:
 
 # Storage
 storage:
+  storageClass: local-path
   mediaLibrary:
-    size: 3T
-    nfsServer: 10.10.0.2
-    nfsPath: /datapool/media
-  configStorageClass: local-path
+    size: 400Gi
   configSize: 2Gi
 
 # Gluetun VPN
