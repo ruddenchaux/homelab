@@ -246,8 +246,7 @@ the age recipient for all `*.sops.yml` files.
 - `packer/debian-13/secrets.sops.yml` — Proxmox token secret, http_ip
 
 ### Ansible — automatic decryption
-`ansible.cfg` enables `community.sops.sops` vars plugin. Any playbook that includes
-`vars_files: ["../secrets.sops.yml"]` gets secrets transparently decrypted at load time.
+Each play that needs secrets includes a `pre_tasks:` block using `community.sops.load_vars`.
 No `-e` flags needed:
 ```bash
 ansible-playbook ansible/playbooks/vps-relay.yml

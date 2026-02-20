@@ -20,8 +20,11 @@
 # Play 1 — VPS: install everything, generate keys, write wg0.conf (no peer yet)
 - name: Setup VPS relay (initial — no MikroTik peer yet)
   hosts: vps
-  vars_files:
-    - "{{ playbook_dir }}/../secrets.sops.yml"
+  pre_tasks:
+    - name: Load secrets
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets.sops.yml"
+      no_log: true
   roles:
     - vps-relay
 
@@ -30,8 +33,11 @@
 - name: Setup MikroTik WireGuard
   hosts: mikrotik
   gather_facts: false
-  vars_files:
-    - "{{ playbook_dir }}/../secrets.sops.yml"
+  pre_tasks:
+    - name: Load secrets
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets.sops.yml"
+      no_log: true
   roles:
     - mikrotik-wireguard
 
@@ -41,7 +47,11 @@
   hosts: vps
   vars_files:
     - "{{ playbook_dir }}/../roles/vps-relay/defaults/main.yml"
-    - "{{ playbook_dir }}/../secrets.sops.yml"
+  pre_tasks:
+    - name: Load secrets
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets.sops.yml"
+      no_log: true
   tasks:
     - name: Re-read VPS private key
       ansible.builtin.slurp:
