@@ -2,7 +2,3 @@
 cilium_version: "1.19.0"
 cilium_l2_pool_start: "10.30.0.200"
 cilium_l2_pool_stop: "10.30.0.250"
-# Set to a /122 (64 addresses) carved from VLAN 30's /64 after Starlink prefix is known.
-# Example: "2a0d:5600:abcd:ef30::200/122"
-# Leave empty until MikroTik DHCPv6-PD is configured and prefix is stable.
-cilium_l2_ipv6_cidr: ""

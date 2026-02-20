@@ -11,7 +11,6 @@
     --set externalIPs.enabled=true
     --set hubble.relay.enabled=true
     --set hubble.ui.enabled=true
-    --set ipv6.enabled=true
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: cilium_upgrade

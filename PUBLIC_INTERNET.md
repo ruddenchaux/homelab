@@ -12,26 +12,20 @@ Starlink Residential Lite provides no public IPv4 address. The connection sits b
 **CGNAT** (Carrier-Grade NAT): many customers share the same public IPv4, so inbound
 connections to your home are impossible on IPv4.
 
-IPv6 is the partial way out. Starlink provides full public IPv6 connectivity, but
-~13% of Italian users have working IPv6, so you still need a solution for IPv4 visitors.
-
 ---
 
 ## Options Evaluated
 
 | Option | Cost | Pros | Cons |
 |--------|------|------|------|
-| **VPS + WireGuard** | ~4 €/month | Full IPv4+IPv6, any protocol, full control, streaming OK | Costs money, extra latency hop |
-| **IPv6 + Cloudflare proxy** | Free | Zero cost, educational, 100% visitor coverage | Dynamic prefix, Jellyfin TOS violation via proxy |
-| **Cloudflare Tunnel** | Free | No inbound ports, works through CGNAT | 100 MB upload limit, TOS prohibits streaming |
+| **VPS + WireGuard** | ~4 €/month | Any protocol, full control, streaming OK | Costs money, extra latency hop |
+| Cloudflare Tunnel | Free | No inbound ports, works through CGNAT | 100 MB upload limit, TOS prohibits streaming |
 | Tailscale Funnel | Free | Simple | No custom domains (only *.ts.net), breaks Authentik cookie |
 | ngrok | $8+/month | Simple | Too expensive |
 
 **What was implemented**:
-- **IPv6 stack** (Option B): Prepared and ready — MikroTik DHCPv6-PD, k8s dual-stack
-  Traefik, external-dns for AAAA records. Needs Phase 2 (real prefix known after testing).
-- **VPS + WireGuard** (Option A): **Deployed** for Jellyfin — Hetzner VPS as TCP stream
-  relay, WireGuard tunnel to MikroTik, nginx passthrough. `jellyfin.ruddenchaux.xyz` live.
+- **VPS + WireGuard**: **Deployed** — Hetzner VPS as TCP stream relay, WireGuard tunnel
+  to MikroTik, nginx passthrough. `jellyfin.ruddenchaux.xyz` live.
 - **Client VPN**: **Deployed** — Android/device VPN via the same VPS, split-tunnel to
   all homelab CIDRs.
 
@@ -272,197 +266,6 @@ via `wg syncconf` — no tunnel interruption).
 
 ---
 
-## Prepared: IPv6 Stack (Not Yet Activated)
-
-The full IPv6 infrastructure is coded and ready. It needs a real Starlink prefix to
-complete Phase 2.
-
-### How Starlink Provides IPv6
-
-Starlink is in **bypass mode** — the Starlink hardware only provides power and physical
-signal. MikroTik connects directly to the dish output.
-
-Starlink provides two things over the WAN link:
-
-**WAN /64 via SLAAC**: MikroTik's WAN interface gets a global IPv6 address automatically.
-
-**LAN /56 via DHCPv6-PD**: Starlink delegates a `/56` prefix (256 × `/64` subnets).
-Each VLAN gets its own `/64`. These are **public addresses** — every device that gets
-one is directly reachable from the internet (MikroTik firewall is non-optional).
-
-**Dynamic prefix**: The `/56` changes during Starlink maintenance windows (20:00–02:00 UTC),
-dish reboots, and firmware updates. Dynamic DNS (external-dns) handles Cloudflare records
-automatically. Cilium pool CIDR and MikroTik firewall rules need manual re-run of Phase 2.
-
-### How DHCPv6-PD Works
-
-DHCPv6-PD (Prefix Delegation, RFC 3633) — the router requests a block of IPv6 addresses
-to distribute to downstream networks:
-
-```
-MikroTik (client)                    Starlink (server)
-      │
-      │--- Solicit (IA_PD, want prefix) --->
-      │<-- Advertise (/56 available) -------
-      │--- Request (give me that /56) ----->
-      │<-- Reply (here is 2a0d:5600:X:Y::/56, T1=3600s) ---
-      │
-      │ (every T1 seconds: Renew → Reply)
-```
-
-RouterOS config:
-```
-/ipv6 dhcp-client add
-  interface=ether1          # WAN port
-  pool-name=starlink-pd     # pool name for carving /64s
-  pool-prefix-length=64     # carve /64s from the /56
-  request=prefix
-  add-default-route=yes
-```
-
-Then per VLAN: `/ipv6 address add address=::1 from-pool=starlink-pd interface=vlan30-kubernetes`
-RouterOS picks the next `/64`, assigns `<prefix>::1` as gateway, advertises via RA.
-
-### How SLAAC Works
-
-SLAAC (RFC 4862) — devices auto-configure IPv6 addresses from Router Advertisements:
-
-1. MikroTik broadcasts an **RA** on each VLAN with the `/64` prefix and A=yes
-2. Device takes the prefix + generates a 64-bit interface ID:
-   - **EUI-64** (stable): derived from MAC. MAC `bc:24:11:1c:e2:8c` → `bc24:11ff:fe1c:e28c`
-   - **Privacy extensions** (RFC 4941): random, changes periodically
-3. Combines them: `2a0d:5600:abcd:0030:bc24:11ff:fe1c:e28c`
-
-**Privacy extensions are disabled** (`use_tempaddr=0`) on k8s nodes so addresses are
-stable for firewall rules, Cilium NDP announcements, and DNS records.
-
-**`accept_ra=2` is required** on k8s nodes: Linux disables RA acceptance when IP
-forwarding is on (assumes the machine is a router). k8s nodes need both — they
-forward pod traffic AND accept upstream RAs. `accept_ra=2` overrides this.
-
-### The Cloudflare Proxy Trick
-
-When you orange-cloud (proxy) an AAAA record on Cloudflare:
-
-```
-Stored AAAA: service.ruddenchaux.xyz → 2a0d:5600:abcd:0030::200 (your IPv6)
-Public DNS:  service.ruddenchaux.xyz → 104.21.x.x (A, Cloudflare edge)
-                                      → 2606:4700::x (AAAA, Cloudflare edge)
-
-IPv4 visitor → Cloudflare IPv4 edge → your IPv6 origin  ✓
-IPv6 visitor → Cloudflare IPv6 edge → your IPv6 origin  ✓
-```
-
-Cloudflare acts as a free IPv4→IPv6 translation layer. Visitors never see your real address.
-
-**Why only AAAA records via external-dns**: Traefik's IPv4 LB (`10.30.0.200`) is private —
-Cloudflare can't reach it. external-dns is configured `--managed-record-types=AAAA,TXT`
-to skip A records intentionally.
-
-**Jellyfin exception**: Cloudflare ToS (section 2.8) prohibits proxying streaming media.
-Use grey-cloud for Jellyfin. The VPS relay solves this for IPv4 users.
-
-### Two-Phase Rollout
-
-```bash
-# Phase 1 — Infrastructure (MikroTik IPv6, k8s sysctl, external-dns secrets)
-ansible-playbook ansible/playbooks/ipv6.yml --tags phase1 \
-  -e cloudflare_api_token=<token>
-
-# Check what prefix Starlink assigned to VLAN 30:
-ssh debian@10.30.0.11 "ip -6 addr show scope global eth0"
-# Example: 2a0d:5600:abcd:0030:bc24:11ff:fe1c:e28c/64
-# Carve: 2a0d:5600:abcd:0030::200/122  (64 addresses for Cilium)
-
-# Phase 2 — Kubernetes routing (Cilium pool + MikroTik Traefik forward rule)
-ansible-playbook ansible/playbooks/ipv6.yml --tags phase2 \
-  -e cilium_l2_ipv6_cidr="2a0d:5600:abcd:0030::200/122" \
-  -e mikrotik_traefik_ipv6="2a0d:5600:abcd:0030::200"
-```
-
-After Phase 2, external-dns detects Traefik's new IPv6 LB and creates Cloudflare AAAA
-records for every ingress. Services become reachable from IPv6 clients and (via
-Cloudflare proxy) from all IPv4 clients too.
-
-### NDP (IPv6 equivalent of ARP)
-
-When MikroTik needs to forward a packet to Traefik's IPv6 LB:
-```
-MikroTik sends: Neighbor Solicitation (multicast) → "Who has 2a0d:..::200?"
-Cilium replies:  Neighbor Advertisement → "2a0d:..::200 is at <worker MAC>"
-```
-
-Cilium handles NDP for all IPs in its LoadBalancer pool, same as it handles ARP for IPv4.
-
-### MikroTik IPv6 Firewall
-
-With IPv6, every device gets a globally routable address — no NAT. Firewall is mandatory.
-
-```
-# Forward chain — ONLY allow TCP 80/443 inbound to Traefik's specific IPv6
-accept  established,related,untracked
-drop    invalid
-accept  icmpv6                                           # NDP must flow freely
-accept  tcp dst=<TRAEFIK_IPv6>/128 dst-port=80,443 in=ether1  # ← only this
-accept  in=LAN out=WAN                                   # outbound from LAN
-drop                                                     # everything else
-```
-
-Port scanner hitting any k8s node's IPv6 directly gets dropped at MikroTik.
-
-### Prefix Change Handling
-
-When Starlink reassigns the /56:
-1. MikroTik renews → VLAN interfaces get new /64s
-2. k8s nodes get new SLAAC addresses within minutes
-3. Cilium pool still has old CIDR → Traefik's LB IP becomes unreachable
-4. external-dns detects LB IP changed → updates Cloudflare AAAA records
-5. MikroTik forward rule still references old Traefik IPv6 → inbound fails
-
-**Recovery**: re-run Phase 2 with new prefix values. Future improvement: a DaemonSet
-that watches the node's SLAAC prefix and patches Cilium pool + MikroTik rule automatically.
-
-### IPv6 key files
-
-| File | Purpose |
-|------|---------|
-| `ansible/playbooks/ipv6.yml` | Phase 1 + Phase 2 orchestration |
-| `ansible/roles/mikrotik-ipv6/` | DHCPv6-PD, RAs, IPv6 firewall on MikroTik |
-| `ansible/roles/k8s-ipv6/` | sysctl accept_ra=2, use_tempaddr=0 on k8s nodes |
-| `ansible/roles/cilium-l2/` | Cilium L2 pool (IPv4 + optional IPv6 CIDR via phase2) |
-| `kubernetes/platform/traefik/values.yaml` | `ipFamilyPolicy: PreferDualStack` |
-| `kubernetes/platform/external-dns/` | AAAA record automation via Cloudflare API |
-| `kubernetes/apps/templates/external-dns.yaml` | ArgoCD Application for external-dns |
-
----
-
-## Who Has IPv6? The Full Chain
-
-Every link must support IPv6 for a visitor to use it:
-
-```
-ISP → Home Router → Device OS → Browser/App
- ↑
-Most critical
-```
-
-**ISP**: Italy overall ~13% IPv6. Mobile (4G/5G) better than fixed. Iliad Italy: yes.
-TIM/Vodafone mobile: partial. Fastweb FTTH: generally yes. Most ADSL: not yet.
-
-**Home Router**: Must relay the prefix (DHCPv6-PD). ISP-provided routers often ship
-with IPv6 disabled even when ISP supports it.
-
-**Device OS**: Never the bottleneck today. Windows 10+, macOS, iOS, Android 4+ all
-support IPv6 and prefer it via **Happy Eyeballs** (RFC 8305):
-1. Start IPv6 connection, after 50ms also start IPv4 in parallel
-2. Whichever connects first wins
-3. Completely transparent to user
-
-**To check a specific user**: visit **https://test-ipv6.com** — gives 0-10 score
-with clear explanation.
-
----
-
 ## What Is and Isn't Exposed
 
 ### Currently exposed (A record → VPS)
@@ -484,44 +287,6 @@ To expose another service:
 2. That's it — Traefik already serves grafana, nginx passes it through
 
 Services behind Authentik ForwardAuth remain protected — SSO login still required.
-
-### IPv6 (when Phase 2 is complete)
-
-All services with Ingress objects will get AAAA records via external-dns, proxied through
-Cloudflare (except Jellyfin which gets grey-cloud). Services will be reachable from any
-IPv6 client and from all IPv4 clients via Cloudflare's proxy.
-
----
-
-## Cloudflare Tunnel (Option C — Not Implemented, Available as Fallback)
-
-If IPv6 turns out to be blocked by Starlink in this region:
-
-```bash
-# Deploy cloudflared as a k8s pod (outbound-only tunnel, no inbound ports needed)
-kubectl apply -f kubernetes/apps/templates/cloudflared.yaml  # (not created yet)
-```
-
-Limitations:
-- 100 MB upload limit per request → breaks Nextcloud, large file uploads
-- ToS prohibits streaming → no Jellyfin
-- Cloudflare terminates TLS → cert-manager certs not used publicly
-
-Best as a temporary fallback while IPv6 is being debugged.
-
----
-
-## Recommended Strategy
-
-```
-Step 1: VPS relay for Jellyfin          ← DONE
-Step 2: Client VPN for personal access  ← DONE
-Step 3: Run IPv6 Phase 1                ← Run when ready to test
-Step 4: Test inbound IPv6 (python3 -m http.server on k8s node, curl from external IPv6)
-Step 5a: If IPv6 works → Phase 2 → all services get AAAA records, Cloudflare proxy
-Step 5b: If IPv6 blocked → Cloudflare Tunnel for remaining services (not Jellyfin)
-Step 6: For additional IPv4 services → add A record pointing to VPS (nginx passes through)
-```
 
 ---
 

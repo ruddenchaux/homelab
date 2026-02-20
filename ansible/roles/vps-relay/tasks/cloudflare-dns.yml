@@ -1,8 +1,7 @@
 ---
 # Create an A record for jellyfin.ruddenchaux.xyz pointing to this VPS (grey-cloud,
 # DNS-only — no Cloudflare proxy, so TLS is handled end-to-end by Traefik).
-# This gives IPv4 clients a path: client → VPS nginx → WireGuard → Traefik → Jellyfin.
-# The AAAA record is managed by external-dns (Traefik's IPv6 LB, for direct IPv6 clients).
+# Flow: client → VPS nginx (TCP stream) → WireGuard → MikroTik → Traefik → Jellyfin.
 
 - name: Get VPS public IPv4 address
   ansible.builtin.uri:

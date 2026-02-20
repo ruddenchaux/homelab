@@ -7,6 +7,3 @@ spec:
   blocks:
     - start: "{{ cilium_l2_pool_start }}"
       stop: "{{ cilium_l2_pool_stop }}"
-{% if cilium_l2_ipv6_cidr %}
-    - cidr: "{{ cilium_l2_ipv6_cidr }}"
-{% endif %}

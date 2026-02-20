@@ -67,7 +67,6 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
   - WireGuard tunnel: VPS (10.100.0.1/wg0) ↔ MikroTik (10.100.0.2/wg-vps), PersistentKeepalive=25s (CGNAT piercing)
   - Client VPN: Android/devices connect to VPS WireGuard, masquerade + IP forwarding routes traffic through existing tunnel
   - Client VPN split tunnel: 10.10.0.0/24, 10.20.0.0/24, 10.30.0.0/24 (all homelab VLANs)
-  - IPv6 stack prepared (DHCPv6-PD, external-dns AAAA, Cilium dual-stack) — needs Phase 2 after Starlink prefix confirmed
 
 ## Completed Tasks
 
@@ -179,12 +178,10 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
     - QR code generated via qrencode and printed in Ansible debug output
     - wg syncconf hot-reload: adds client peer without restarting WireGuard (MikroTik tunnel stays up)
     - Roles: vps-relay (VPS setup), mikrotik-wireguard (MikroTik WireGuard), vps-client-vpn (client peer + VPN)
-    - IPv6 stack prepared (not yet activated): roles mikrotik-ipv6, k8s-ipv6, cilium-l2 (Phase 2 vars), external-dns GitOps app
 
 ## Pending Tasks (in order)
 
-1. **IPv6 Phase 2** — run `ansible/playbooks/ipv6.yml --tags phase2` after confirming Starlink prefix from `ip -6 addr show` on a k8s node
-2. **Deploy services via GitOps** — add service Applications to `kubernetes/`
+1. **Deploy services via GitOps** — add service Applications to `kubernetes/`
 
 ## Services to Deploy (on k8s)
 
@@ -203,9 +200,9 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 ## Public Internet Access
 
 ISP: Starlink Residential Lite (CGNAT, no public IPv4). See `PUBLIC_INTERNET.md` for full
-protocol explanations (DHCPv6-PD, SLAAC, Cloudflare proxy trick, WireGuard design).
+protocol explanations (WireGuard tunnel design, VPS relay, client VPN).
 
-### Deployed: VPS + WireGuard relay (Option A)
+### Deployed: VPS + WireGuard relay
 
 - Hetzner CX22 VPS: `89.167.62.126` (Nuremberg, ~15ms from Milan, ~4€/month)
 - Flow: Internet → VPS:443 (nginx TCP stream, blind passthrough) → WireGuard tunnel → MikroTik → Traefik → pods
@@ -221,21 +218,6 @@ protocol explanations (DHCPv6-PD, SLAAC, Cloudflare proxy trick, WireGuard desig
 - Split tunnel: `10.10.0.0/24, 10.20.0.0/24, 10.30.0.0/24` (all homelab VLANs)
 - Playbook: `ansible/playbooks/vps-client-vpn.yml` — generates keypair, prints QR code
 - Add more devices: `-e vpn_client_name=laptop -e vpn_client_ip=10.100.0.11`
-
-### Prepared: IPv6 + Cloudflare proxy (Option B — not yet activated)
-
-- Roles: `mikrotik-ipv6` (DHCPv6-PD, SLAAC, firewall), `k8s-ipv6` (sysctl), `cilium-l2` (dual-stack pool)
-- Traefik: `ipFamilyPolicy: PreferDualStack` already set
-- external-dns: deployed in ArgoCD, publishes AAAA-only to Cloudflare, proxied (grey-cloud for Jellyfin)
-- Phase 1: `ansible-playbook ansible/playbooks/ipv6.yml --tags phase1 -e cloudflare_api_token=X`
-- Phase 2: `--tags phase2 -e cilium_l2_ipv6_cidr=<prefix>::200/122 -e mikrotik_traefik_ipv6=<prefix>::200`
-- Must check prefix first: `ssh debian@10.30.0.11 "ip -6 addr show scope global eth0"`
-
-### Option C: Cloudflare Tunnel (fallback if IPv6 blocked)
-
-- `cloudflared` as k8s pod, outbound tunnel, zero inbound ports, works through CGNAT
-- Limits: 100 MB upload cap (breaks Nextcloud), TOS prohibits streaming (no Jellyfin)
-- Not yet deployed — available as fallback if Starlink blocks inbound IPv6
 
 ## Architecture Decisions
 

@@ -17,8 +17,7 @@
 #   - WireGuard tunnel: VPS (10.100.0.1) ↔ MikroTik (10.100.0.2)
 #   - nginx on VPS proxies TCP 443 → Traefik (10.30.0.200) via the tunnel
 #   - jellyfin.ruddenchaux.xyz A record → VPS IP (grey-cloud, DNS-only)
-#   - IPv4 clients: VPS → WireGuard → MikroTik → Traefik → Jellyfin pod
-#   - IPv6 clients: direct to Traefik IPv6 LB (handled by external-dns + AAAA record)
+#   - Flow: Internet → VPS nginx (TCP stream) → WireGuard → MikroTik → Traefik → Jellyfin pod
 
 # Play 1 — VPS: install everything, generate keys, write wg0.conf (no peer yet)
 - name: Setup VPS relay (initial — no MikroTik peer yet)
