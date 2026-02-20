@@ -1,0 +1,65 @@
+---
+- name: Install WireGuard
+  ansible.builtin.apt:
+    name: wireguard
+    state: present
+
+# Generate keypair only on first run — idempotent via stat check.
+- name: Check if WireGuard private key exists
+  ansible.builtin.stat:
+    path: /etc/wireguard/private.key
+  register: _wg_privkey
+
+- name: Generate WireGuard private key
+  ansible.builtin.shell: wg genkey > /etc/wireguard/private.key
+  args:
+    creates: /etc/wireguard/private.key
+  when: not _wg_privkey.stat.exists
+
+- name: Set private key permissions
+  ansible.builtin.file:
+    path: /etc/wireguard/private.key
+    mode: "0600"
+
+- name: Derive and save public key
+  ansible.builtin.shell: wg pubkey < /etc/wireguard/private.key > /etc/wireguard/public.key
+  args:
+    creates: /etc/wireguard/public.key
+
+- name: Read private key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/private.key
+  register: _wg_private_key_raw
+  no_log: true
+
+- name: Read public key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/public.key
+  register: _wg_public_key_raw
+
+# Expose public key as a host fact so the MikroTik play can read it via hostvars.
+- name: Set wg_public_key fact
+  ansible.builtin.set_fact:
+    wg_public_key: "{{ _wg_public_key_raw.content | b64decode | trim }}"
+    wg_private_key: "{{ _wg_private_key_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Print VPS WireGuard public key (needed for MikroTik peer config)
+  ansible.builtin.debug:
+    msg: "VPS WireGuard public key: {{ wg_public_key }}"
+
+# The MikroTik peer block is only written once the MikroTik play has run
+# and hostvars['mikrotik-gw']['mikrotik_wg_public_key'] is available.
+# On first run (key exchange play), this is skipped; on second run it is applied.
+- name: Write wg0 config
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: /etc/wireguard/wg0.conf
+    mode: "0600"
+  notify: restart wg0
+
+- name: Enable and start wg0
+  ansible.builtin.systemd:
+    name: wg-quick@wg0
+    enabled: true
+    state: started

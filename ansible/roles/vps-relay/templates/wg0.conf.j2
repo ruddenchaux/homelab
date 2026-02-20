@@ -1,0 +1,15 @@
+[Interface]
+PrivateKey = {{ wg_private_key }}
+Address = {{ vps_wg_address }}
+ListenPort = {{ vps_wg_port }}
+
+{% if hostvars['mikrotik-gw']['mikrotik_wg_public_key'] is defined %}
+[Peer]
+# MikroTik router (initiates the connection — it's behind Starlink CGNAT)
+PublicKey = {{ hostvars['mikrotik-gw']['mikrotik_wg_public_key'] }}
+# AllowedIPs: MikroTik tunnel IP + the entire k8s VLAN routed through it
+AllowedIPs = {{ mikrotik_wg_address }}/32, {{ k8s_vlan_cidr }}
+# No Endpoint here — MikroTik connects to us (CGNAT piercing via PersistentKeepalive on MikroTik side)
+{% else %}
+# MikroTik peer not yet configured — run the full vps-relay.yml playbook to complete setup
+{% endif %}

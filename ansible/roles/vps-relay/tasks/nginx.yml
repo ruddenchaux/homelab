@@ -1,0 +1,42 @@
+---
+# nginx-full includes the stream module (TCP/UDP proxy).
+# The stream {} block must live at the top level of nginx config, outside http {}.
+- name: Install nginx-full
+  ansible.builtin.apt:
+    name: nginx-full
+    state: present
+
+- name: Create stream config directory
+  ansible.builtin.file:
+    path: /etc/nginx/stream.conf.d
+    state: directory
+    mode: "0755"
+
+# Add stream include to nginx.conf if not already present.
+# The include line goes at the bottom of nginx.conf, outside the http {} block.
+- name: Add stream include to nginx.conf
+  ansible.builtin.lineinfile:
+    path: /etc/nginx/nginx.conf
+    line: "include /etc/nginx/stream.conf.d/*.conf;"
+    insertafter: EOF
+    state: present
+  notify: reload nginx
+
+- name: Write Jellyfin stream proxy config
+  ansible.builtin.template:
+    src: jellyfin-stream.conf.j2
+    dest: /etc/nginx/stream.conf.d/jellyfin.conf
+    mode: "0644"
+  notify: reload nginx
+
+- name: Remove default nginx site (not needed for a relay)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+
+- name: Enable and start nginx
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+    state: started

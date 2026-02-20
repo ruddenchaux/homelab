@@ -1,0 +1,13 @@
+---
+- name: Configure firewall
+  ansible.builtin.include_tasks: firewall.yml
+
+- name: Configure WireGuard
+  ansible.builtin.include_tasks: wireguard.yml
+
+- name: Configure nginx TCP proxy
+  ansible.builtin.include_tasks: nginx.yml
+
+- name: Create Cloudflare A record for Jellyfin
+  ansible.builtin.include_tasks: cloudflare-dns.yml
+  when: cloudflare_zone_id | length > 0

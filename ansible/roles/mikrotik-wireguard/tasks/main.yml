@@ -1,0 +1,9 @@
+---
+- name: Create WireGuard interface and generate keys
+  ansible.builtin.include_tasks: interface.yml
+
+- name: Assign IP address to WireGuard interface
+  ansible.builtin.include_tasks: address.yml
+
+- name: Configure VPS as WireGuard peer
+  ansible.builtin.include_tasks: peer.yml

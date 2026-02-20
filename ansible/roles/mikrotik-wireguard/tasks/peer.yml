@@ -1,0 +1,44 @@
+---
+- name: Check existing WireGuard peers
+  community.routeros.command:
+    commands:
+      - /interface wireguard peers print where interface={{ mikrotik_wg_interface }}
+  register: _wg_peers
+
+- name: Add VPS as WireGuard peer
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard peers add
+        interface={{ mikrotik_wg_interface }}
+        public-key="{{ hostvars['vps-relay']['wg_public_key'] }}"
+        endpoint-address={{ vps_public_ip }}
+        endpoint-port={{ vps_wg_port }}
+        allowed-address={{ vps_wg_ip }}/32
+        persistent-keepalive=25s
+        comment="vps-relay-peer"
+  when: "'vps-relay-peer' not in _wg_peers.stdout[0]"
+
+# MikroTik is already the gateway for 10.30.0.0/24 (k8s VLAN).
+# The VPS reaches it via AllowedIPs=10.30.0.0/24 on VPS side.
+# No extra route needed here — MikroTik forwards naturally.
+#
+# We DO need to allow traffic from the VPS WireGuard IP to reach the k8s VLAN
+# through MikroTik. Add a firewall accept rule if not already present.
+- name: Check IPv4 forward firewall rules
+  community.routeros.command:
+    commands:
+      - /ip firewall filter print where comment=fw-wg-vps-fwd
+  register: _fw_wg
+
+- name: Allow forwarding from VPS WireGuard to k8s VLAN
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter add
+        chain=forward
+        action=accept
+        in-interface={{ mikrotik_wg_interface }}
+        out-interface=vlan30-kubernetes
+        comment="fw-wg-vps-fwd"
+  when: "'fw-wg-vps-fwd' not in _fw_wg.stdout[0]"

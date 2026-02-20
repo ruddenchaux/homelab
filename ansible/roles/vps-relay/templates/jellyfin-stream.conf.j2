@@ -1,0 +1,28 @@
+stream {
+    # TCP passthrough to Traefik — TLS is terminated by Traefik (cert-manager cert).
+    # The client connects to this VPS on port 443, the connection is forwarded
+    # transparently to Traefik via the WireGuard tunnel. Traefik sees the hostname
+    # via SNI and routes to the Jellyfin pod.
+    upstream traefik_https {
+        server {{ traefik_lb_ip }}:443;
+    }
+
+    upstream traefik_http {
+        server {{ traefik_lb_ip }}:80;
+    }
+
+    server {
+        listen 443;
+        proxy_pass traefik_https;
+        proxy_connect_timeout 5s;
+        proxy_timeout 600s;   # long timeout for streaming
+        proxy_buffer_size 16k;
+    }
+
+    server {
+        listen 80;
+        proxy_pass traefik_http;
+        proxy_connect_timeout 5s;
+        proxy_timeout 60s;
+    }
+}

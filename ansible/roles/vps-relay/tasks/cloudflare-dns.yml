@@ -1,0 +1,58 @@
+---
+# Create an A record for jellyfin.ruddenchaux.xyz pointing to this VPS (grey-cloud,
+# DNS-only — no Cloudflare proxy, so TLS is handled end-to-end by Traefik).
+# This gives IPv4 clients a path: client → VPS nginx → WireGuard → Traefik → Jellyfin.
+# The AAAA record is managed by external-dns (Traefik's IPv6 LB, for direct IPv6 clients).
+
+- name: Get VPS public IPv4 address
+  ansible.builtin.uri:
+    url: https://api4.ipify.org?format=json
+    return_content: true
+  register: _vps_ipv4
+
+- name: Check if Jellyfin A record already exists
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records?type=A&name={{ jellyfin_subdomain }}.{{ jellyfin_domain }}"
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    return_content: true
+  register: _cf_a_record
+  no_log: true
+
+- name: Create Jellyfin A record (grey-cloud, DNS-only)
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      type: A
+      name: "{{ jellyfin_subdomain }}.{{ jellyfin_domain }}"
+      content: "{{ _vps_ipv4.json.ip }}"
+      ttl: 60
+      proxied: false
+    status_code: 200
+  when: _cf_a_record.json.result | length == 0
+  no_log: true
+
+- name: Update Jellyfin A record if IP changed
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records/{{ _cf_a_record.json.result[0].id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      type: A
+      name: "{{ jellyfin_subdomain }}.{{ jellyfin_domain }}"
+      content: "{{ _vps_ipv4.json.ip }}"
+      ttl: 60
+      proxied: false
+    status_code: 200
+  when:
+    - _cf_a_record.json.result | length > 0
+    - _cf_a_record.json.result[0].content != _vps_ipv4.json.ip
+  no_log: true

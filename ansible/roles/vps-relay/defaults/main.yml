@@ -1,0 +1,22 @@
+---
+# WireGuard tunnel — point-to-point /30 between VPS and MikroTik
+vps_wg_interface: wg0
+vps_wg_port: 51820
+vps_wg_address: "10.100.0.1/30"
+
+# MikroTik WireGuard IP (other end of the tunnel)
+mikrotik_wg_address: "10.100.0.2"
+
+# k8s VLAN reachable through MikroTik (Traefik LB lives here)
+k8s_vlan_cidr: "10.30.0.0/24"
+
+# Traefik LoadBalancer IP — nginx stream proxy forwards here
+traefik_lb_ip: "10.30.0.200"
+
+# Jellyfin subdomain — an A record pointing to the VPS will be created in Cloudflare
+jellyfin_subdomain: "jellyfin"
+jellyfin_domain: "ruddenchaux.xyz"
+
+# Cloudflare zone ID for ruddenchaux.xyz — needed to create the Jellyfin A record.
+# Find it in the Cloudflare dashboard → your domain → Overview → right sidebar.
+cloudflare_zone_id: ""

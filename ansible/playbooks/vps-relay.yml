@@ -1,0 +1,70 @@
+---
+# VPS Relay Setup — reverse proxy for Jellyfin via WireGuard tunnel
+#
+# Run:
+#   ansible-playbook ansible/playbooks/vps-relay.yml \
+#     -e cloudflare_api_token=<token> \
+#     -e cloudflare_zone_id=<zone_id>
+#
+# What happens:
+#   1. VPS: installs WireGuard + nginx, generates VPS keypair
+#   2. MikroTik: creates WireGuard interface (auto-generates MikroTik keypair),
+#      adds VPS as peer using VPS public key from step 1
+#   3. VPS: rewrites wg0.conf with MikroTik public key from step 2, restarts WireGuard
+#   4. VPS: creates Cloudflare A record for jellyfin.ruddenchaux.xyz → VPS IP
+#
+# After this playbook:
+#   - WireGuard tunnel: VPS (10.100.0.1) ↔ MikroTik (10.100.0.2)
+#   - nginx on VPS proxies TCP 443 → Traefik (10.30.0.200) via the tunnel
+#   - jellyfin.ruddenchaux.xyz A record → VPS IP (grey-cloud, DNS-only)
+#   - IPv4 clients: VPS → WireGuard → MikroTik → Traefik → Jellyfin pod
+#   - IPv6 clients: direct to Traefik IPv6 LB (handled by external-dns + AAAA record)
+
+# Play 1 — VPS: install everything, generate keys, write wg0.conf (no peer yet)
+- name: Setup VPS relay (initial — no MikroTik peer yet)
+  hosts: vps
+  roles:
+    - vps-relay
+
+# Play 2 — MikroTik: create WireGuard interface, register its public key,
+#           add VPS as peer (using VPS public key from Play 1 via hostvars)
+- name: Setup MikroTik WireGuard
+  hosts: mikrotik
+  gather_facts: false
+  roles:
+    - mikrotik-wireguard
+
+# Play 3 — VPS: rewrite wg0.conf now that MikroTik public key is known,
+#           restart WireGuard so the tunnel comes up with the full peer config
+- name: Finalize VPS WireGuard config with MikroTik peer
+  hosts: vps
+  vars_files:
+    - "{{ playbook_dir }}/../roles/vps-relay/defaults/main.yml"
+  tasks:
+    - name: Re-read VPS private key
+      ansible.builtin.slurp:
+        src: /etc/wireguard/private.key
+      register: _wg_private_key_raw
+      no_log: true
+
+    - name: Re-read VPS public key
+      ansible.builtin.slurp:
+        src: /etc/wireguard/public.key
+      register: _wg_public_key_raw
+
+    - name: Set key facts
+      ansible.builtin.set_fact:
+        wg_private_key: "{{ _wg_private_key_raw.content | b64decode | trim }}"
+        wg_public_key: "{{ _wg_public_key_raw.content | b64decode | trim }}"
+      no_log: true
+
+    - name: Write final wg0.conf with MikroTik peer
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/vps-relay/templates/wg0.conf.j2"
+        dest: /etc/wireguard/wg0.conf
+        mode: "0600"
+
+    - name: Restart WireGuard with complete config
+      ansible.builtin.systemd:
+        name: wg-quick@wg0
+        state: restarted

@@ -1,0 +1,33 @@
+---
+# RouterOS automatically generates a WireGuard keypair when the interface is created.
+- name: Check if WireGuard interface already exists
+  community.routeros.command:
+    commands:
+      - /interface wireguard print where name={{ mikrotik_wg_interface }}
+  register: _wg_iface
+
+- name: Create WireGuard interface
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard add
+        name={{ mikrotik_wg_interface }}
+        listen-port={{ vps_wg_port }}
+        comment="VPS relay tunnel"
+  when: "'name=' ~ mikrotik_wg_interface not in _wg_iface.stdout[0]"
+
+# Read the auto-generated public key and expose it as a host fact so the
+# VPS play (running later in the same playbook) can configure its peer block.
+- name: Read MikroTik WireGuard public key
+  community.routeros.command:
+    commands:
+      - /interface wireguard print where name={{ mikrotik_wg_interface }}
+  register: _wg_print
+
+- name: Parse and set mikrotik_wg_public_key fact
+  ansible.builtin.set_fact:
+    mikrotik_wg_public_key: "{{ _wg_print.stdout[0] | regex_search('public-key=\"([^\"]+)\"', '\\1') | first }}"
+
+- name: Print MikroTik WireGuard public key (needed for VPS peer config)
+  ansible.builtin.debug:
+    msg: "MikroTik WireGuard public key: {{ mikrotik_wg_public_key }}"

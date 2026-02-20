@@ -1,0 +1,16 @@
+---
+- name: Check existing IP addresses on WireGuard interface
+  community.routeros.command:
+    commands:
+      - /ip address print where interface={{ mikrotik_wg_interface }}
+  register: _wg_addresses
+
+- name: Assign tunnel IP to WireGuard interface
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address add
+        address={{ mikrotik_wg_address }}
+        interface={{ mikrotik_wg_interface }}
+        comment="wg-vps-tunnel-ip"
+  when: "'wg-vps-tunnel-ip' not in _wg_addresses.stdout[0]"

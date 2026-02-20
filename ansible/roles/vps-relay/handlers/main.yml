@@ -1,0 +1,10 @@
+---
+- name: restart wg0
+  ansible.builtin.systemd:
+    name: wg-quick@wg0
+    state: restarted
+
+- name: reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
