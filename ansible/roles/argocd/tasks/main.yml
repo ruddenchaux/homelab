@@ -101,6 +101,31 @@
     path: /tmp/root-application.yml
     state: absent
 
+# Create external-dns namespace and Cloudflare token secret.
+# The namespace is also created by ArgoCD (CreateNamespace=true) but the secret
+# must exist before external-dns starts, so we pre-create both here.
+- name: Create external-dns namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace external-dns
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: extdns_ns
+  changed_when: "'created' in extdns_ns.stdout"
+  failed_when: extdns_ns.rc != 0 and 'already exists' not in extdns_ns.stderr
+
+- name: Create external-dns Cloudflare token secret
+  become: false
+  ansible.builtin.command: >-
+    kubectl create secret generic cloudflare-external-dns
+    --namespace external-dns
+    --from-literal=token={{ cloudflare_api_token }}
+    --dry-run=client -o yaml | kubectl apply -f -
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: extdns_secret
+  changed_when: "'created' in extdns_secret.stdout or 'configured' in extdns_secret.stdout"
+  no_log: true
+
 - name: Print ArgoCD admin password retrieval command
   ansible.builtin.debug:
     msg: >-

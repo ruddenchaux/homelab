@@ -1,0 +1,22 @@
+---
+- name: Check existing DHCPv6-PD clients
+  community.routeros.command:
+    commands:
+      - /ipv6 dhcp-client print
+  register: _dhcpv6_clients
+
+- name: Add DHCPv6-PD client on WAN interface
+  community.routeros.command:
+    commands:
+      - >-
+        /ipv6 dhcp-client add
+        interface={{ mikrotik_wan_interface }}
+        pool-name={{ mikrotik_ipv6_pool_name }}
+        pool-prefix-length={{ mikrotik_ipv6_pool_prefix_length }}
+        request=prefix
+        rapid-commit=no
+        use-interface-duid=yes
+        use-peer-dns=no
+        add-default-route=yes
+        comment="dhcpv6-pd-starlink"
+  when: "'dhcpv6-pd-starlink' not in _dhcpv6_clients.stdout[0]"

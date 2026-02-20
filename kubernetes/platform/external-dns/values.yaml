@@ -1,0 +1,41 @@
+external-dns:
+  provider: cloudflare
+
+  # Cloudflare API token — created in the external-dns namespace by Ansible
+  # (ansible/roles/argocd/tasks/main.yml, using the same cloudflare_api_token var)
+  env:
+    - name: CF_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: cloudflare-external-dns
+          key: token
+
+  # Only manage AAAA records (IPv6 public origin) and TXT (ownership tracking).
+  # Traefik also has an IPv4 LB IP (10.30.0.200) but that is private and must NOT
+  # be published to public DNS. Cloudflare proxies IPv4 visitors → IPv6 origin.
+  extraArgs:
+    - --managed-record-types=AAAA
+    - --managed-record-types=TXT
+
+  sources:
+    - ingress
+
+  domainFilters:
+    - ruddenchaux.xyz
+
+  # Orange-cloud (proxied): Cloudflare acts as IPv4+IPv6 entry point,
+  # connects to our IPv6 origin. Gives free IPv4-to-IPv6 translation.
+  # Exception: Jellyfin should use grey-cloud (DNS-only) to avoid Cloudflare TOS
+  # violation for media streaming — annotate its ingress separately.
+  cloudflare:
+    proxied: true
+
+  # Ownership tracking — prevents external-dns from touching records it didn't create
+  txtOwnerId: homelab-k8s
+
+  # sync: creates, updates, and removes stale records when ingresses change
+  policy: sync
+
+  interval: 5m
+
+  logLevel: info

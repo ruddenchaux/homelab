@@ -1,0 +1,9 @@
+apiVersion: v2
+name: external-dns
+description: Automatic AAAA record management — watches Traefik ingresses and publishes to Cloudflare
+type: application
+version: 0.1.0
+dependencies:
+  - name: external-dns
+    version: "9.0.3"
+    repository: https://charts.bitnami.com/bitnami
