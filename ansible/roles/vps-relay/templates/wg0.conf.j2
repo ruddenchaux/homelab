@@ -13,8 +13,8 @@ PreDown  = iptables -t nat -D POSTROUTING -s {{ vpn_client_subnet }} -j MASQUERA
 [Peer]
 # MikroTik router (initiates the connection — it's behind Starlink CGNAT)
 PublicKey = {{ _mikrotik_key }}
-# AllowedIPs: MikroTik tunnel IP + the entire k8s VLAN routed through it
-AllowedIPs = {{ mikrotik_wg_address }}/32, {{ k8s_vlan_cidr }}
+# AllowedIPs: MikroTik tunnel IP + all homelab CIDRs routed through it
+AllowedIPs = {{ mikrotik_wg_address }}/32, {{ homelab_cidrs | join(', ') }}
 # No Endpoint here — MikroTik connects to us (CGNAT piercing via PersistentKeepalive on MikroTik side)
 {% else %}
 # MikroTik peer not yet configured — run the full vps-relay.yml playbook to complete setup
