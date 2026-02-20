@@ -10,3 +10,13 @@
 - name: Apply sysctl setting immediately
   ansible.builtin.command: sysctl -p /etc/sysctl.d/99-wireguard-forward.conf
   changed_when: false
+
+# UFW is present on Debian VPS images and defaults FORWARD to DROP.
+# A WireGuard relay needs to forward packets between peers — ACCEPT is correct here
+# because WireGuard's cryptographic auth (not iptables) is the security boundary.
+- name: Set UFW forward policy to ACCEPT
+  ansible.builtin.lineinfile:
+    path: /etc/default/ufw
+    regexp: '^DEFAULT_FORWARD_POLICY='
+    line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
+  notify: reload ufw

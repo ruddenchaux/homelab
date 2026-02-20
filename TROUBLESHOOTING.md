@@ -396,6 +396,159 @@ curl -s -X PATCH -H "Authorization: Bearer $TOKEN" \
 
 In Ansible, the `authentik-config` role finds or creates the certificate by name (`authentik JWT Signing Key`) and includes `signing_key` in all OAuth2 provider creation requests.
 
+## Client VPN: traffic not reaching homelab services
+
+When a device connects to the VPS WireGuard VPN (split tunnel) but services like `home.ruddenchaux.xyz` time out, there are three independent issues that can all be triggered by the same root cause: **`wg syncconf` does not run PostUp hooks and does not add kernel routes**. The `vps-client-vpn` playbook uses `syncconf` to hot-reload the peer without dropping the MikroTik tunnel, but this means everything that PostUp would normally set up must be applied separately.
+
+### Diagnosis
+
+**Step 1 — check WireGuard peer status on the VPS**
+
+```bash
+ssh root@89.167.62.126 "wg show wg0"
+```
+
+Look for:
+- `latest handshake` — if it's recent (< 3 minutes), the tunnel is up
+- `transfer` — if the client peer shows only a few KB, only keepalives are flowing (no real traffic)
+
+**Step 2 — capture traffic on the VPS while the client tries to connect**
+
+```bash
+# Install tcpdump if missing
+ssh root@89.167.62.126 "apt-get install -y tcpdump -q"
+
+# Capture 20 seconds of traffic from the client IP on all interfaces
+# (run this, then immediately try the service on the client device)
+ssh root@89.167.62.126 "timeout 20 tcpdump -i any -n 'udp port 51820 or host 10.100.0.10'"
+```
+
+Key patterns to look for:
+
+| What you see | Meaning |
+|---|---|
+| No packets at all | Client isn't routing traffic through the VPN — DNS or routing issue on device |
+| `wg0 In ... 10.100.0.10 > 10.30.0.200 [S]` then `eth0 Out ... 10.30.0.200 > 10.100.0.10 [S.]` | SYN arrives but SYN-ACK goes out eth0 (internet) instead of back through wg0 — **missing kernel route** |
+| SYN arrives, no SYN-ACK at all | Forwarding is blocked — check iptables/UFW |
+
+---
+
+### Issue 1: iptables MASQUERADE rules not applied
+
+**Symptom:** Client traffic arrives at VPS (`wg0 In 10.100.0.10 > 10.30.0.x`) but MikroTik has no route back to `10.100.0.10`. Return traffic is dropped.
+
+**Root cause:** `wg syncconf` only updates WireGuard cryptographic state — it does not execute `PostUp`. The MASQUERADE rule (which rewrites Android's IP to `10.100.0.1` so MikroTik can route the reply) is defined in PostUp and was never applied.
+
+**Verify:**
+
+```bash
+# Check if the MASQUERADE rule exists (counter should be > 0 after a connection attempt)
+ssh root@89.167.62.126 "iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE"
+```
+
+If the rule is missing or the counter stays at 0, apply it manually:
+
+```bash
+# Apply the three rules that PostUp would have set
+ssh root@89.167.62.126 "iptables -t nat -A POSTROUTING -s 10.100.0.0/24 -j MASQUERADE"
+# ^ rewrites client src IP to 10.100.0.1 so MikroTik can route replies back through the tunnel
+
+ssh root@89.167.62.126 "iptables -A FORWARD -i wg0 -j ACCEPT"
+# ^ allows forwarding of packets arriving on wg0 (client → homelab direction)
+
+ssh root@89.167.62.126 "iptables -A FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
+# ^ allows reply packets back out through wg0 (homelab → client direction, conntrack-tracked)
+```
+
+**Permanent fix:** re-running `ansible-playbook ansible/playbooks/vps-client-vpn.yml` now applies these as explicit Ansible tasks (not just PostUp), so they survive `syncconf` hot-reloads.
+
+---
+
+### Issue 2: UFW DEFAULT_FORWARD_POLICY=DROP blocking all forwarded traffic
+
+**Symptom:** Client SYNs arrive at VPS but no SYN-ACK comes back at all. The MASQUERADE rule counter stays at 0 even though packets are arriving on wg0.
+
+**Root cause:** Hetzner Debian VPS images come with UFW enabled. UFW's default `FORWARD` policy is `DROP`, and UFW chains run *before* any custom iptables rules. This silently drops all forwarded traffic regardless of any `iptables -A FORWARD` rules added manually.
+
+**Verify:**
+
+```bash
+# Check UFW forward policy (should say "allow (routed)" after the fix)
+ssh root@89.167.62.126 "ufw status verbose | grep routed"
+
+# Check the raw setting
+ssh root@89.167.62.126 "grep DEFAULT_FORWARD_POLICY /etc/default/ufw"
+
+# Check the FORWARD chain — if policy is DROP and there are UFW chains, they run first
+ssh root@89.167.62.126 "iptables -L FORWARD -n --line-numbers"
+```
+
+**Fix:**
+
+```bash
+# Change UFW forward policy to ACCEPT and reload
+ssh root@89.167.62.126 "sed -i 's/DEFAULT_FORWARD_POLICY=\"DROP\"/DEFAULT_FORWARD_POLICY=\"ACCEPT\"/' /etc/default/ufw && ufw reload"
+```
+
+**Why ACCEPT is safe here:** The VPS routing table only contains routes to homelab IPs (`10.30.0.0/24`, `10.100.0.x`) via `wg0`. For any internet traffic to reach the homelab it would need to be forwarded out `wg0`, which WireGuard rejects for any peer not holding a valid private key. The security boundary is WireGuard's cryptographic authentication, not iptables FORWARD rules.
+
+**Permanent fix:** re-running `ansible-playbook ansible/playbooks/vps-client-vpn.yml` now sets this in `ip_forward.yml` as part of the role.
+
+---
+
+### Issue 3: missing kernel route for client IP
+
+**Symptom:** SYN arrives on `wg0`, SYN-ACK is visible in tcpdump but exits on `eth0` (the internet interface) instead of `wg0`. The TCP handshake never completes and the browser times out.
+
+**Root cause:** `wg-quick` adds kernel routes for each peer's `AllowedIPs` when the interface is started. `wg syncconf` updates the peer list but does **not** add kernel routes. So the VPS has the peer in WireGuard (`wg show wg0` shows the client) but the kernel routing table has no entry for `10.100.0.10`. After conntrack un-masquerades the reply (destination reverts from `10.100.0.1` back to `10.100.0.10`), the kernel falls back to the default route and sends the packet out via `eth0`.
+
+**Verify:**
+
+```bash
+# Check routing table — should have a /32 entry for the client IP via wg0
+ssh root@89.167.62.126 "ip route show | grep 10.100.0"
+
+# Expected output:
+#   10.100.0.0/30 dev wg0 proto kernel scope link src 10.100.0.1
+#   10.100.0.10   dev wg0 scope link    ← this line is what syncconf doesn't add
+```
+
+**Fix:**
+
+```bash
+# Add the missing route (replace is idempotent — safe to run multiple times)
+ssh root@89.167.62.126 "ip route replace 10.100.0.10/32 dev wg0"
+# ^ tells the kernel: packets destined for 10.100.0.10 exit via the wg0 interface,
+#   which then encrypts and sends them to the Android WireGuard peer
+```
+
+**Permanent fix:** re-running `ansible-playbook ansible/playbooks/vps-client-vpn.yml` now runs `ip route replace` as an explicit task after `syncconf`.
+
+---
+
+### Full recovery (all three issues at once)
+
+If starting from a broken state (client VPN was set up via `vps-client-vpn.yml` but services are unreachable):
+
+```bash
+# 1. Apply iptables rules
+ssh root@89.167.62.126 "iptables -t nat -A POSTROUTING -s 10.100.0.0/24 -j MASQUERADE"
+ssh root@89.167.62.126 "iptables -A FORWARD -i wg0 -j ACCEPT"
+ssh root@89.167.62.126 "iptables -A FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"
+
+# 2. Fix UFW forward policy
+ssh root@89.167.62.126 "sed -i 's/DEFAULT_FORWARD_POLICY=\"DROP\"/DEFAULT_FORWARD_POLICY=\"ACCEPT\"/' /etc/default/ufw && ufw reload"
+
+# 3. Add kernel route for client
+ssh root@89.167.62.126 "ip route replace 10.100.0.10/32 dev wg0"
+
+# Verify end-to-end: VPS should be able to curl a homelab service
+ssh root@89.167.62.126 "curl -sk -o /dev/null -w '%{http_code}' https://home.ruddenchaux.xyz"
+# Expected: 302 (Authentik ForwardAuth redirect = Traefik is working)
+```
+
+These fixes are now permanent in the Ansible role — re-running `vps-client-vpn.yml` applies all three automatically.
+
 ## General cluster health
 
 ```bash

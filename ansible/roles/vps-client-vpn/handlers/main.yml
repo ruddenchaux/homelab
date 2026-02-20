@@ -3,8 +3,14 @@
 # wg-quick strip removes PostUp/PostDown lines (not understood by wg setconf),
 # then wg syncconf atomically applies the peer changes to the running interface.
 # The existing MikroTik tunnel stays up throughout.
+# NOTE: syncconf does NOT run PostUp — iptables rules and kernel routes are
+# applied explicitly in peer.yml instead of relying on PostUp.
 - name: syncconf wg0
   ansible.builtin.shell:
     cmd: wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)
     executable: /bin/bash
+  changed_when: true
+
+- name: reload ufw
+  ansible.builtin.command: ufw reload
   changed_when: true

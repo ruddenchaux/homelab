@@ -38,3 +38,32 @@
     dest: /etc/wireguard/wg0.conf
     mode: "0600"
   notify: syncconf wg0
+
+# wg syncconf hot-reloads the peer config but does NOT run PostUp (iptables/routes).
+# Apply them explicitly here so they take effect immediately and idempotently.
+- name: Apply MASQUERADE for VPN client subnet
+  ansible.builtin.iptables:
+    table: nat
+    chain: POSTROUTING
+    source: "{{ vpn_client_subnet }}"
+    jump: MASQUERADE
+
+- name: Allow forwarding from wg0
+  ansible.builtin.iptables:
+    chain: FORWARD
+    in_interface: "{{ vps_wg_interface }}"
+    jump: ACCEPT
+
+- name: Allow forwarding to wg0 for established connections
+  ansible.builtin.iptables:
+    chain: FORWARD
+    out_interface: "{{ vps_wg_interface }}"
+    ctstate:
+      - RELATED
+      - ESTABLISHED
+    jump: ACCEPT
+
+- name: Ensure kernel route for client IP via wg0
+  ansible.builtin.command:
+    cmd: "ip route replace {{ vpn_client_ip }}/32 dev {{ vps_wg_interface }}"
+  changed_when: false
