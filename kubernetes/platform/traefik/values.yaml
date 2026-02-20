@@ -1,10 +1,6 @@
 traefik:
   service:
     type: LoadBalancer
-    ipFamilyPolicy: PreferDualStack
-    ipFamilies:
-      - IPv4
-      - IPv6
   api:
     dashboard: true
   ingressRoute:
