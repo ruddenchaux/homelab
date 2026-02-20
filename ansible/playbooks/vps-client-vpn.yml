@@ -29,6 +29,6 @@
 - name: Setup client VPN on VPS relay
   hosts: vps
   vars_files:
-    - "{{ playbook_dir }}/../roles/vps-relay/defaults/main.yml"
+    - "{{ playbook_dir }}/../secrets.sops.yml"
   roles:
     - vps-client-vpn

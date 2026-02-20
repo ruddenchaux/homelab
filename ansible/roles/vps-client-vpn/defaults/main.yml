@@ -19,7 +19,7 @@ vpn_homelab_cidrs:
 # Change to 10.20.0.1 (MikroTik VLAN20 GW → AdGuardHome) if you want ad-blocking on VPN.
 vpn_dns: "1.1.1.1"
 
-# VPS public IP and WireGuard port — client uses this as the Endpoint
-vps_public_ip: "89.167.62.126"
+# VPS public IP — provided via secrets.sops.yml (vps_public_ip)
+# WireGuard port and interface — must match vps-relay defaults
 vps_wg_port: 51820       # reused from vps-relay defaults
 vps_wg_interface: wg0   # reused from vps-relay defaults

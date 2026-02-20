@@ -2,9 +2,7 @@
 # VPS Relay Setup — reverse proxy for Jellyfin via WireGuard tunnel
 #
 # Run:
-#   ansible-playbook ansible/playbooks/vps-relay.yml \
-#     -e cloudflare_api_token=<token> \
-#     -e cloudflare_zone_id=<zone_id>
+#   ansible-playbook ansible/playbooks/vps-relay.yml
 #
 # What happens:
 #   1. VPS: installs WireGuard + nginx, generates VPS keypair
@@ -22,6 +20,8 @@
 # Play 1 — VPS: install everything, generate keys, write wg0.conf (no peer yet)
 - name: Setup VPS relay (initial — no MikroTik peer yet)
   hosts: vps
+  vars_files:
+    - "{{ playbook_dir }}/../secrets.sops.yml"
   roles:
     - vps-relay
 
@@ -30,6 +30,8 @@
 - name: Setup MikroTik WireGuard
   hosts: mikrotik
   gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../secrets.sops.yml"
   roles:
     - mikrotik-wireguard
 
@@ -39,6 +41,7 @@
   hosts: vps
   vars_files:
     - "{{ playbook_dir }}/../roles/vps-relay/defaults/main.yml"
+    - "{{ playbook_dir }}/../secrets.sops.yml"
   tasks:
     - name: Re-read VPS private key
       ansible.builtin.slurp:

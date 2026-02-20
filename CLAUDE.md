@@ -209,7 +209,7 @@ protocol explanations (WireGuard tunnel design, VPS relay, client VPN).
 - WireGuard: VPS `10.100.0.1/wg0` ↔ MikroTik `10.100.0.2/wg-vps`, `PersistentKeepalive=25s` (CGNAT)
 - nginx is generic — any service gets IPv4 access by adding an A record pointing to the VPS IP
 - `jellyfin.ruddenchaux.xyz` A → `89.167.62.126` (grey-cloud, DNS-only, no Cloudflare proxy — streaming TOS)
-- Playbook: `ansible/playbooks/vps-relay.yml -e cloudflare_api_token=X -e cloudflare_zone_id=Y`
+- Playbook: `ansible/playbooks/vps-relay.yml` (secrets loaded automatically from `ansible/secrets.sops.yml`)
 
 ### Deployed: Client VPN (road warrior)
 
@@ -228,11 +228,52 @@ protocol explanations (WireGuard tunnel design, VPS relay, client VPN).
 - **Future Ceph**: when second node is added (same rack), minimum 3 nodes needed. Third node at parents' house — use ZFS send/receive or Syncthing instead of Ceph for remote replication due to latency
 - **VMs for k8s**: don't run k8s directly on Proxmox host. 1 VM control plane + 1-2 VM workers
 - **GitOps with ArgoCD**: all services declared in Git
-- **Secrets**: SOPS + age or Vault
+- **Secrets**: SOPS + age (deployed — see Secrets Management section below)
 - **Monitoring**: Prometheus + Grafana + Loki
 - **Certificates**: cert-manager + Let's Encrypt with DNS challenge
 - **Backup**: Proxmox Backup Server (PBS) in VM/LXC, 3-2-1 rule
 - **GPU**: planned for future AI workloads
+
+## Secrets Management
+
+SOPS + age is deployed. Encrypted secret files are committed to git; only the age private key
+(at `~/.config/sops/age/keys.txt`) is kept off-repo. `.sops.yaml` at the repo root configures
+the age recipient for all `*.sops.yml` files.
+
+### Secret files
+- `ansible/secrets.sops.yml` — Cloudflare tokens, NordVPN key, Proxmox API token, VPS IP, ACME email
+- `terraform/kubernetes/secrets.sops.yml` — Proxmox API token
+- `packer/debian-13/secrets.sops.yml` — Proxmox token secret, http_ip
+
+### Ansible — automatic decryption
+`ansible.cfg` enables `community.sops.sops` vars plugin. Any playbook that includes
+`vars_files: ["../secrets.sops.yml"]` gets secrets transparently decrypted at load time.
+No `-e` flags needed:
+```bash
+ansible-playbook ansible/playbooks/vps-relay.yml
+ansible-playbook ansible/playbooks/vps-client-vpn.yml
+ansible-playbook ansible/playbooks/argocd-bootstrap.yml
+```
+
+### Edit a secret
+```bash
+sops ansible/secrets.sops.yml   # opens $EDITOR, re-encrypts on save
+```
+
+### Terraform
+```bash
+sops exec-file --output-type dotenv terraform/kubernetes/secrets.sops.yml \
+  'terraform -chdir=terraform/kubernetes apply -var-file={}'
+```
+
+### Packer
+```bash
+sops exec-file --output-type json packer/debian-13/secrets.sops.yml \
+  'packer build -var-file={} packer/debian-13/'
+```
+
+### New machine setup
+Copy `~/.config/sops/age/keys.txt` from an existing machine — that's the only thing needed.
 
 ## IaC Stack
 

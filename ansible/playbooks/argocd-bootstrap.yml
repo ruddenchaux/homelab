@@ -16,6 +16,8 @@
 
 - name: Bootstrap ArgoCD and GitOps
   hosts: k8s_control_plane
+  vars_files:
+    - "../secrets.sops.yml"
   roles:
     - argocd
 
