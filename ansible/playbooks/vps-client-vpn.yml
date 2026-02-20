@@ -1,0 +1,34 @@
+---
+# VPS Client VPN Setup — adds a WireGuard VPN peer for device access to homelab
+#
+# Run:
+#   ansible-playbook ansible/playbooks/vps-client-vpn.yml
+#
+# Optional overrides:
+#   -e vpn_client_name=laptop       # generates a separate keypair/config
+#   -e vpn_client_ip=10.100.0.11    # different tunnel IP for each client
+#
+# What happens:
+#   1. Generates a WireGuard keypair for the client at /etc/wireguard/clients/<name>.key
+#   2. Enables IP forwarding on the VPS
+#   3. Rewrites wg0.conf: adds masquerade PostUp/PostDown + client [Peer] block
+#   4. Hot-reloads WireGuard via wg syncconf (existing MikroTik tunnel stays up)
+#   5. Prints a QR code to scan with the WireGuard Android/iOS app
+#
+# Traffic flow after setup:
+#   Android → WireGuard → VPS (10.100.0.1) → masquerade → existing tunnel → MikroTik → Traefik/services
+#
+# Split tunnel: only homelab CIDRs (10.10/20/30.0.0/24) go through VPN.
+# Internet traffic stays local on the device.
+#
+# To add a second device:
+#   ansible-playbook ansible/playbooks/vps-client-vpn.yml \
+#     -e vpn_client_name=laptop -e vpn_client_ip=10.100.0.11
+# (then re-run for android too to merge both peers into wg0.conf)
+
+- name: Setup client VPN on VPS relay
+  hosts: vps
+  vars_files:
+    - "{{ playbook_dir }}/../roles/vps-relay/defaults/main.yml"
+  roles:
+    - vps-client-vpn

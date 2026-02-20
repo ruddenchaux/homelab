@@ -2,14 +2,28 @@
 PrivateKey = {{ wg_private_key }}
 Address = {{ vps_wg_address }}
 ListenPort = {{ vps_wg_port }}
+{% if wg_client_peers | default([]) | length > 0 %}
+# VPN clients: masquerade so MikroTik sees VPS tunnel IP as source (not client IPs it can't route back)
+PostUp   = iptables -t nat -A POSTROUTING -s {{ vpn_client_subnet }} -j MASQUERADE; iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PreDown  = iptables -t nat -D POSTROUTING -s {{ vpn_client_subnet }} -j MASQUERADE; iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+{% endif %}
 
-{% if hostvars['mikrotik-gw']['mikrotik_wg_public_key'] is defined %}
+{% set _mikrotik_key = hostvars['mikrotik-gw']['mikrotik_wg_public_key'] | default(mikrotik_wg_public_key_stored | default('')) %}
+{% if _mikrotik_key %}
 [Peer]
 # MikroTik router (initiates the connection — it's behind Starlink CGNAT)
-PublicKey = {{ hostvars['mikrotik-gw']['mikrotik_wg_public_key'] }}
+PublicKey = {{ _mikrotik_key }}
 # AllowedIPs: MikroTik tunnel IP + the entire k8s VLAN routed through it
 AllowedIPs = {{ mikrotik_wg_address }}/32, {{ k8s_vlan_cidr }}
 # No Endpoint here — MikroTik connects to us (CGNAT piercing via PersistentKeepalive on MikroTik side)
 {% else %}
 # MikroTik peer not yet configured — run the full vps-relay.yml playbook to complete setup
 {% endif %}
+
+{% for client in wg_client_peers | default([]) %}
+[Peer]
+# {{ client.name }} VPN client
+PublicKey = {{ client.public_key }}
+AllowedIPs = {{ client.ip }}/32
+
+{% endfor %}

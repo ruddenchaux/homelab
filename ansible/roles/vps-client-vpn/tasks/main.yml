@@ -1,0 +1,12 @@
+---
+- name: Generate client keypair
+  ansible.builtin.import_tasks: keypair.yml
+
+- name: Enable IP forwarding
+  ansible.builtin.import_tasks: ip_forward.yml
+
+- name: Update wg0 config with client peer and reload
+  ansible.builtin.import_tasks: peer.yml
+
+- name: Generate and display QR code for Android
+  ansible.builtin.import_tasks: qrcode.yml

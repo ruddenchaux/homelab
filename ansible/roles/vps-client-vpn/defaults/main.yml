@@ -1,0 +1,25 @@
+---
+# Name used for the keypair files and wg0.conf [Peer] comment
+vpn_client_name: android
+
+# Tunnel IP assigned to this client inside the WireGuard network
+vpn_client_ip: "10.100.0.10"
+
+# Reused from vps-relay defaults — must match
+vpn_client_subnet: "10.100.0.0/24"
+
+# CIDRs the client will route through the VPN (split tunnel — only homelab traffic)
+vpn_homelab_cidrs:
+  - "10.10.0.0/24"   # VLAN 10 — Management (Proxmox, iDRAC)
+  - "10.20.0.0/24"   # VLAN 20 — Trusted LAN
+  - "10.30.0.0/24"   # VLAN 30 — Kubernetes (Traefik, all services)
+
+# DNS pushed to the client.
+# Using Cloudflare so it works for both internal (*.ruddenchaux.xyz via public DNS) and internet.
+# Change to 10.20.0.1 (MikroTik VLAN20 GW → AdGuardHome) if you want ad-blocking on VPN.
+vpn_dns: "1.1.1.1"
+
+# VPS public IP and WireGuard port — client uses this as the Endpoint
+vps_public_ip: "89.167.62.126"
+vps_wg_port: 51820       # reused from vps-relay defaults
+vps_wg_interface: wg0   # reused from vps-relay defaults

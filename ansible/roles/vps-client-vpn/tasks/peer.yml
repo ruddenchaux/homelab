@@ -1,0 +1,40 @@
+---
+# Read current wg0.conf to extract the MikroTik public key that's already configured.
+# This lets us re-render the full wg0.conf template without re-running the MikroTik play.
+- name: Read current wg0.conf
+  ansible.builtin.slurp:
+    src: /etc/wireguard/wg0.conf
+  register: _wg0_conf_raw
+
+- name: Extract MikroTik public key from existing wg0.conf
+  ansible.builtin.set_fact:
+    mikrotik_wg_public_key_stored: >-
+      {{ _wg0_conf_raw.content | b64decode
+         | regex_search('PublicKey = ([A-Za-z0-9+/=]+)', '\1')
+         | first }}
+
+- name: Read VPS private key (needed to render wg0.conf template)
+  ansible.builtin.slurp:
+    src: /etc/wireguard/private.key
+  register: _vps_private_key_raw
+  no_log: true
+
+- name: Set VPS key fact
+  ansible.builtin.set_fact:
+    wg_private_key: "{{ _vps_private_key_raw.content | b64decode | trim }}"
+  no_log: true
+
+# Build the wg_client_peers list consumed by the wg0.conf.j2 template
+- name: Build client peers list fact
+  ansible.builtin.set_fact:
+    wg_client_peers:
+      - name: "{{ vpn_client_name }}"
+        ip: "{{ vpn_client_ip }}"
+        public_key: "{{ vpn_client_public_key }}"
+
+- name: Write wg0.conf with client peer and masquerade PostUp
+  ansible.builtin.template:
+    src: "{{ role_path }}/../vps-relay/templates/wg0.conf.j2"
+    dest: /etc/wireguard/wg0.conf
+    mode: "0600"
+  notify: syncconf wg0

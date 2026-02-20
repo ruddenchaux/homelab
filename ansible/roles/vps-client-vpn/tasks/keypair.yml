@@ -1,0 +1,39 @@
+---
+- name: Create clients directory
+  ansible.builtin.file:
+    path: /etc/wireguard/clients
+    state: directory
+    mode: "0700"
+
+- name: Generate client private key (idempotent — skips if already exists)
+  ansible.builtin.shell:
+    cmd: wg genkey > /etc/wireguard/clients/{{ vpn_client_name }}.key
+    creates: /etc/wireguard/clients/{{ vpn_client_name }}.key
+  no_log: true
+
+- name: Set client private key permissions
+  ansible.builtin.file:
+    path: /etc/wireguard/clients/{{ vpn_client_name }}.key
+    mode: "0600"
+
+- name: Derive and save client public key
+  ansible.builtin.shell:
+    cmd: wg pubkey < /etc/wireguard/clients/{{ vpn_client_name }}.key > /etc/wireguard/clients/{{ vpn_client_name }}.pub
+    creates: /etc/wireguard/clients/{{ vpn_client_name }}.pub
+
+- name: Read client private key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/clients/{{ vpn_client_name }}.key
+  register: _client_private_key_raw
+  no_log: true
+
+- name: Read client public key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/clients/{{ vpn_client_name }}.pub
+  register: _client_public_key_raw
+
+- name: Set client key facts
+  ansible.builtin.set_fact:
+    vpn_client_private_key: "{{ _client_private_key_raw.content | b64decode | trim }}"
+    vpn_client_public_key: "{{ _client_public_key_raw.content | b64decode | trim }}"
+  no_log: true

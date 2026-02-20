@@ -1,0 +1,10 @@
+---
+# Hot-reload WireGuard with the new config without restarting the service.
+# wg-quick strip removes PostUp/PostDown lines (not understood by wg setconf),
+# then wg syncconf atomically applies the peer changes to the running interface.
+# The existing MikroTik tunnel stays up throughout.
+- name: syncconf wg0
+  ansible.builtin.shell:
+    cmd: wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)
+    executable: /bin/bash
+  changed_when: true

@@ -1,0 +1,56 @@
+---
+- name: Install qrencode (for generating scannable QR code)
+  ansible.builtin.apt:
+    name: qrencode
+    state: present
+
+- name: Read VPS public key (needed for client config Endpoint peer)
+  ansible.builtin.slurp:
+    src: /etc/wireguard/public.key
+  register: _vps_public_key_raw
+
+- name: Set VPS public key fact
+  ansible.builtin.set_fact:
+    vps_wg_public_key: "{{ _vps_public_key_raw.content | b64decode | trim }}"
+
+- name: Build client config content
+  ansible.builtin.set_fact:
+    vpn_client_conf: |
+      [Interface]
+      PrivateKey = {{ vpn_client_private_key }}
+      Address = {{ vpn_client_ip }}/24
+      DNS = {{ vpn_dns }}
+
+      [Peer]
+      PublicKey = {{ vps_wg_public_key }}
+      Endpoint = {{ vps_public_ip }}:{{ vps_wg_port }}
+      AllowedIPs = {{ vpn_homelab_cidrs | join(', ') }}
+      PersistentKeepalive = 25
+  no_log: true
+
+- name: Save client config to file on VPS
+  ansible.builtin.copy:
+    content: "{{ vpn_client_conf }}"
+    dest: /etc/wireguard/clients/{{ vpn_client_name }}.conf
+    mode: "0600"
+  no_log: true
+
+- name: Generate QR code and display it
+  ansible.builtin.shell:
+    cmd: "qrencode -t ansiutf8 < /etc/wireguard/clients/{{ vpn_client_name }}.conf"
+  register: _qr_output
+  changed_when: false
+  no_log: true
+
+- name: Display QR code for Android WireGuard app
+  ansible.builtin.debug:
+    msg: |
+      ╔══════════════════════════════════════════════════════════════╗
+      ║  Scan this QR code with the WireGuard app on your Android   ║
+      ║  Settings: Add tunnel → Create from QR code                 ║
+      ╚══════════════════════════════════════════════════════════════╝
+
+      {{ _qr_output.stdout }}
+
+      Client config also saved to: /etc/wireguard/clients/{{ vpn_client_name }}.conf
+      VPN routes (split tunnel): {{ vpn_homelab_cidrs | join(', ') }}
