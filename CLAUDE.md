@@ -261,13 +261,13 @@ sops ansible/secrets.sops.yml   # opens $EDITOR, re-encrypts on save
 
 ### Terraform
 ```bash
-sops exec-file --output-type dotenv terraform/kubernetes/secrets.sops.yml \
+sops exec-file --filename secrets.tfvars.json --output-type json terraform/kubernetes/secrets.sops.yml \
   'terraform -chdir=terraform/kubernetes apply -var-file={}'
 ```
 
 ### Packer
 ```bash
-sops exec-file --output-type json packer/debian-13/secrets.sops.yml \
+sops exec-file --filename secrets.pkrvars.json --output-type json packer/debian-13/secrets.sops.yml \
   'packer build -var-file={} packer/debian-13/'
 ```
 
