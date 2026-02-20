@@ -35,22 +35,22 @@
     mode: "0600"
   no_log: true
 
-- name: Generate QR code and display it
+- name: Generate QR code as PNG on VPS
   ansible.builtin.shell:
-    cmd: "qrencode -t ansiutf8 < /etc/wireguard/clients/{{ vpn_client_name }}.conf"
-  register: _qr_output
-  changed_when: false
+    cmd: "qrencode -t png -o /etc/wireguard/clients/{{ vpn_client_name }}.png < /etc/wireguard/clients/{{ vpn_client_name }}.conf"
+  changed_when: true
   no_log: true
 
-- name: Display QR code for Android WireGuard app
+- name: Fetch QR code PNG to local machine
+  ansible.builtin.fetch:
+    src: /etc/wireguard/clients/{{ vpn_client_name }}.png
+    dest: "{{ playbook_dir }}/../../{{ vpn_client_name }}-vpn-qr.png"
+    flat: true
+  no_log: true
+
+- name: Display instructions
   ansible.builtin.debug:
     msg: |
-      ╔══════════════════════════════════════════════════════════════╗
-      ║  Scan this QR code with the WireGuard app on your Android   ║
-      ║  Settings: Add tunnel → Create from QR code                 ║
-      ╚══════════════════════════════════════════════════════════════╝
-
-      {{ _qr_output.stdout }}
-
-      Client config also saved to: /etc/wireguard/clients/{{ vpn_client_name }}.conf
+      QR code saved to: {{ vpn_client_name }}-vpn-qr.png (open with any image viewer)
+      Client config also on VPS at: /etc/wireguard/clients/{{ vpn_client_name }}.conf
       VPN routes (split tunnel): {{ vpn_homelab_cidrs | join(', ') }}

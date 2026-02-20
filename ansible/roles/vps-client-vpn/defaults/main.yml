@@ -10,9 +10,10 @@ vpn_client_subnet: "10.100.0.0/24"
 
 # CIDRs the client will route through the VPN (split tunnel — only homelab traffic)
 vpn_homelab_cidrs:
-  - "10.10.0.0/24"   # VLAN 10 — Management (Proxmox, iDRAC)
-  - "10.20.0.0/24"   # VLAN 20 — Trusted LAN
-  - "10.30.0.0/24"   # VLAN 30 — Kubernetes (Traefik, all services)
+  - "10.10.0.0/24"    # VLAN 10 — Management (Proxmox, iDRAC)
+  - "10.20.0.0/24"    # VLAN 20 — Trusted LAN
+  - "10.30.0.0/24"    # VLAN 30 — Kubernetes (Traefik, all services)
+  - "192.168.88.0/24" # VLAN 1 — MikroTik default subnet
 
 # DNS pushed to the client.
 # Using Cloudflare so it works for both internal (*.ruddenchaux.xyz via public DNS) and internet.

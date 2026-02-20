@@ -42,3 +42,21 @@
         out-interface=vlan30-kubernetes
         comment="fw-wg-vps-fwd"
   when: "'fw-wg-vps-fwd' not in _fw_wg.stdout[0]"
+
+- name: Check IPv4 forward firewall rules for default bridge
+  community.routeros.command:
+    commands:
+      - /ip firewall filter print where comment=fw-wg-bridge-fwd
+  register: _fw_wg_bridge
+
+- name: Allow forwarding from VPS WireGuard to default bridge (192.168.88.0/24)
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter add
+        chain=forward
+        action=accept
+        in-interface={{ mikrotik_wg_interface }}
+        out-interface=bridge
+        comment="fw-wg-bridge-fwd"
+  when: "'fw-wg-bridge-fwd' not in _fw_wg_bridge.stdout[0]"

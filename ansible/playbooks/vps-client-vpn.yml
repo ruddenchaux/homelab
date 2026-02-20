@@ -28,6 +28,8 @@
 
 - name: Setup client VPN on VPS relay
   hosts: vps
+  vars_files:
+    - "{{ playbook_dir }}/../roles/vps-relay/defaults/main.yml"
   pre_tasks:
     - name: Load secrets
       community.sops.load_vars:

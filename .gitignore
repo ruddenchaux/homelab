@@ -17,6 +17,7 @@ downloaded_iso_path/
 *vault-password*
 *.age
 *.key
+*-vpn-qr.png
 
 # Editor files
 *.swp
