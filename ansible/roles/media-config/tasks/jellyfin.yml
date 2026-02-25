@@ -144,7 +144,7 @@
           - Path: "{{ media_tv_path }}"
     status_code: 204
   no_log: true
-  when: "'TV Shows' not in jellyfin_existing_libraries"
+  when: "'TV Shows' not in jellyfin_existing_libraries and 'Shows' not in jellyfin_existing_libraries"
 
 - name: Add Music library
   become: false
