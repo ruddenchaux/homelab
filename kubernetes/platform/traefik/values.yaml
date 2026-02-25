@@ -4,7 +4,7 @@ traefik:
   api:
     dashboard: true
   additionalArguments:
-    - "--entryPoints.web.http.redirections.entrypoint.to=websecure"
+    - "--entryPoints.web.http.redirections.entrypoint.to=:443"
     - "--entryPoints.web.http.redirections.entrypoint.scheme=https"
     - "--entryPoints.web.http.redirections.entrypoint.permanent=true"
   ingressRoute:
