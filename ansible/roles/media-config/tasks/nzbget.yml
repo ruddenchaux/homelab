@@ -8,14 +8,14 @@
 
 # --- Patch NZBGet config file ---
 
-- name: Check NZBGet MainDir config
+- name: Check NZBGet category DestDir config
   become: false
   ansible.builtin.command: >-
     kubectl exec deploy/nzbget -n {{ media_namespace }}
-    -- grep -c '^MainDir=/data/media/downloads$' /config/nzbget.conf
+    -- grep -c '^Category3.DestDir=/data/media/downloads/complete/music$' /config/nzbget.conf
   environment:
     KUBECONFIG: /home/debian/.kube/config
-  register: nzbget_maindir_check
+  register: nzbget_config_check
   changed_when: false
   failed_when: false
 
@@ -38,7 +38,7 @@
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: nzbget_patch_result
-  when: nzbget_maindir_check.stdout | trim | default('0') != '1'
+  when: nzbget_config_check.stdout | trim | default('0') != '1'
 
 - name: Restart NZBGet to apply config
   become: false
