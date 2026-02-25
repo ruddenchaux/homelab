@@ -1,59 +1,16 @@
-app:
-  # Avoid double-prefix (immich-immich-*): force all sub-chart resources to use 'immich' prefix
-  fullnameOverride: immich
+domain: ruddenchaux.xyz
 
-  # Valkey (Redis fork) for job queues — built into the chart
-  valkey:
-    enabled: true
+images:
+  server: ghcr.io/immich-app/immich-server:v2.5.6
+  machineLearning: ghcr.io/immich-app/immich-machine-learning:v2.5.6
+  valkey: docker.io/valkey/valkey:9.0-alpine
+  postgres: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
 
-  # Machine learning service (face detection, CLIP)
-  machine-learning:
-    enabled: true
-    persistence:
-      cache:
-        enabled: true
-        type: persistentVolumeClaim
-        existingClaim: immich-ml-cache
-
-  # Ingress for Immich server
-  # Note: Immich has built-in auth — no ForwardAuth middleware
-  server:
-    ingress:
-      main:
-        enabled: true
-        ingressClassName: traefik
-        annotations:
-          cert-manager.io/cluster-issuer: letsencrypt-prod
-        hosts:
-          - host: immich.ruddenchaux.xyz
-            paths:
-              - path: /
-                service:
-                  identifier: main
-        tls:
-          - secretName: immich-tls
-            hosts:
-              - immich.ruddenchaux.xyz
-
-  # Override image tag and inject DB connection env vars
-  controllers:
-    main:
-      containers:
-        main:
-          image:
-            tag: v2.5.6
-          env:
-            DB_HOSTNAME: immich-postgresql
-            DB_USERNAME: immich
-            DB_DATABASE_NAME: immich
-            DB_PASSWORD:
-              valueFrom:
-                secretKeyRef:
-                  name: immich-db-secret
-                  key: password
-
-  # Library persistence — chart validates this path specifically
-  immich:
-    persistence:
-      library:
-        existingClaim: immich-library
+storage:
+  storageClass: local-path
+  library:
+    size: 200Gi
+  mlCache:
+    size: 10Gi
+  postgresql:
+    size: 20Gi

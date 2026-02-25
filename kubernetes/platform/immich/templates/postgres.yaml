@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: ghcr.io/immich-app/postgres:16-bookworm
+          image: {{ .Values.images.postgres }}
           ports:
             - name: postgresql
               containerPort: 5432

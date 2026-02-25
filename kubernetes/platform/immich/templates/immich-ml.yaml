@@ -1,0 +1,70 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-machine-learning
+  labels:
+    app.kubernetes.io/name: immich-machine-learning
+    app.kubernetes.io/instance: immich
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich-machine-learning
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: immich-machine-learning
+    spec:
+      containers:
+        - name: immich-machine-learning
+          image: {{ .Values.images.machineLearning }}
+          ports:
+            - name: http
+              containerPort: 3003
+          env:
+            - name: IMMICH_PORT
+              value: "3003"
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 100m
+            limits:
+              memory: 4Gi
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: immich-ml-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-machine-learning
+  labels:
+    app.kubernetes.io/name: immich-machine-learning
+    app.kubernetes.io/instance: immich
+spec:
+  selector:
+    app.kubernetes.io/name: immich-machine-learning
+  ports:
+    - name: http
+      port: 3003
+      targetPort: http

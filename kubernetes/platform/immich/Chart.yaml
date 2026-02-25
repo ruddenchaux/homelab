@@ -1,9 +1,4 @@
 apiVersion: v2
 name: immich
-description: Immich photo management umbrella chart
+description: Immich photo management chart
 version: 0.1.0
-dependencies:
-  - name: immich
-    version: "0.10.3"
-    repository: https://immich-app.github.io/immich-charts
-    alias: app
