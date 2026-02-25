@@ -90,6 +90,10 @@ homepage:
               href: https://seerr.ruddenchaux.xyz
               description: Media requests
               icon: overseerr
+          - Immich:
+              href: https://immich.ruddenchaux.xyz
+              description: Photo management
+              icon: immich
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006
