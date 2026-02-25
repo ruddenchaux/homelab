@@ -3,6 +3,13 @@ traefik:
     type: LoadBalancer
   api:
     dashboard: true
+  ports:
+    web:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
   ingressRoute:
     dashboard:
       enabled: true
