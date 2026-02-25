@@ -3,11 +3,10 @@ traefik:
     type: LoadBalancer
   api:
     dashboard: true
-  ports:
-    web:
-      redirectTo:
-        port: websecure
-        priority: 10
+  additionalArguments:
+    - "--entryPoints.web.http.redirections.entrypoint.to=websecure"
+    - "--entryPoints.web.http.redirections.entrypoint.scheme=https"
+    - "--entryPoints.web.http.redirections.entrypoint.permanent=true"
   ingressRoute:
     dashboard:
       enabled: true
