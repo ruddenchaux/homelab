@@ -52,11 +52,8 @@ app:
                   name: immich-db-secret
                   key: password
 
-  # Library persistence (photos/videos upload directory)
-  persistence:
-    library:
-      enabled: true
-      type: persistentVolumeClaim
-      existingClaim: immich-library
-      globalMounts:
-        - path: /usr/src/app/upload
+  # Library persistence — chart validates this path specifically
+  immich:
+    persistence:
+      library:
+        existingClaim: immich-library
