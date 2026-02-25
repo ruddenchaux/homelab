@@ -32,3 +32,9 @@ authentik_headlamp_app_slug: "headlamp"
 authentik_headlamp_redirect_uri: "https://dashboard.ruddenchaux.xyz/oidc-callback"
 authentik_headlamp_secret_name: "headlamp-oidc"
 authentik_headlamp_secret_namespace: "kubernetes-dashboard"
+
+# Immich OIDC
+authentik_immich_provider_name: "Immich"
+authentik_immich_app_slug: "immich"
+authentik_immich_secret_name: "immich-oidc-config"
+authentik_immich_secret_namespace: "immich"

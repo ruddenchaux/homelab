@@ -3,6 +3,30 @@
 # - Add root folder for music
 # - Add qBittorrent as download client
 
+- name: Configure Lidarr naming (enable track renaming with Artist/Album/Track structure)
+  become: false
+  ansible.builtin.uri:
+    url: "{{ media_lidarr_url }}/api/v1/config/naming"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ media_lidarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      renameTracks: true
+      replaceIllegalCharacters: true
+      colonReplacementFormat: 4
+      standardTrackFormat: "{Album Title} ({Release Year})/{Artist Name} - {Album Title} - {track:00} - {Track Title}"
+      multiDiscTrackFormat: "{Album Title} ({Release Year})/{Medium Format} {medium:00}/{Artist Name} - {Album Title} - {track:00} - {Track Title}"
+      artistFolderFormat: "{Artist Name}"
+      includeArtistName: false
+      includeAlbumTitle: false
+      includeQuality: false
+      replaceSpaces: false
+      id: 1
+    status_code: 200
+  no_log: true
+
 - name: Check existing Lidarr root folders
   become: false
   ansible.builtin.uri:

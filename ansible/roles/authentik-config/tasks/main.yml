@@ -185,6 +185,9 @@
 - name: Configure Headlamp OIDC provider and application
   ansible.builtin.include_tasks: oidc-headlamp.yml
 
+- name: Configure Immich OIDC provider and application
+  ansible.builtin.include_tasks: oidc-immich.yml
+
 - name: Configure embedded outpost
   ansible.builtin.include_tasks: outpost.yml
 
