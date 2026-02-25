@@ -14,6 +14,11 @@
   roles:
     - media-secrets
 
+- name: Create Immich secrets
+  hosts: k8s_control_plane
+  roles:
+    - immich-secrets
+
 - name: Bootstrap ArgoCD and GitOps
   hosts: k8s_control_plane
   pre_tasks:

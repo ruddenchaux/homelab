@@ -1,0 +1,89 @@
+---
+# PostgreSQL with pgvector — required by Immich for vector similarity search
+# Uses Immich's own postgres image which bundles pgvecto.rs extension
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-postgresql
+  namespace: immich
+  labels:
+    app.kubernetes.io/name: immich-postgresql
+    app.kubernetes.io/instance: immich
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: immich-postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: ghcr.io/immich-app/postgres:16-bookworm
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: immich
+            - name: POSTGRES_DB
+              value: immich
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: immich-db-secret
+                  key: password
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - immich
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - immich
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: immich-postgresql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-postgresql
+  namespace: immich
+  labels:
+    app.kubernetes.io/name: immich-postgresql
+    app.kubernetes.io/instance: immich
+spec:
+  selector:
+    app.kubernetes.io/name: immich-postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql

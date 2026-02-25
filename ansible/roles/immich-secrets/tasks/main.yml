@@ -1,0 +1,61 @@
+---
+# Create Immich namespace and pre-generate PostgreSQL credentials secret
+# Idempotent: only generates secret if it doesn't already exist
+
+- name: Create immich namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ immich_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: immich_ns
+  changed_when: "'created' in immich_ns.stdout"
+  failed_when: immich_ns.rc != 0 and 'already exists' not in immich_ns.stderr
+
+- name: Check if immich-db-secret exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ immich_secret_name }}
+    -n {{ immich_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: immich_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate PostgreSQL admin password
+  become: false
+  ansible.builtin.command: openssl rand -base64 30
+  register: immich_postgres_password_result
+  changed_when: false
+  no_log: true
+  when: immich_secret_check.rc != 0
+
+- name: Template immich-db-secret
+  ansible.builtin.template:
+    src: immich-db-secret.yml.j2
+    dest: /tmp/immich-db-secret.yml
+    mode: "0600"
+  vars:
+    immich_db_password: "{{ immich_postgres_password_result.stdout }}"
+  no_log: true
+  when: immich_secret_check.rc != 0
+
+- name: Apply immich-db-secret
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/immich-db-secret.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: immich_secret_apply
+  changed_when: "'created' in immich_secret_apply.stdout or 'configured' in immich_secret_apply.stdout"
+  no_log: true
+  when: immich_secret_check.rc != 0
+
+- name: Remove temporary immich secret manifest
+  ansible.builtin.file:
+    path: /tmp/immich-db-secret.yml
+    state: absent
+
+- name: immich-db-secret already exists
+  ansible.builtin.debug:
+    msg: "Secret {{ immich_secret_name }} already exists — skipping generation"
+  when: immich_secret_check.rc == 0
