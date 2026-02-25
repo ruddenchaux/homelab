@@ -18,6 +18,21 @@ spec:
       labels:
         {{- include "media.selectorLabels" "nzbget" | nindent 8 }}
     spec:
+      initContainers:
+        - name: init-dirs
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /data/media/downloads/intermediate \
+                       /data/media/downloads/completed/movies \
+                       /data/media/downloads/completed/tv \
+                       /data/media/downloads/completed/music \
+                       /data/media/downloads/completed/books
+              chown -R {{ .Values.linuxserver.puid }}:{{ .Values.linuxserver.pgid }} /data/media/downloads
+          volumeMounts:
+            {{- include "media.mediaVolumeMount" . | nindent 12 }}
       containers:
         - name: nzbget
           image: {{ .Values.nzbget.image }}
