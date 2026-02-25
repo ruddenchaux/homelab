@@ -1,3 +1,4 @@
 ---
 immich_namespace: "immich"
 immich_secret_name: "immich-db-secret"
+immich_admin_secret_name: "immich-admin-credentials"

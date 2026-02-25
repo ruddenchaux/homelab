@@ -1,0 +1,5 @@
+---
+immich_namespace: "immich"
+immich_admin_secret_name: "immich-admin-credentials"
+immich_admin_name: "Admin"
+# immich_admin_email must be provided at runtime (loaded from SOPS acme_email)

@@ -59,3 +59,34 @@
   ansible.builtin.debug:
     msg: "Secret {{ immich_secret_name }} already exists — skipping generation"
   when: immich_secret_check.rc == 0
+
+- name: Check if immich-admin-credentials secret exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ immich_admin_secret_name }}
+    -n {{ immich_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: immich_admin_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate and store Immich admin password
+  when: immich_admin_secret_check.rc != 0
+  block:
+    - name: Generate Immich admin password
+      become: false
+      ansible.builtin.command: openssl rand -base64 30
+      register: immich_admin_password_result
+      changed_when: false
+      no_log: true
+
+    - name: Create immich-admin-credentials secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl create secret generic {{ immich_admin_secret_name }}
+        -n {{ immich_namespace }}
+        --from-literal=password={{ immich_admin_password_result.stdout }}
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      no_log: true

@@ -1,0 +1,74 @@
+---
+# Bootstrap Immich admin account via API when isInitialized: false.
+# Immich shows a "Get Started" wizard until an admin exists — autoLaunch
+# only works on the login page. This role creates the admin programmatically
+# so Authentik OIDC autoLaunch takes effect on first visit.
+
+- name: Wait for Immich server pod to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl wait deployment/immich-server
+    -n {{ immich_namespace }}
+    --for=condition=available
+    --timeout=120s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+
+- name: Check if Immich is already initialized
+  become: false
+  ansible.builtin.command: >-
+    kubectl exec -n {{ immich_namespace }} deployment/immich-server --
+    curl -s http://localhost:2283/api/server/config
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: immich_server_config
+  changed_when: false
+
+- name: Parse isInitialized flag
+  ansible.builtin.set_fact:
+    immich_is_initialized: "{{ (immich_server_config.stdout | from_json).isInitialized }}"
+
+- name: Skip if Immich is already initialized
+  ansible.builtin.debug:
+    msg: "Immich is already initialized — skipping admin account creation"
+  when: immich_is_initialized
+
+- name: Create Immich admin account
+  when: not immich_is_initialized
+  block:
+    - name: Read admin password from secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ immich_admin_secret_name }}
+        -n {{ immich_namespace }}
+        -o jsonpath='{.data.password}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: immich_admin_password_b64
+      changed_when: false
+      no_log: true
+
+    - name: Decode admin password
+      ansible.builtin.set_fact:
+        immich_admin_password: "{{ immich_admin_password_b64.stdout | b64decode }}"
+      no_log: true
+
+    - name: Call admin sign-up API
+      become: false
+      ansible.builtin.shell: |
+        kubectl exec -n {{ immich_namespace }} deployment/immich-server -- \
+          curl -s -X POST http://localhost:2283/api/auth/admin-sign-up \
+          -H 'Content-Type: application/json' \
+          -d '{"email":"{{ immich_admin_email }}","name":"{{ immich_admin_name }}","password":"{{ immich_admin_password }}"}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: signup_result
+      changed_when: true
+
+    - name: Verify admin account was created
+      ansible.builtin.assert:
+        that:
+          - "'id' in (signup_result.stdout | from_json)"
+        fail_msg: "Admin sign-up failed: {{ signup_result.stdout }}"
+        success_msg: "Immich admin account created successfully"

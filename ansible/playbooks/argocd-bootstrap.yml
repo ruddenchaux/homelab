@@ -34,6 +34,18 @@
   roles:
     - authentik-config
 
+- name: Initialize Immich admin account
+  hosts: k8s_control_plane
+  pre_tasks:
+    - name: Load secrets
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets.sops.yml"
+      no_log: true
+  roles:
+    - role: immich-init
+      vars:
+        immich_admin_email: "{{ acme_email }}"
+
 - name: Configure media stack inter-service connections
   hosts: k8s_control_plane
   tags:
