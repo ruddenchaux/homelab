@@ -1,7 +1,7 @@
 ---
-# Create media namespace and NordVPN WireGuard credentials secret
+# Create media namespace and VPN WireGuard credentials secret
 # Idempotent: only creates secret if it doesn't exist yet
-# Requires: nordvpn_wireguard_private_key variable at runtime
+# Requires: mullvad_wireguard_private_key, mullvad_wireguard_address variables at runtime
 
 - name: Create media namespace
   become: false
@@ -12,7 +12,7 @@
   changed_when: "'created' in media_ns.stdout"
   failed_when: media_ns.rc != 0 and 'already exists' not in media_ns.stderr
 
-- name: Check if NordVPN credentials secret exists
+- name: Check if VPN credentials secret exists
   become: false
   ansible.builtin.command: >-
     kubectl get secret {{ media_vpn_secret_name }}
@@ -23,15 +23,15 @@
   changed_when: false
   failed_when: false
 
-- name: Template NordVPN credentials secret
+- name: Template VPN credentials secret
   ansible.builtin.template:
-    src: nordvpn-credentials-secret.yml.j2
+    src: vpn-credentials-secret.yml.j2
     dest: /tmp/nordvpn-credentials-secret.yml
     mode: "0600"
   no_log: true
   when: vpn_secret_check.rc != 0
 
-- name: Apply NordVPN credentials secret
+- name: Apply VPN credentials secret
   become: false
   ansible.builtin.command: kubectl apply -f /tmp/nordvpn-credentials-secret.yml
   environment:
@@ -46,7 +46,7 @@
     path: /tmp/nordvpn-credentials-secret.yml
     state: absent
 
-- name: NordVPN credentials secret already exists
+- name: VPN credentials secret already exists
   ansible.builtin.debug:
     msg: "Secret {{ media_vpn_secret_name }} already exists — skipping creation"
   when: vpn_secret_check.rc == 0
