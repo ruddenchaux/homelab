@@ -25,6 +25,19 @@ data:
           - template: radarr-quality-profile-hd-bluray-web
           - template: radarr-custom-formats-hd-bluray-web
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: recyclarr-data
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: recyclarr
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -66,11 +79,16 @@ spec:
                       name: recyclarr-keys
                       key: sonarr_api_key
               volumeMounts:
-                - name: config
+                - name: data
+                  mountPath: /config
+                - name: recyclarr-config
                   mountPath: /config/recyclarr.yml
                   subPath: recyclarr.yml
                   readOnly: true
           volumes:
-            - name: config
+            - name: data
+              persistentVolumeClaim:
+                claimName: recyclarr-data
+            - name: recyclarr-config
               configMap:
                 name: recyclarr-config
