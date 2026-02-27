@@ -16,7 +16,7 @@ storage:
 # Gluetun VPN
 gluetun:
   image: ghcr.io/qdm12/gluetun:v3
-  vpnServiceProvider: mullvad
+  vpnServiceProvider: nordvpn
   vpnType: wireguard
   serverCountries: "Netherlands"
 

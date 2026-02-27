@@ -54,13 +54,8 @@ spec:
             - name: WIREGUARD_PRIVATE_KEY
               valueFrom:
                 secretKeyRef:
-                  name: vpn-credentials
+                  name: nordvpn-credentials
                   key: WIREGUARD_PRIVATE_KEY
-            - name: WIREGUARD_ADDRESSES
-              valueFrom:
-                secretKeyRef:
-                  name: vpn-credentials
-                  key: WIREGUARD_ADDRESSES
             - name: FIREWALL_INPUT_PORTS
               value: "{{ .Values.qbittorrent.port }},{{ .Values.qbittorrent.btPort }},9999"
             - name: DOT
