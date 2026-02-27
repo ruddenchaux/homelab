@@ -7,6 +7,8 @@ traefik:
     - "--entryPoints.web.http.redirections.entrypoint.to=:443"
     - "--entryPoints.web.http.redirections.entrypoint.scheme=https"
     - "--entryPoints.web.http.redirections.entrypoint.permanent=true"
+    - "--entryPoints.websecure.transport.respondingTimeouts.readTimeout=0"
+    - "--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=0"
   ingressRoute:
     dashboard:
       enabled: true
