@@ -57,7 +57,7 @@ spec:
                   name: nordvpn-credentials
                   key: WIREGUARD_PRIVATE_KEY
             - name: FIREWALL_INPUT_PORTS
-              value: "{{ .Values.qbittorrent.port }},9999"
+              value: "{{ .Values.qbittorrent.port }},{{ .Values.qbittorrent.btPort }},9999"
             - name: DOT
               value: "off"
             - name: HEALTH_SERVER_ADDRESS
@@ -66,6 +66,12 @@ spec:
             - name: qbt-web
               containerPort: {{ .Values.qbittorrent.port }}
               protocol: TCP
+            - name: qbt-bt-tcp
+              containerPort: {{ .Values.qbittorrent.btPort }}
+              protocol: TCP
+            - name: qbt-bt-udp
+              containerPort: {{ .Values.qbittorrent.btPort }}
+              protocol: UDP
             - name: health
               containerPort: 9999
               protocol: TCP
