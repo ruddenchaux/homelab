@@ -24,6 +24,7 @@ gluetun:
 qbittorrent:
   image: lscr.io/linuxserver/qbittorrent:5.1.4
   port: 8080
+  btPort: 51820
   subdomain: qbittorrent
 
 # Radarr (movies)
