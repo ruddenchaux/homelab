@@ -27,6 +27,7 @@ data:
       configure_url: "https://auth.{{ .Values.domain }}/application/o/home-assistant/.well-known/openid-configuration"
       scope: "openid profile email"
       username_field: preferred_username
+      create_user: true
 
     http:
       use_x_forwarded_for: true
