@@ -1,7 +1,7 @@
 ---
 # Init container downloads the hass-openid custom integration from GitHub.
 # This is idempotent: skips download if files already exist on the PVC.
-# Source: https://github.com/AlexxIT/hass-openid
+# Source: https://github.com/cavefire/hass-openid
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,20 +24,21 @@ spec:
     spec:
       initContainers:
         - name: install-hass-openid
-          image: curlimages/curl:8.11.0
+          image: alpine:3.21
           command: [sh, -c]
           args:
             - |
+              set -e
               TARGET=/config/custom_components/openid
               if [ -f "${TARGET}/__init__.py" ]; then
                 echo "hass-openid already installed, skipping"
                 exit 0
               fi
               mkdir -p "${TARGET}"
-              BASE="https://raw.githubusercontent.com/AlexxIT/hass-openid/main/custom_components/openid"
-              curl -sLf -o "${TARGET}/__init__.py" "${BASE}/__init__.py"
-              curl -sLf -o "${TARGET}/manifest.json" "${BASE}/manifest.json"
-              echo "hass-openid installed"
+              wget -qO- "https://github.com/cavefire/hass-openid/archive/refs/heads/main.tar.gz" \
+                | tar -xz -C /tmp/
+              cp -r /tmp/hass-openid-main/custom_components/openid/. "${TARGET}/"
+              echo "hass-openid installed from cavefire/hass-openid"
           volumeMounts:
             - name: ha-config
               mountPath: /config
