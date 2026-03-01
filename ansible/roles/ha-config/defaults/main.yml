@@ -1,0 +1,22 @@
+---
+ha_namespace: home-assistant
+ha_service: home-assistant
+ha_local_port: 18123
+ha_oidc_secret_name: ha-oidc-secret
+ha_admin_name: Admin
+ha_admin_username: ruddenchaux
+ha_oidc_application_slug: home-assistant
+ha_oidc_application_name: "Home Assistant"
+ha_oidc_provider_name: "Home Assistant"
+ha_oidc_redirect_uri: "https://ha.ruddenchaux.xyz/auth/openid/callback"
+ha_latitude: "45.4654"
+ha_longitude: "9.1859"
+ha_elevation: "122"
+
+# Authentik connection (reuse existing defaults pattern)
+authentik_namespace: authentik
+authentik_secret_name: authentik-credentials
+authentik_bootstrap_token_name: ansible-bootstrap-token
+authentik_local_port: 9000
+authentik_jwt_cert_name: "authentik JWT Signing Key"
+authentik_external_url: "https://auth.ruddenchaux.xyz"

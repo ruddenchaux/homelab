@@ -1,0 +1,16 @@
+---
+# Home Assistant configuration playbook.
+#
+# Execution order:
+#   Step 1 (before git push):
+#     ansible-playbook ansible/playbooks/ha-config.yml --tags pre-deploy
+#
+#   Step 2: commit + push GitOps manifests → ArgoCD deploys HA
+#
+#   Step 3 (after ArgoCD syncs and HA pod is ready):
+#     ansible-playbook ansible/playbooks/ha-config.yml --tags post-deploy
+
+- name: Configure Home Assistant
+  hosts: k8s_control_plane
+  roles:
+    - role: ha-config

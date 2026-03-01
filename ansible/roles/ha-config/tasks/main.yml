@@ -1,0 +1,580 @@
+---
+# ha-config role: two phases separated by tags.
+# pre-deploy:  creates Authentik OIDC provider + k8s Secret (run BEFORE git push)
+# post-deploy: runs HA first-boot onboarding via API  (run AFTER ArgoCD deploys HA)
+
+# ---------------------------------------------------------------------------
+# PRE-DEPLOY: Authentik OIDC provider + ha-oidc-secret
+# ---------------------------------------------------------------------------
+
+- name: Read Authentik bootstrap token from k8s secret
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ authentik_secret_name }}
+    -n {{ authentik_namespace }}
+    -o jsonpath='{.data.AUTHENTIK_BOOTSTRAP_TOKEN}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: authentik_token_b64
+  changed_when: false
+  no_log: true
+
+- name: Decode bootstrap token
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_api_token: "{{ authentik_token_b64.stdout | b64decode }}"
+  no_log: true
+
+- name: Ensure API token exists in Authentik database
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.shell: |
+    cat <<'PYEOF' | kubectl exec -i -n {{ authentik_namespace }} deployment/authentik-server -- ak shell
+    from authentik.core.models import Token, TokenIntents, User
+    user = User.objects.get(username="akadmin")
+    token, created = Token.objects.get_or_create(
+        identifier="{{ authentik_bootstrap_token_name }}",
+        defaults={
+            "user": user,
+            "intent": TokenIntents.INTENT_API,
+            "key": "{{ authentik_api_token }}",
+            "expiring": False,
+        }
+    )
+    print(f"Token created: {created}")
+    PYEOF
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: token_create_result
+  changed_when: "'Token created: True' in token_create_result.stdout"
+  no_log: true
+
+- name: Start kubectl port-forward to Authentik
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/authentik-server
+    -n {{ authentik_namespace }}
+    {{ authentik_local_port }}:80
+    > /tmp/authentik-pf.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: authentik_pf_pid_result
+  changed_when: false
+
+- name: Store Authentik port-forward PID
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_pf_pid: "{{ authentik_pf_pid_result.stdout_lines[-1] }}"
+
+- name: Wait for Authentik port-forward to be ready
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.wait_for:
+    port: "{{ authentik_local_port }}"
+    host: 127.0.0.1
+    timeout: 30
+
+- name: Wait for Authentik API to be reachable
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/root/config/"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    status_code: 200
+  register: api_check
+  until: api_check.status == 200
+  retries: 12
+  delay: 5
+  no_log: true
+
+- name: Get default authorization flow
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/flows/instances/?designation=authorization"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: auth_flows
+  no_log: true
+
+- name: Set authorization flow UUID
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_authorization_flow: "{{ auth_flows.json.results[0].pk }}"
+
+- name: Get default authentication flow
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/flows/instances/?designation=authentication"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: authn_flows
+  no_log: true
+
+- name: Set authentication flow UUID
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_authentication_flow: "{{ authn_flows.json.results[0].pk }}"
+
+- name: Get default invalidation flow
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/flows/instances/?designation=invalidation"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: invalidation_flows
+  no_log: true
+
+- name: Set invalidation flow UUID
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_invalidation_flow: "{{ invalidation_flows.json.results[0].pk }}"
+
+- name: Get OIDC scope property mappings
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/propertymappings/provider/scope/?ordering=scope_name"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: scope_mappings
+  no_log: true
+
+- name: Set scope mapping UUIDs
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_scope_email: "{{ scope_mappings.json.results | selectattr('scope_name', 'equalto', 'email') | map(attribute='pk') | first }}"
+    authentik_scope_openid: "{{ scope_mappings.json.results | selectattr('scope_name', 'equalto', 'openid') | map(attribute='pk') | first }}"
+    authentik_scope_profile: "{{ scope_mappings.json.results | selectattr('scope_name', 'equalto', 'profile') | map(attribute='pk') | first }}"
+
+- name: Get JWT signing certificate
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/crypto/certificatekeypairs/?name={{ authentik_jwt_cert_name | urlencode }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: jwt_certs
+  no_log: true
+
+- name: Generate JWT signing certificate (if missing)
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/crypto/certificatekeypairs/generate/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      common_name: "{{ authentik_jwt_cert_name }}"
+      subject_alt_name: "{{ authentik_jwt_cert_name }}"
+      validity_days: 3650
+    status_code: 201
+  register: jwt_cert_created
+  no_log: true
+  when: jwt_certs.json.pagination.count == 0
+
+- name: Set JWT signing certificate UUID
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    authentik_signing_key: >-
+      {{ (jwt_certs.json.pagination.count > 0)
+         | ternary(jwt_certs.json.results[0].pk,
+                   jwt_cert_created.json.pk) }}
+
+# Check if secret already exists — if so, reuse existing credentials (idempotency)
+- name: Check if ha-oidc-secret already exists
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ ha_oidc_secret_name }}
+    -n {{ ha_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: ha_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate new OIDC client credentials
+  tags: [pre-deploy]
+  when: ha_secret_check.rc != 0
+  block:
+    - name: Generate client ID
+      become: false
+      ansible.builtin.command: openssl rand -hex 20
+      register: ha_client_id_result
+      changed_when: false
+      no_log: true
+
+    - name: Generate client secret
+      become: false
+      ansible.builtin.command: openssl rand -hex 40
+      register: ha_client_secret_result
+      changed_when: false
+      no_log: true
+
+    - name: Set new client credentials
+      ansible.builtin.set_fact:
+        ha_oidc_client_id: "{{ ha_client_id_result.stdout }}"
+        ha_oidc_client_secret: "{{ ha_client_secret_result.stdout }}"
+      no_log: true
+
+- name: Load existing OIDC credentials from secret
+  tags: [pre-deploy]
+  when: ha_secret_check.rc == 0
+  block:
+    - name: Read client ID from existing secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ ha_oidc_secret_name }}
+        -n {{ ha_namespace }}
+        -o jsonpath='{.data.client-id}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: ha_existing_client_id
+      changed_when: false
+      no_log: true
+
+    - name: Read client secret from existing secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ ha_oidc_secret_name }}
+        -n {{ ha_namespace }}
+        -o jsonpath='{.data.client-secret}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: ha_existing_client_secret
+      changed_when: false
+      no_log: true
+
+    - name: Set credentials from existing secret
+      ansible.builtin.set_fact:
+        ha_oidc_client_id: "{{ ha_existing_client_id.stdout | b64decode }}"
+        ha_oidc_client_secret: "{{ ha_existing_client_secret.stdout | b64decode }}"
+      no_log: true
+
+- name: Check if HA OAuth2 provider exists in Authentik
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/oauth2/?name={{ ha_oidc_provider_name | urlencode }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: ha_provider_check
+  no_log: true
+
+- name: Create HA OAuth2 provider in Authentik
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/providers/oauth2/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ ha_oidc_provider_name }}"
+      client_type: confidential
+      client_id: "{{ ha_oidc_client_id }}"
+      client_secret: "{{ ha_oidc_client_secret }}"
+      redirect_uris:
+        - matching_mode: strict
+          url: "{{ ha_oidc_redirect_uri }}"
+      authorization_flow: "{{ authentik_authorization_flow }}"
+      authentication_flow: "{{ authentik_authentication_flow }}"
+      invalidation_flow: "{{ authentik_invalidation_flow }}"
+      signing_key: "{{ authentik_signing_key }}"
+      property_mappings:
+        - "{{ authentik_scope_openid }}"
+        - "{{ authentik_scope_email }}"
+        - "{{ authentik_scope_profile }}"
+    status_code: 201
+  register: ha_provider_created
+  no_log: true
+  when: ha_provider_check.json.pagination.count == 0
+
+- name: Set HA provider PK
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    ha_provider_pk: >-
+      {{ (ha_provider_check.json.pagination.count > 0)
+         | ternary(ha_provider_check.json.results[0].pk,
+                   ha_provider_created.json.pk) }}
+
+- name: Check if HA application exists in Authentik
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/?slug={{ ha_oidc_application_slug }}"
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+    return_content: true
+  register: ha_app_check
+  no_log: true
+
+- name: Create HA application in Authentik
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ authentik_local_port }}/api/v3/core/applications/"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ authentik_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ ha_oidc_application_name }}"
+      slug: "{{ ha_oidc_application_slug }}"
+      provider: "{{ ha_provider_pk }}"
+      meta_launch_url: "https://ha.ruddenchaux.xyz"
+    status_code: 201
+  no_log: true
+  when: ha_app_check.json.pagination.count == 0
+
+- name: Kill Authentik port-forward
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.command: "kill {{ authentik_pf_pid }}"
+  changed_when: false
+  failed_when: false
+
+- name: Generate HA admin password
+  tags: [pre-deploy]
+  ansible.builtin.set_fact:
+    ha_admin_password: "{{ lookup('community.general.random_string', length=24, special=false) }}"
+  no_log: true
+
+- name: Ensure home-assistant namespace exists
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.shell: >-
+    kubectl create namespace {{ ha_namespace }} --dry-run=client -o yaml
+    | kubectl apply -f -
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+
+- name: Create ha-oidc-secret k8s Secret
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.template:
+    src: ha-oidc-secret.yml.j2
+    dest: /tmp/ha-oidc-secret.yml
+    mode: '0600'
+  no_log: true
+
+- name: Apply ha-oidc-secret to k8s
+  tags: [pre-deploy]
+  become: false
+  ansible.builtin.command: kubectl apply -f /tmp/ha-oidc-secret.yml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: true
+  when: ha_secret_check.rc != 0
+
+- name: Remove temporary secret file
+  tags: [pre-deploy]
+  ansible.builtin.file:
+    path: /tmp/ha-oidc-secret.yml
+    state: absent
+
+- name: Pre-deploy complete
+  tags: [pre-deploy]
+  ansible.builtin.debug:
+    msg: >-
+      ha-oidc-secret created in namespace '{{ ha_namespace }}'.
+      Now commit and push the GitOps manifests, wait for ArgoCD to deploy HA,
+      then run: ansible-playbook ansible/playbooks/ha-config.yml --tags post-deploy
+
+# ---------------------------------------------------------------------------
+# POST-DEPLOY: HA first-boot onboarding
+# ---------------------------------------------------------------------------
+
+- name: Wait for HA deployment to be available
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.command: >-
+    kubectl wait deployment/{{ ha_service }}
+    -n {{ ha_namespace }}
+    --for=condition=available
+    --timeout=180s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+
+- name: Start kubectl port-forward to HA
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/{{ ha_service }}
+    -n {{ ha_namespace }}
+    {{ ha_local_port }}:8123
+    > /tmp/ha-pf.log 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: ha_pf_pid_result
+  changed_when: false
+
+- name: Store HA port-forward PID
+  tags: [post-deploy]
+  ansible.builtin.set_fact:
+    ha_pf_pid: "{{ ha_pf_pid_result.stdout_lines[-1] }}"
+
+- name: Wait for HA port-forward to be ready
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.wait_for:
+    port: "{{ ha_local_port }}"
+    host: 127.0.0.1
+    timeout: 60
+
+- name: Wait for HA API to respond
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/api/onboarding"
+    status_code: [200]
+    return_content: true
+  register: ha_api_check
+  until: ha_api_check.status == 200
+  retries: 18
+  delay: 10
+
+- name: Check if user onboarding step is done
+  tags: [post-deploy]
+  ansible.builtin.set_fact:
+    ha_user_step_done: >-
+      {{ ha_api_check.json
+         | selectattr('step', 'equalto', 'user')
+         | map(attribute='done')
+         | first
+         | default(false) }}
+
+- name: Perform HA onboarding
+  tags: [post-deploy]
+  when: not ha_user_step_done
+  block:
+    - name: Read admin password from ha-oidc-secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ ha_oidc_secret_name }}
+        -n {{ ha_namespace }}
+        -o jsonpath='{.data.ha-admin-password}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: ha_admin_password_b64
+      changed_when: false
+      no_log: true
+
+    - name: Decode admin password
+      ansible.builtin.set_fact:
+        ha_admin_password_decoded: "{{ ha_admin_password_b64.stdout | b64decode }}"
+      no_log: true
+
+    - name: Create HA owner account (onboarding/users)
+      become: false
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ha_local_port }}/api/onboarding/users"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          client_id: "http://homeassistant.local/"
+          name: "{{ ha_admin_name }}"
+          username: "{{ ha_admin_username }}"
+          password: "{{ ha_admin_password_decoded }}"
+          language: en
+        status_code: 200
+      register: onboarding_users_result
+      no_log: true
+
+    - name: Exchange auth_code for access token
+      become: false
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ha_local_port }}/auth/token"
+        method: POST
+        headers:
+          Content-Type: application/x-www-form-urlencoded
+        body: >-
+          grant_type=authorization_code&code={{ onboarding_users_result.json.auth_code }}&client_id=http%3A%2F%2Fhomeassistant.local%2F
+        status_code: 200
+      register: ha_token_result
+      no_log: true
+
+    - name: Set HA access token
+      ansible.builtin.set_fact:
+        ha_access_token: "{{ ha_token_result.json.access_token }}"
+      no_log: true
+
+    - name: Complete onboarding core step
+      become: false
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ha_local_port }}/api/onboarding/core"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ ha_access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body: {}
+        status_code: 200
+      no_log: true
+
+    - name: Complete onboarding analytics step
+      become: false
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ha_local_port }}/api/onboarding/analytics"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ ha_access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body: {}
+        status_code: 200
+      no_log: true
+
+    - name: Complete onboarding integration step
+      become: false
+      ansible.builtin.uri:
+        url: "http://localhost:{{ ha_local_port }}/api/onboarding/integration"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ ha_access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body: {}
+        status_code: 200
+      no_log: true
+
+- name: Kill HA port-forward
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.command: "kill {{ ha_pf_pid }}"
+  changed_when: false
+  failed_when: false
+
+- name: Post-deploy complete
+  tags: [post-deploy]
+  ansible.builtin.debug:
+    msg: >-
+      Home Assistant onboarding complete.
+      URL: https://ha.ruddenchaux.xyz
+      Username: {{ ha_admin_username }}
+      Password stored in secret '{{ ha_oidc_secret_name }}' key 'ha-admin-password'.
+      Log in with Authentik OIDC for subsequent logins.

@@ -1,0 +1,104 @@
+---
+# Init container downloads the hass-openid custom integration from GitHub.
+# This is idempotent: skips download if files already exist on the PVC.
+# Source: https://github.com/AlexxIT/hass-openid
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+  labels:
+    app.kubernetes.io/name: home-assistant
+    app.kubernetes.io/instance: home-assistant
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: home-assistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: home-assistant
+    spec:
+      initContainers:
+        - name: install-hass-openid
+          image: curlimages/curl:8.11.0
+          command: [sh, -c]
+          args:
+            - |
+              TARGET=/config/custom_components/openid
+              if [ -f "${TARGET}/__init__.py" ]; then
+                echo "hass-openid already installed, skipping"
+                exit 0
+              fi
+              mkdir -p "${TARGET}"
+              BASE="https://raw.githubusercontent.com/AlexxIT/hass-openid/main/custom_components/openid"
+              curl -sLf -o "${TARGET}/__init__.py" "${BASE}/__init__.py"
+              curl -sLf -o "${TARGET}/manifest.json" "${BASE}/manifest.json"
+              echo "hass-openid installed"
+          volumeMounts:
+            - name: ha-config
+              mountPath: /config
+      containers:
+        - name: home-assistant
+          image: {{ .Values.image }}
+          ports:
+            - name: http
+              containerPort: 8123
+          livenessProbe:
+            httpGet:
+              path: /manifest.json
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /manifest.json
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: ha-config
+              mountPath: /config
+            - name: ha-configuration
+              mountPath: /config/configuration.yaml
+              subPath: configuration.yaml
+            - name: ha-oidc-secret
+              mountPath: /config/secrets.yaml
+              subPath: secrets.yaml
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+              cpu: 500m
+      volumes:
+        - name: ha-config
+          persistentVolumeClaim:
+            claimName: ha-config
+        - name: ha-configuration
+          configMap:
+            name: ha-configuration
+        - name: ha-oidc-secret
+          secret:
+            secretName: ha-oidc-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+  labels:
+    app.kubernetes.io/name: home-assistant
+    app.kubernetes.io/instance: home-assistant
+spec:
+  selector:
+    app.kubernetes.io/name: home-assistant
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
