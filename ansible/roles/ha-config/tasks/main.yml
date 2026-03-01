@@ -57,7 +57,7 @@
     nohup kubectl port-forward svc/authentik-server
     -n {{ authentik_namespace }}
     {{ authentik_local_port }}:80
-    > /tmp/authentik-pf.log 2>&1 &
+    > /dev/null 2>&1 &
     echo $!
   environment:
     KUBECONFIG: /home/debian/.kube/config
@@ -424,7 +424,7 @@
     nohup kubectl port-forward svc/{{ ha_service }}
     -n {{ ha_namespace }}
     {{ ha_local_port }}:8123
-    > /tmp/ha-pf.log 2>&1 &
+    > /dev/null 2>&1 &
     echo $!
   environment:
     KUBECONFIG: /home/debian/.kube/config
@@ -451,116 +451,179 @@
     url: "http://localhost:{{ ha_local_port }}/api/onboarding"
     status_code: [200]
     return_content: true
-  register: ha_api_check
-  until: ha_api_check.status == 200
+  register: ha_onboarding_check
+  until: ha_onboarding_check.status == 200
   retries: 18
   delay: 10
 
-- name: Check if user onboarding step is done
+- name: Parse onboarding step statuses
   tags: [post-deploy]
   ansible.builtin.set_fact:
-    ha_user_step_done: >-
-      {{ ha_api_check.json
-         | selectattr('step', 'equalto', 'user')
-         | map(attribute='done')
-         | first
-         | default(false) }}
+    ha_user_done: "{{ ha_onboarding_check.json | selectattr('step', 'equalto', 'user') | map(attribute='done') | first | default(false) }}"
+    ha_core_config_done: "{{ ha_onboarding_check.json | selectattr('step', 'equalto', 'core_config') | map(attribute='done') | first | default(false) }}"
+    ha_analytics_done: "{{ ha_onboarding_check.json | selectattr('step', 'equalto', 'analytics') | map(attribute='done') | first | default(false) }}"
+    ha_integration_done: "{{ ha_onboarding_check.json | selectattr('step', 'equalto', 'integration') | map(attribute='done') | first | default(false) }}"
 
-- name: Perform HA onboarding
+- name: Read admin password from ha-oidc-secret
   tags: [post-deploy]
-  when: not ha_user_step_done
-  block:
-    - name: Read admin password from ha-oidc-secret
-      become: false
-      ansible.builtin.command: >-
-        kubectl get secret {{ ha_oidc_secret_name }}
-        -n {{ ha_namespace }}
-        -o jsonpath='{.data.ha-admin-password}'
-      environment:
-        KUBECONFIG: /home/debian/.kube/config
-      register: ha_admin_password_b64
-      changed_when: false
-      no_log: true
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ ha_oidc_secret_name }}
+    -n {{ ha_namespace }}
+    -o jsonpath='{.data.ha-admin-password}'
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: ha_admin_password_b64
+  changed_when: false
+  no_log: true
 
-    - name: Decode admin password
-      ansible.builtin.set_fact:
-        ha_admin_password_decoded: "{{ ha_admin_password_b64.stdout | b64decode }}"
-      no_log: true
+- name: Decode admin password
+  tags: [post-deploy]
+  ansible.builtin.set_fact:
+    ha_admin_password_decoded: "{{ ha_admin_password_b64.stdout | b64decode }}"
+  no_log: true
 
-    - name: Create HA owner account (onboarding/users)
-      become: false
-      ansible.builtin.uri:
-        url: "http://localhost:{{ ha_local_port }}/api/onboarding/users"
-        method: POST
-        headers:
-          Content-Type: application/json
-        body_format: json
-        body:
-          client_id: "http://homeassistant.local/"
-          name: "{{ ha_admin_name }}"
-          username: "{{ ha_admin_username }}"
-          password: "{{ ha_admin_password_decoded }}"
-          language: en
-        status_code: 200
-      register: onboarding_users_result
-      no_log: true
+# Create user account if not done yet (first run)
+- name: Create HA owner account (onboarding/users)
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/api/onboarding/users"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      client_id: "http://homeassistant.local/"
+      name: "{{ ha_admin_name }}"
+      username: "{{ ha_admin_username }}"
+      password: "{{ ha_admin_password_decoded }}"
+      language: en
+    status_code: 200
+  register: onboarding_users_result
+  no_log: true
+  when: not ha_user_done
 
-    - name: Exchange auth_code for access token
-      become: false
-      ansible.builtin.uri:
-        url: "http://localhost:{{ ha_local_port }}/auth/token"
-        method: POST
-        headers:
-          Content-Type: application/x-www-form-urlencoded
-        body: >-
-          grant_type=authorization_code&code={{ onboarding_users_result.json.auth_code }}&client_id=http%3A%2F%2Fhomeassistant.local%2F
-        status_code: 200
-      register: ha_token_result
-      no_log: true
+- name: Set auth_code from user creation
+  tags: [post-deploy]
+  ansible.builtin.set_fact:
+    ha_auth_code: "{{ onboarding_users_result.json.auth_code }}"
+  no_log: true
+  when: not ha_user_done
 
-    - name: Set HA access token
-      ansible.builtin.set_fact:
-        ha_access_token: "{{ ha_token_result.json.access_token }}"
-      no_log: true
+# Get token via login flow if user was already created in a previous run
+- name: Initiate HA login flow (user already exists)
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/auth/login_flow"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      client_id: "http://homeassistant.local/"
+      handler: ["homeassistant", null]
+      redirect_uri: "http://homeassistant.local/"
+    status_code: 200
+  register: ha_login_flow
+  no_log: true
+  when: ha_user_done and not (ha_core_config_done and ha_analytics_done and ha_integration_done)
 
-    - name: Complete onboarding core step
-      become: false
-      ansible.builtin.uri:
-        url: "http://localhost:{{ ha_local_port }}/api/onboarding/core"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ ha_access_token }}"
-          Content-Type: application/json
-        body_format: json
-        body: {}
-        status_code: 200
-      no_log: true
+- name: Submit credentials to login flow
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/auth/login_flow/{{ ha_login_flow.json.flow_id }}"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      client_id: "http://homeassistant.local/"
+      username: "{{ ha_admin_username }}"
+      password: "{{ ha_admin_password_decoded }}"
+    status_code: 200
+  register: ha_login_result
+  no_log: true
+  when: ha_user_done and not (ha_core_config_done and ha_analytics_done and ha_integration_done)
 
-    - name: Complete onboarding analytics step
-      become: false
-      ansible.builtin.uri:
-        url: "http://localhost:{{ ha_local_port }}/api/onboarding/analytics"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ ha_access_token }}"
-          Content-Type: application/json
-        body_format: json
-        body: {}
-        status_code: 200
-      no_log: true
+- name: Set auth_code from login flow
+  tags: [post-deploy]
+  ansible.builtin.set_fact:
+    ha_auth_code: "{{ ha_login_result.json.result }}"
+  no_log: true
+  when: ha_user_done and not (ha_core_config_done and ha_analytics_done and ha_integration_done)
 
-    - name: Complete onboarding integration step
-      become: false
-      ansible.builtin.uri:
-        url: "http://localhost:{{ ha_local_port }}/api/onboarding/integration"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ ha_access_token }}"
-          Content-Type: application/json
-        body_format: json
-        body: {}
-        status_code: 200
-      no_log: true
+# Exchange auth_code for access token (common to both paths above)
+- name: Exchange auth_code for access token
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/auth/token"
+    method: POST
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+    body: >-
+      grant_type=authorization_code&code={{ ha_auth_code }}&client_id=http%3A%2F%2Fhomeassistant.local%2F
+    status_code: 200
+  register: ha_token_result
+  no_log: true
+  when: ha_auth_code is defined
+
+- name: Set HA access token
+  tags: [post-deploy]
+  ansible.builtin.set_fact:
+    ha_access_token: "{{ ha_token_result.json.access_token }}"
+  no_log: true
+  when: ha_auth_code is defined
+
+- name: Complete onboarding core_config step
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/api/onboarding/core_config"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ ha_access_token }}"
+      Content-Type: application/json
+    body_format: json
+    body: {}
+    status_code: 200
+  no_log: true
+  when: not ha_core_config_done and ha_access_token is defined
+
+- name: Complete onboarding analytics step
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/api/onboarding/analytics"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ ha_access_token }}"
+      Content-Type: application/json
+    body_format: json
+    body: {}
+    status_code: 200
+  no_log: true
+  when: not ha_analytics_done and ha_access_token is defined
+
+- name: Complete onboarding integration step
+  tags: [post-deploy]
+  become: false
+  ansible.builtin.uri:
+    url: "http://localhost:{{ ha_local_port }}/api/onboarding/integration"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ ha_access_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      client_id: "http://homeassistant.local/"
+      redirect_uri: "http://homeassistant.local/"
+    status_code: 200
+  no_log: true
+  when: not ha_integration_done and ha_access_token is defined
 
 - name: Kill HA port-forward
   tags: [post-deploy]
