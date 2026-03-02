@@ -9,9 +9,9 @@ ha_oidc_application_slug: home-assistant
 ha_oidc_application_name: "Home Assistant"
 ha_oidc_provider_name: "Home Assistant"
 ha_oidc_redirect_uri: "https://ha.ruddenchaux.xyz/auth/openid/callback"
-ha_latitude: "45.4654"
-ha_longitude: "9.1859"
-ha_elevation: "122"
+ha_latitude: "42.676996"
+ha_longitude: "11.668087"
+ha_elevation: "359.6"
 
 # Authentik connection (reuse existing defaults pattern)
 authentik_namespace: authentik
