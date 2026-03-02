@@ -17,5 +17,6 @@
       community.sops.load_vars:
         file: "{{ playbook_dir }}/../secrets.sops.yml"
       no_log: true
+      tags: always
   roles:
     - role: ha-config
