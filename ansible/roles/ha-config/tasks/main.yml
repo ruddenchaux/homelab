@@ -260,10 +260,23 @@
       changed_when: false
       no_log: true
 
+    - name: Read admin password from existing secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret {{ ha_oidc_secret_name }}
+        -n {{ ha_namespace }}
+        -o jsonpath='{.data.ha-admin-password}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: ha_existing_admin_password
+      changed_when: false
+      no_log: true
+
     - name: Set credentials from existing secret
       ansible.builtin.set_fact:
         ha_oidc_client_id: "{{ ha_existing_client_id.stdout | b64decode }}"
         ha_oidc_client_secret: "{{ ha_existing_client_secret.stdout | b64decode }}"
+        ha_admin_password: "{{ ha_existing_admin_password.stdout | b64decode }}"
       no_log: true
 
 - name: Check if HA OAuth2 provider exists in Authentik
@@ -358,6 +371,7 @@
   ansible.builtin.set_fact:
     ha_admin_password: "{{ lookup('community.general.random_string', length=24, special=false) }}"
   no_log: true
+  when: ha_secret_check.rc != 0
 
 - name: Ensure home-assistant namespace exists
   tags: [pre-deploy]
@@ -385,7 +399,6 @@
   environment:
     KUBECONFIG: /home/debian/.kube/config
   changed_when: true
-  when: ha_secret_check.rc != 0
 
 - name: Remove temporary secret file
   tags: [pre-deploy]
