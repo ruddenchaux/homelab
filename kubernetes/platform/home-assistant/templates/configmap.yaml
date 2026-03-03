@@ -45,15 +45,15 @@ data:
             - "heat"
             - "off"
           mode_command_topic: "cmnd/bht6000/POWER1"
-          mode_command_template: "{{'1' if value == 'heat' else '0'}}"
+          mode_command_template: "{{ "{{" }}'1' if value == 'heat' else '0'{{ "}}" }}"
           mode_state_topic: "tele/bht6000/STATE"
-          mode_state_template: "{{'heat' if value_json.POWER1 == 'ON' else 'off'}}"
+          mode_state_template: "{{ "{{" }}'heat' if value_json.POWER1 == 'ON' else 'off'{{ "}}" }}"
 
           # --- Target temperature (raw x2, so divide/multiply by 2) ---
           temperature_command_topic: "cmnd/bht6000/TuyaSend2"
-          temperature_command_template: "2,{{ (value * 2) | int }}"
+          temperature_command_template: "2,{{ "{{" }} (value * 2) | int {{ "}}" }}"
           temperature_state_topic: "tele/bht6000/SENSOR"
-          temperature_state_template: "{{ value_json['TuyaSNS']['TempSet'] | float / 2 }}"
+          temperature_state_template: "{{ "{{" }} value_json['TuyaSNS']['TempSet'] | float / 2 {{ "}}" }}"
           min_temp: 5
           max_temp: 35
           temp_step: 0.5
@@ -61,18 +61,18 @@ data:
 
           # --- Current temperature ---
           current_temperature_topic: "tele/bht6000/SENSOR"
-          current_temperature_template: "{{ value_json['TuyaSNS']['Temperature'] | float / 2 }}"
+          current_temperature_template: "{{ "{{" }} value_json['TuyaSNS']['Temperature'] | float / 2 {{ "}}" }}"
 
           # --- Manual vs Schedule mode ---
           preset_modes:
             - "manual"
             - "schedule"
           preset_mode_command_topic: "cmnd/bht6000/TuyaEnum1"
-          preset_mode_command_template: "{{'1' if value == 'schedule' else '0'}}"
+          preset_mode_command_template: "{{ "{{" }}'1' if value == 'schedule' else '0'{{ "}}" }}"
           preset_mode_state_topic: "tele/bht6000/SENSOR"
           preset_mode_value_template: >
             {% set v = value_json['TuyaSNS'].get('Enum1', 0) %}
-            {{ 'schedule' if v == 1 else 'manual' }}
+            {{ "{{" }} 'schedule' if v == 1 else 'manual' {{ "}}" }}
 
           # --- Availability ---
           availability_topic: "tele/bht6000/LWT"
