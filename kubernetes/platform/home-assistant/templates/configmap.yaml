@@ -68,11 +68,14 @@ data:
             - "manual"
             - "schedule"
           preset_mode_command_topic: "cmnd/bht6000/TuyaEnum1"
-          preset_mode_command_template: "{{ "{{" }}'1' if value == 'schedule' else '0'{{ "}}" }}"
-          preset_mode_state_topic: "tele/bht6000/SENSOR"
+          preset_mode_command_template: "{{ "{{" }}'0' if value == 'schedule' else '1'{{ "}}" }}"
+          preset_mode_state_topic: "stat/bht6000/RESULT"
           preset_mode_value_template: >
-            {% set v = value_json['TuyaSNS'].get('Enum1', 0) %}
-            {{ "{{" }} 'schedule' if v == 1 else 'manual' {{ "}}" }}
+            {% if value_json.TuyaEnum1 is defined %}
+              {{ "{{" }} 'schedule' if value_json.TuyaEnum1 == 0 else 'manual' {{ "}}" }}
+            {% else %}
+              {{ "{{" }} this.state {{ "}}" }}
+            {% endif %}
 
           # --- Availability ---
           availability_topic: "tele/bht6000/LWT"
