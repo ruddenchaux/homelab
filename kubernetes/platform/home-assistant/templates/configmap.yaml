@@ -45,7 +45,7 @@ data:
             - "heat"
             - "off"
           mode_command_topic: "cmnd/bht6000/POWER1"
-          mode_command_template: "{{ "{{" }}'1' if value == 'heat' else '0'{{ "}}" }}"
+          mode_command_template: "{{ "{{" }}'ON' if value == 'heat' else 'OFF'{{ "}}" }}"
           mode_state_topic: "tele/bht6000/STATE"
           mode_state_template: "{{ "{{" }}'heat' if value_json.POWER1 == 'ON' else 'off'{{ "}}" }}"
 
