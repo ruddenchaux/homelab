@@ -549,6 +549,67 @@ ssh root@89.167.62.126 "curl -sk -o /dev/null -w '%{http_code}' https://home.rud
 
 These fixes are now permanent in the Ansible role — re-running `vps-client-vpn.yml` applies all three automatically.
 
+## Home Assistant: "New automation setup timed out"
+
+**Symptom:** Every automation saved via the HA UI shows "New automation setup timed out. Your new automation was saved, but waiting for it to set up has timed out." Automations are written to `automations.yaml` but never appear in the UI. Zero `automation.*` entities ever created (confirmed via DB query).
+
+**Root cause:** `default_config:` in HA 2025.12 no longer includes `automation` as a dependency (verified via `/usr/src/homeassistant/homeassistant/components/default_config/manifest.json`). Without an explicit `automation:` entry in `configuration.yaml`, the automation component is never initialized and `automations.yaml` is never read.
+
+**Fix:** Add to `configuration.yaml`:
+
+```yaml
+automation: !include automations.yaml
+```
+
+**Diagnosis commands:**
+
+```bash
+# Check if automation entities have ever been created
+ssh debian@10.30.0.10 "kubectl exec -n home-assistant deployment/home-assistant -- python3 -c \"
+import sqlite3
+conn = sqlite3.connect('/config/home-assistant_v2.db')
+cur = conn.cursor()
+cur.execute(\\\"SELECT COUNT(*) FROM states_meta WHERE entity_id LIKE 'automation.%'\\\")
+print('automation entities ever:', cur.fetchone()[0])
+\""
+
+# Confirm automation is absent from default_config dependencies
+ssh debian@10.30.0.10 "kubectl exec -n home-assistant deployment/home-assistant -- \
+  grep automation /usr/src/homeassistant/homeassistant/components/default_config/manifest.json"
+# Expected: no output — automation is not there
+```
+
+---
+
+## Home Assistant: automation reload fails after MQTT entity config removal
+
+**Symptom:** After removing an explicit `mqtt: climate:` block from `configuration.yaml` and restarting HA, adding new automations times out or existing ones stop working.
+
+**Root cause:** Removing the explicit MQTT climate config and switching to auto-discovery (e.g. WThermostatBeca) creates a **new** device with a different `device_id` UUID. The old device is gone from the device registry. Automations with device-based actions (`type: set_hvac_mode`, `device_id: <old-uuid>`) reference a non-existent device, causing automation reload to fail silently.
+
+**Fix:** Remove the broken automations from `automations.yaml` (they reference a dead `device_id`), reload, then recreate them via the UI pointing to the new entity.
+
+```bash
+# Find current devices and their IDs
+ssh debian@10.30.0.10 "kubectl exec -n home-assistant deployment/home-assistant -- python3 -c \"
+import json
+data = json.load(open('/config/.storage/core.device_registry'))
+for d in data['data']['devices']:
+    print(d['id'], d.get('name',''), d.get('manufacturer',''))
+\""
+
+# Find climate entity IDs for the new device
+ssh debian@10.30.0.10 "kubectl exec -n home-assistant deployment/home-assistant -- python3 -c \"
+import json
+data = json.load(open('/config/.storage/core.entity_registry'))
+for e in data['data']['entities']:
+    if 'climate' in e.get('entity_id',''):
+        print(e['entity_id'], 'uuid:', e['id'], 'device:', e.get('device_id',''))
+\""
+```
+
+---
+
 ## General cluster health
 
 ```bash
