@@ -9,17 +9,6 @@ metadata:
     app.kubernetes.io/instance: home-assistant
 data:
   configuration.yaml: |
-    homeassistant:
-      name: Home
-      latitude: !secret ha_latitude
-      longitude: !secret ha_longitude
-      elevation: !secret ha_elevation
-      radius: 100
-      currency: EUR
-      country: IT
-      unit_system: metric
-      time_zone: Europe/Rome
-
     default_config:
 
     openid:
