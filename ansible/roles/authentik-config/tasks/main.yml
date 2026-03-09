@@ -191,6 +191,9 @@
 - name: Configure embedded outpost
   ansible.builtin.include_tasks: outpost.yml
 
+- name: Add admin user to admin group
+  ansible.builtin.include_tasks: user-admin-group.yml
+
 - name: Kill port-forward process
   become: false
   ansible.builtin.command: "kill {{ authentik_pf_pid }}"

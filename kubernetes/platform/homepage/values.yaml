@@ -37,6 +37,10 @@ homepage:
               href: https://grafana.ruddenchaux.xyz
               description: Metrics & dashboards
               icon: grafana
+          - InfluxDB:
+              href: https://influxdb.ruddenchaux.xyz
+              description: Time-series database
+              icon: influxdb
           - Hubble UI:
               href: https://hubble.ruddenchaux.xyz
               description: Network flows

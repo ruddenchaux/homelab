@@ -1,0 +1,21 @@
+---
+# Create 'admin' group in Authentik and add a user to it
+# Required variable: authentik_admin_username
+
+- name: Create admin group and add user via ak shell
+  become: false
+  ansible.builtin.shell: |
+    cat <<'PYEOF' | kubectl exec -i -n {{ authentik_namespace }} deployment/authentik-server -- ak shell
+    from authentik.core.models import Group, User
+
+    group, created = Group.objects.get_or_create(name="admin")
+    print(f"Group 'admin' created: {created}")
+
+    user = User.objects.get(username="{{ authentik_admin_username }}")
+    user.ak_groups.add(group)
+    print(f"User '{{ authentik_admin_username }}' added to group 'admin'")
+    PYEOF
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: admin_group_result
+  changed_when: "'Group \\'admin\\' created: True' in admin_group_result.stdout"
