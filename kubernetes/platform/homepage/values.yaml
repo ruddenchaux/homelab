@@ -94,6 +94,11 @@ homepage:
               href: https://immich.ruddenchaux.xyz
               description: Photo management
               icon: immich
+      - Home:
+          - Home Assistant:
+              href: https://ha.ruddenchaux.xyz
+              description: Home automation
+              icon: home-assistant
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006
