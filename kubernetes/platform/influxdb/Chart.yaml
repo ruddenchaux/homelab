@@ -1,0 +1,8 @@
+apiVersion: v2
+name: influxdb
+description: InfluxDB 2 time-series database umbrella chart
+version: 0.1.0
+dependencies:
+  - name: influxdb2
+    version: "2.1.2"
+    repository: https://helm.influxdata.com/

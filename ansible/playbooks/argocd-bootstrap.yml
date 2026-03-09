@@ -24,6 +24,11 @@
   roles:
     - immich-secrets
 
+- name: Create InfluxDB secrets
+  hosts: k8s_control_plane
+  roles:
+    - influxdb-secrets
+
 - name: Bootstrap ArgoCD and GitOps
   hosts: k8s_control_plane
   pre_tasks:

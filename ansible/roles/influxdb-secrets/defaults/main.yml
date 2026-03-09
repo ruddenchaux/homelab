@@ -1,0 +1,3 @@
+---
+influxdb_namespace: "influxdb"
+influxdb_secret_name: "influxdb-auth"

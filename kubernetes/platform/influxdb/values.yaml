@@ -1,0 +1,29 @@
+influxdb2:
+  adminUser:
+    organization: "homelab"
+    bucket: "homelab"
+    user: "admin"
+    retention_policy: "0s"
+    # Secret must have keys: admin-password, admin-token
+    existingSecret: "influxdb-auth"
+
+  persistence:
+    enabled: true
+    storageClass: "local-path"
+    size: 20Gi
+
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hostname: influxdb.ruddenchaux.xyz
+    path: /
+    pathType: Prefix
+    tls: true
+    secretName: influxdb-tls
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8086

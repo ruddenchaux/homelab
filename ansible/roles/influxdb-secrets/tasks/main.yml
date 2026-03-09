@@ -1,0 +1,59 @@
+---
+# Create InfluxDB namespace and pre-generate credentials secret
+# Idempotent: only generates secret if it doesn't already exist
+# Secret keys match what influxdb2 Helm chart expects:
+#   admin-password → DOCKER_INFLUXDB_INIT_PASSWORD
+#   admin-token    → DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+
+- name: Create influxdb namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ influxdb_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: influxdb_ns
+  changed_when: "'created' in influxdb_ns.stdout"
+  failed_when: influxdb_ns.rc != 0 and 'already exists' not in influxdb_ns.stderr
+
+- name: Check if influxdb-auth secret exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ influxdb_secret_name }}
+    -n {{ influxdb_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: influxdb_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate and store InfluxDB credentials
+  when: influxdb_secret_check.rc != 0
+  block:
+    - name: Generate InfluxDB admin password
+      become: false
+      ansible.builtin.command: openssl rand -base64 30
+      register: influxdb_password_result
+      changed_when: false
+      no_log: true
+
+    - name: Generate InfluxDB admin token
+      become: false
+      ansible.builtin.command: openssl rand -hex 32
+      register: influxdb_token_result
+      changed_when: false
+      no_log: true
+
+    - name: Create influxdb-auth secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl create secret generic {{ influxdb_secret_name }}
+        -n {{ influxdb_namespace }}
+        --from-literal=admin-password={{ influxdb_password_result.stdout }}
+        --from-literal=admin-token={{ influxdb_token_result.stdout }}
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      no_log: true
+
+- name: influxdb-auth secret already exists
+  ansible.builtin.debug:
+    msg: "Secret {{ influxdb_secret_name }} already exists — skipping generation"
+  when: influxdb_secret_check.rc == 0
