@@ -144,8 +144,9 @@ kubernetes/
 | `https://nzbget.ruddenchaux.xyz` | NZBGet | Usenet downloader |
 | `https://jellyfin.ruddenchaux.xyz` | Jellyfin | Media server (also public via VPS relay) |
 | `https://seerr.ruddenchaux.xyz` | Seerr | Media requests |
+| `https://loki.ruddenchaux.xyz` | Loki | Log aggregation (internal, allowlist-protected) |
 
-Internal-only (no ingress): Loki, Prometheus, FlareSolverr, Recyclarr (CronJob).
+Internal-only (no ingress): Prometheus, FlareSolverr, Recyclarr (CronJob).
 
 Internal services resolve via AdGuardHome wildcard (`*.ruddenchaux.xyz → 10.30.0.200`), no Cloudflare DNS record needed.
 Jellyfin has a real Cloudflare A record → VPS IP (`89.167.62.126`) for public internet access via WireGuard relay.
