@@ -6,8 +6,9 @@ metadata:
 spec:
   ipAllowList:
     sourceRange:
+      - 10.0.0.0/16    # Cilium pod CIDR (source IP Traefik sees for in-cluster requests)
       - 10.10.0.0/24   # Management VLAN
       - 10.20.0.0/24   # Trusted LAN
-      - 10.30.0.0/24   # Kubernetes VLAN
+      - 10.30.0.0/24   # Kubernetes VLAN (also covers SNAT'd external traffic)
       - 10.100.0.0/24  # WireGuard (VPS + road warrior clients)
       - 192.168.88.0/24 # MikroTik default bridge
