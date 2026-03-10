@@ -18,6 +18,7 @@ spec:
       labels:
         app.kubernetes.io/name: paperless
     spec:
+      enableServiceLinks: false
       initContainers:
         - name: wait-for-db
           image: docker.io/library/busybox:1.36
