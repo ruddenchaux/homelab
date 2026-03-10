@@ -38,19 +38,37 @@ ansible/
     network-vlans.yml           # VLAN setup on MikroTik + Proxmox
     kubernetes-install.yml      # Kubernetes cluster install (kubeadm + Cilium)
     argocd-bootstrap.yml        # ArgoCD + Traefik + cert-manager bootstrap
+    proxmox-metrics.yml         # Proxmox datacenter metrics → InfluxDB
+    ha-config.yml               # Home Assistant: Authentik OIDC + first-boot onboarding (pre/post-deploy tags)
+    vps-relay.yml               # Hetzner VPS relay: WireGuard tunnel + nginx TCP passthrough
+    vps-client-vpn.yml          # Client VPN: road warrior WireGuard peer + QR code
+    worker-data-disk.yml        # Format + mount 500GB HDD data disk on k8s workers
   roles/
     proxmox-repos/              # Disable enterprise, enable no-subscription repos
     system-upgrade/             # apt upgrade + reboot if needed
     zfs-datapool/               # Create ZFS mirror on data HDDs
+    proxmox-storage/            # Register ZFS datapool as Proxmox storage backend
     ssh-hardening/              # Key-only auth, disable root password login
     mikrotik-guest-cleanup/     # Remove leftover guest WiFi experiment
     mikrotik-vlans/             # Bridge VLAN table, VLAN interfaces, firewall
+    mikrotik-wireguard/         # MikroTik WireGuard tunnel peer for VPS relay
     proxmox-networking/         # VLAN-aware bridge, management IP, DNS
     k8s-prerequisites/          # Containerd, kubeadm, kubelet, kernel modules
     k8s-control-plane/          # kubeadm init, Helm, Cilium CNI
     k8s-workers/                # kubeadm join workers to cluster
+    worker-data-disk/           # ext4 format + mount /data/local-path-provisioner on workers
     cilium-l2/                  # Cilium L2 announcements + Hubble UI for LoadBalancer
     authentik-secrets/          # Pre-create Authentik k8s secrets
+    authentik-config/           # Configure Authentik via REST API (OIDC providers, ForwardAuth)
+    influxdb-secrets/           # Pre-create InfluxDB k8s secret (auto-generated token)
+    proxmox-influxdb-metrics/   # Configure Proxmox datacenter metric server
+    media-secrets/              # Pre-create NordVPN + media API keys k8s secrets
+    media-config/               # Configure media services via REST APIs + port-forwards
+    immich-secrets/             # Pre-create Immich admin credentials k8s secret
+    immich-init/                # Immich first-time admin setup + Authentik OIDC via REST API
+    ha-config/                  # Authentik OIDC setup + HA first-boot onboarding via REST API
+    vps-relay/                  # VPS nginx stream proxy + WireGuard config
+    vps-client-vpn/             # Client VPN peer generation + wg syncconf hot-reload
     argocd/                     # ArgoCD install + GitOps bootstrap
 packer/
   debian-13/
@@ -80,9 +98,17 @@ kubernetes/
     hubble-ui/                      # Hubble UI ingress + certificate
     monitoring/                     # kube-prometheus-stack (Prometheus + Grafana)
     loki/                           # Loki log aggregation
+    influxdb/                       # InfluxDB 2 time-series database
     kubernetes-dashboard/           # Headlamp Kubernetes dashboard
     authentik/                      # Authentik SSO
     homepage/                       # Homepage app launcher
+    home-assistant/                 # Home Assistant (hass-openid + HACS via init containers, OIDC, MQTT)
+    immich/                         # Immich photo library (server + ML + Valkey + PostgreSQL)
+    media/                          # Servarr media stack (Radarr, Sonarr, Lidarr, Readarr, Prowlarr,
+                                    #   Bazarr, qBittorrent+Gluetun VPN, NZBGet, Jellyfin, Seerr,
+                                    #   FlareSolverr, Recyclarr CronJob)
+    coredns/                        # CoreDNS ConfigMap override (forward ruddenchaux.xyz → AdGuardHome)
+    metrics-server/                 # Kubernetes metrics-server
 ```
 
 ## Network
@@ -100,13 +126,29 @@ kubernetes/
 |-----|---------|---------|
 | `https://home.ruddenchaux.xyz` | Homepage | App launcher |
 | `https://grafana.ruddenchaux.xyz` | Grafana | Metrics, logs, dashboards |
+| `https://influxdb.ruddenchaux.xyz` | InfluxDB 2 | Time-series metrics (Proxmox) |
 | `https://hubble.ruddenchaux.xyz` | Hubble UI | Cilium network flows |
 | `https://dashboard.ruddenchaux.xyz` | Headlamp | Cluster management |
 | `https://auth.ruddenchaux.xyz` | Authentik | SSO / identity provider |
 | `https://argocd.ruddenchaux.xyz` | ArgoCD | GitOps deployment |
 | `https://traefik.ruddenchaux.xyz` | Traefik | Ingress routing |
+| `https://ha.ruddenchaux.xyz` | Home Assistant | Home automation |
+| `https://immich.ruddenchaux.xyz` | Immich | Photo library & backup |
+| `https://radarr.ruddenchaux.xyz` | Radarr | Movie management |
+| `https://sonarr.ruddenchaux.xyz` | Sonarr | TV show management |
+| `https://lidarr.ruddenchaux.xyz` | Lidarr | Music management |
+| `https://readarr.ruddenchaux.xyz` | Readarr | Book management |
+| `https://prowlarr.ruddenchaux.xyz` | Prowlarr | Indexer manager |
+| `https://bazarr.ruddenchaux.xyz` | Bazarr | Subtitle management |
+| `https://qbittorrent.ruddenchaux.xyz` | qBittorrent | Torrent client (NordVPN WireGuard) |
+| `https://nzbget.ruddenchaux.xyz` | NZBGet | Usenet downloader |
+| `https://jellyfin.ruddenchaux.xyz` | Jellyfin | Media server (also public via VPS relay) |
+| `https://seerr.ruddenchaux.xyz` | Seerr | Media requests |
 
-All services require Cloudflare DNS A records pointing to `10.30.0.200` (Cilium L2 LoadBalancer IP).
+Internal-only (no ingress): Loki, Prometheus, FlareSolverr, Recyclarr (CronJob).
+
+Internal services resolve via AdGuardHome wildcard (`*.ruddenchaux.xyz → 10.30.0.200`), no Cloudflare DNS record needed.
+Jellyfin has a real Cloudflare A record → VPS IP (`89.167.62.126`) for public internet access via WireGuard relay.
 
 ## Prerequisites
 
@@ -218,6 +260,35 @@ ssh debian@10.30.0.10 "kubectl get pods -n homepage"
 ssh debian@10.30.0.10 "kubectl get pods -n authentik"
 ssh debian@10.30.0.10 "kubectl get middleware -n authentik"
 # Initial admin setup: https://auth.ruddenchaux.xyz/if/flow/initial-setup/
+
+# Configure Proxmox datacenter metrics → InfluxDB (creates 'proxmox' bucket + metric server)
+ansible-playbook ansible/playbooks/proxmox-metrics.yml
+# Verify in Proxmox UI: Datacenter → Metric Server
+
+# Deploy media stack (Servarr): pre-create NordVPN secret, let ArgoCD sync, then configure services
+# Step 1: pre-create NordVPN + media secrets in k8s
+ansible-playbook ansible/playbooks/argocd-bootstrap.yml --tags media-secrets
+# Step 2: push to git and let ArgoCD sync kubernetes/platform/media/
+# Step 3: configure inter-service connections via REST APIs
+ansible-playbook ansible/playbooks/argocd-bootstrap.yml --tags media-config
+
+# Deploy Immich (photo library)
+# Immich setup is handled by immich-secrets + immich-init roles (run as part of argocd-bootstrap.yml)
+# immich-init creates the admin account + configures Authentik OIDC via REST API
+
+# Deploy Home Assistant
+# Step 1: pre-deploy — creates Authentik OIDC provider + ha-oidc-secret in k8s
+ansible-playbook ansible/playbooks/ha-config.yml --tags pre-deploy
+# Step 2: push to git and let ArgoCD sync the Home Assistant Helm chart
+# Step 3: post-deploy — waits for HA to be ready, completes first-boot onboarding via REST API
+ansible-playbook ansible/playbooks/ha-config.yml --tags post-deploy
+
+# Set up VPS relay for public internet access (Jellyfin + any future public service)
+# Requires Hetzner VPS already provisioned and added to ansible/inventory/hosts.yml
+ansible-playbook ansible/playbooks/vps-relay.yml
+# If you later add client VPN peers (road warrior), restore them after re-running vps-relay.yml:
+ansible-playbook ansible/playbooks/vps-client-vpn.yml
+# Add a new device: -e vpn_client_name=laptop -e vpn_client_ip=10.100.0.11
 ```
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and debugging commands.
@@ -230,5 +301,10 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and debugging com
 4. ~~Terraform VM provisioning~~ (done)
 5. ~~Kubernetes cluster install~~ (done)
 6. ~~ArgoCD + GitOps platform~~ (done)
-7. ~~Monitoring & dashboards~~ (done)
-8. Service deployment
+7. ~~Monitoring & dashboards (Prometheus + Grafana + Loki + InfluxDB)~~ (done)
+8. ~~Authentik SSO~~ (done)
+9. ~~Media stack (Servarr + Jellyfin)~~ (done)
+10. ~~Public internet access (VPS relay + client VPN)~~ (done)
+11. ~~Immich photo library~~ (done)
+12. ~~Home Assistant~~ (done)
+13. Service deployment (Nextcloud, Forgejo, Paperless-ngx, ...)
