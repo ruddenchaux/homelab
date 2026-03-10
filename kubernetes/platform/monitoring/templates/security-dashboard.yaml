@@ -15,7 +15,18 @@ data:
       "refresh": "5m",
       "time": { "from": "now-24h", "to": "now" },
       "timepicker": {},
-      "templating": { "list": [] },
+      "templating": {
+        "list": [
+          {
+            "name": "lokiDs",
+            "type": "datasource",
+            "pluginId": "loki",
+            "query": "loki",
+            "refresh": 1,
+            "hide": 2
+          }
+        ]
+      },
       "annotations": { "list": [] },
       "panels": [
         {
@@ -23,7 +34,7 @@ data:
           "title": "Bans (24h)",
           "type": "stat",
           "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": {
             "reduceOptions": { "calcs": ["sum"] },
             "colorMode": "background",
@@ -54,7 +65,7 @@ data:
           "title": "UFW Blocks (24h)",
           "type": "stat",
           "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": {
             "reduceOptions": { "calcs": ["sum"] },
             "colorMode": "background",
@@ -85,7 +96,7 @@ data:
           "title": "SSH Failures (24h)",
           "type": "stat",
           "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": {
             "reduceOptions": { "calcs": ["sum"] },
             "colorMode": "background",
@@ -116,7 +127,7 @@ data:
           "title": "Bans (1h)",
           "type": "stat",
           "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": {
             "reduceOptions": { "calcs": ["sum"] },
             "colorMode": "background",
@@ -146,7 +157,7 @@ data:
           "title": "Attack Events Over Time",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": { "tooltip": { "mode": "multi" } },
           "fieldConfig": {
             "defaults": { "custom": { "lineWidth": 2 } },
@@ -175,7 +186,7 @@ data:
           "title": "fail2ban Ban Events",
           "type": "logs",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": { "dedupStrategy": "none", "sortOrder": "Descending" },
           "targets": [
             {
@@ -189,7 +200,7 @@ data:
           "title": "UFW Blocked Connections",
           "type": "logs",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": { "dedupStrategy": "none", "sortOrder": "Descending" },
           "targets": [
             {
@@ -203,7 +214,7 @@ data:
           "title": "SSH Authentication Failures",
           "type": "logs",
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": { "type": "loki", "uid": "${lokiDs}" },
           "options": { "dedupStrategy": "none", "sortOrder": "Descending" },
           "targets": [
             {

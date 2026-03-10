@@ -31,7 +31,6 @@ kube-prometheus-stack:
     additionalDataSources:
       - name: Loki
         type: loki
-        uid: loki
         url: http://loki.loki.svc:3100
         access: proxy
         isDefault: false
