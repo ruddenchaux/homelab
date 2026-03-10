@@ -1,0 +1,12 @@
+---
+- name: Configure fail2ban
+  ansible.builtin.import_tasks: fail2ban.yml
+  tags: hardening
+
+- name: Configure unattended-upgrades
+  ansible.builtin.import_tasks: unattended-upgrades.yml
+  tags: hardening
+
+- name: Install and configure Alloy log shipping
+  ansible.builtin.import_tasks: alloy.yml
+  tags: [hardening, alloy]

@@ -1,0 +1,66 @@
+---
+- name: Install apt-transport-https (required for Grafana repo)
+  ansible.builtin.apt:
+    name: apt-transport-https
+    state: present
+
+- name: Download Grafana GPG key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /tmp/grafana-gpg.asc
+    mode: "0644"
+
+- name: Dearmor Grafana GPG key
+  ansible.builtin.command:
+    cmd: gpg --dearmor -o /etc/apt/keyrings/grafana.gpg /tmp/grafana-gpg.asc
+    creates: /etc/apt/keyrings/grafana.gpg
+
+- name: Add Grafana APT repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+    update_cache: true
+
+- name: Remove legacy Promtail if present
+  ansible.builtin.apt:
+    name: promtail
+    state: absent
+
+- name: Install Alloy
+  ansible.builtin.apt:
+    name: alloy
+    state: present
+  notify: Restart Alloy
+
+- name: Add alloy user to systemd-journal and adm groups
+  ansible.builtin.user:
+    name: alloy
+    groups:
+      - systemd-journal
+      - adm
+    append: true
+  notify: Restart Alloy
+
+- name: Add Loki internal hostname to /etc/hosts (not in public DNS)
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ traefik_lb_ip }} {{ loki_hostname }}"
+    regexp: "{{ loki_hostname | regex_escape }}"
+    state: present
+
+- name: Deploy Alloy config
+  ansible.builtin.template:
+    src: alloy-config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Alloy
+
+- name: Enable and start Alloy
+  ansible.builtin.systemd:
+    name: alloy
+    enabled: true
+    state: started
+    daemon_reload: true

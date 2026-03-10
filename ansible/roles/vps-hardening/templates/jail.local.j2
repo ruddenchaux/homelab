@@ -1,0 +1,12 @@
+[DEFAULT]
+bantime  = {{ fail2ban_bantime }}
+findtime = {{ fail2ban_findtime }}
+maxretry = {{ fail2ban_maxretry }}
+
+# Use systemd journal as the log backend (Debian default)
+backend = systemd
+
+[sshd]
+enabled = true
+port    = ssh
+logpath = %(sshd_log)s

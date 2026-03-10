@@ -1,0 +1,14 @@
+---
+# fail2ban SSH jail settings
+fail2ban_bantime: 1h
+fail2ban_findtime: 10m
+fail2ban_maxretry: 5
+
+# unattended-upgrades automatic reboot time (24h format)
+unattended_reboot_time: "03:00"
+
+# Alloy — log shipping to Loki
+# Loki is internal-only; the VPS resolves the hostname via /etc/hosts → Traefik LB IP
+traefik_lb_ip: "10.30.0.200"
+loki_hostname: "loki.ruddenchaux.xyz"
+loki_push_url: "https://loki.ruddenchaux.xyz/loki/api/v1/push"

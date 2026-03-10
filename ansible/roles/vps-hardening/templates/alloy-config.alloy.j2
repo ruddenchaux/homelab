@@ -1,0 +1,38 @@
+// Grafana Alloy config — ship VPS security logs to Loki
+
+// ── Loki destination ────────────────────────────────────────────────────────
+loki.write "default" {
+  endpoint {
+    url = "{{ loki_push_url }}"
+  }
+}
+
+// ── fail2ban — ban/unban events ─────────────────────────────────────────────
+loki.source.journal "fail2ban" {
+  matches    = "_SYSTEMD_UNIT=fail2ban.service"
+  forward_to = [loki.write.default.receiver]
+  labels = {
+    job  = "fail2ban",
+    host = "{{ inventory_hostname }}",
+  }
+}
+
+// ── sshd — authentication failures (before fail2ban acts) ───────────────────
+loki.source.journal "sshd" {
+  matches    = "_SYSTEMD_UNIT=ssh.service"
+  forward_to = [loki.write.default.receiver]
+  labels = {
+    job  = "sshd",
+    host = "{{ inventory_hostname }}",
+  }
+}
+
+// ── kernel — UFW block/allow events from netfilter ──────────────────────────
+loki.source.journal "kernel" {
+  matches    = "_TRANSPORT=kernel"
+  forward_to = [loki.write.default.receiver]
+  labels = {
+    job  = "kernel",
+    host = "{{ inventory_hostname }}",
+  }
+}
