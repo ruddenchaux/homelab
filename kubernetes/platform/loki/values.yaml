@@ -34,3 +34,19 @@ loki:
     enabled: false
   resultsCache:
     enabled: false
+  gateway:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        traefik.ingress.kubernetes.io/router.middlewares: traefik-internal-allowlist@kubernetescrd
+      hosts:
+        - host: loki.ruddenchaux.xyz
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - loki.ruddenchaux.xyz
+          secretName: loki-tls

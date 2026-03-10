@@ -1,0 +1,216 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-vps-security
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  vps-security.json: |
+    {
+      "title": "VPS Security",
+      "uid": "vps-security",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "5m",
+      "time": { "from": "now-24h", "to": "now" },
+      "timepicker": {},
+      "templating": { "list": [] },
+      "annotations": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Bans (24h)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "reduceOptions": { "calcs": ["sum"] },
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 5 },
+                  { "color": "red", "value": 20 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "count_over_time({job=\"fail2ban\"} |= `Ban ` [24h])",
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "UFW Blocks (24h)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "reduceOptions": { "calcs": ["sum"] },
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 100 },
+                  { "color": "red", "value": 500 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "count_over_time({job=\"kernel\"} |= `[UFW BLOCK]` [24h])",
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "SSH Failures (24h)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "reduceOptions": { "calcs": ["sum"] },
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 20 },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "count_over_time({job=\"sshd\"} |= `Failed` [24h])",
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Bans (1h)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "reduceOptions": { "calcs": ["sum"] },
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "count_over_time({job=\"fail2ban\"} |= `Ban ` [1h])",
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Attack Events Over Time",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": { "tooltip": { "mode": "multi" } },
+          "fieldConfig": {
+            "defaults": { "custom": { "lineWidth": 2 } },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "expr": "sum(count_over_time({job=\"fail2ban\"} |= `Ban ` [$__interval]))",
+              "legendFormat": "fail2ban bans",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(count_over_time({job=\"kernel\"} |= `[UFW BLOCK]` [$__interval]))",
+              "legendFormat": "UFW blocks",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(count_over_time({job=\"sshd\"} |= `Failed` [$__interval]))",
+              "legendFormat": "SSH failures",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "fail2ban Ban Events",
+          "type": "logs",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": { "dedupStrategy": "none", "sortOrder": "Descending" },
+          "targets": [
+            {
+              "expr": "{job=\"fail2ban\"} |= `Ban `",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "UFW Blocked Connections",
+          "type": "logs",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": { "dedupStrategy": "none", "sortOrder": "Descending" },
+          "targets": [
+            {
+              "expr": "{job=\"kernel\"} |= `[UFW BLOCK]`",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "SSH Authentication Failures",
+          "type": "logs",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": { "dedupStrategy": "none", "sortOrder": "Descending" },
+          "targets": [
+            {
+              "expr": "{job=\"sshd\"} |= `Failed`",
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }
