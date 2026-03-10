@@ -1,0 +1,7 @@
+---
+influxdb_metrics_id: "influxdb-homelab"
+influxdb_metrics_server: "influxdb.ruddenchaux.xyz"
+influxdb_metrics_port: 443
+influxdb_metrics_proto: "https"
+influxdb_metrics_organization: "homelab"
+influxdb_metrics_bucket: "proxmox"

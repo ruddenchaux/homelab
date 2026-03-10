@@ -4,6 +4,7 @@
     name: ufw
     state: present
     update_cache: true
+  tags: hardening
 
 # Ensure SSH is allowed before enabling UFW — prevents lockout
 - name: Allow SSH
@@ -11,27 +12,32 @@
     rule: allow
     port: "22"
     proto: tcp
+  tags: hardening
 
 - name: Allow WireGuard
   community.general.ufw:
     rule: allow
     port: "{{ vps_wg_port }}"
     proto: udp
+  tags: hardening
 
 - name: Allow HTTPS (Jellyfin relay)
   community.general.ufw:
     rule: allow
     port: "443"
     proto: tcp
+  tags: hardening
 
 - name: Allow HTTP (redirect)
   community.general.ufw:
     rule: allow
     port: "80"
     proto: tcp
+  tags: hardening
 
 - name: Enable UFW (default deny incoming)
   community.general.ufw:
     state: enabled
     policy: deny
     direction: incoming
+  tags: hardening

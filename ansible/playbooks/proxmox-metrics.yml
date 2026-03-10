@@ -1,0 +1,54 @@
+---
+- name: Fetch InfluxDB credentials and provision bucket
+  hosts: k8s_control_plane
+  gather_facts: false
+  tasks:
+    - name: Fetch InfluxDB admin token from secret
+      become: false
+      ansible.builtin.command: >-
+        kubectl get secret influxdb-auth -n influxdb
+        -o jsonpath='{.data.admin-token}'
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: influxdb_token_b64
+      changed_when: false
+      no_log: true
+
+    - name: Decode InfluxDB admin token
+      ansible.builtin.set_fact:
+        influxdb_admin_token: "{{ influxdb_token_b64.stdout | b64decode }}"
+      no_log: true
+
+    - name: Check if proxmox bucket exists
+      become: false
+      ansible.builtin.command: >-
+        kubectl exec -n influxdb statefulset/influxdb-influxdb2 --
+        influx bucket find --name proxmox --org homelab
+        --token {{ influxdb_admin_token }}
+        --host http://localhost:8086
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      register: influxdb_bucket_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Create proxmox bucket with 90d retention
+      when: influxdb_bucket_check.rc != 0
+      become: false
+      ansible.builtin.command: >-
+        kubectl exec -n influxdb statefulset/influxdb-influxdb2 --
+        influx bucket create --name proxmox --org homelab
+        --retention 90d
+        --token {{ influxdb_admin_token }}
+        --host http://localhost:8086
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      no_log: true
+
+- name: Configure Proxmox datacenter metrics
+  hosts: proxmox
+  vars:
+    influxdb_admin_token: "{{ hostvars['k8s-ctrl-01']['influxdb_admin_token'] }}"
+  roles:
+    - proxmox-influxdb-metrics

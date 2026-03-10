@@ -1,6 +1,7 @@
 ---
 - name: Configure firewall
   ansible.builtin.include_tasks: firewall.yml
+  tags: hardening
 
 - name: Configure WireGuard
   ansible.builtin.include_tasks: wireguard.yml

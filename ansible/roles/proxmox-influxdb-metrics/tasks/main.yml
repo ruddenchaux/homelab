@@ -1,0 +1,39 @@
+---
+- name: Set Proxmox DNS to AdGuardHome for internal name resolution
+  ansible.builtin.command: >-
+    pvesh set /nodes/{{ ansible_hostname }}/dns
+    --dns1 10.10.20.2
+    --search ruddenchaux.xyz
+  changed_when: true
+
+- name: Check if InfluxDB metrics server is configured
+  ansible.builtin.command: >-
+    pvesh get /cluster/metrics/server/{{ influxdb_metrics_id }} --output-format json
+  register: metrics_server_check
+  changed_when: false
+  failed_when: false
+
+- name: Create InfluxDB metrics server
+  when: metrics_server_check.rc != 0
+  ansible.builtin.command: >-
+    pvesh create /cluster/metrics/server/{{ influxdb_metrics_id }}
+    --type influxdb
+    --server {{ influxdb_metrics_server }}
+    --port {{ influxdb_metrics_port }}
+    --influxdbproto {{ influxdb_metrics_proto }}
+    --token {{ influxdb_admin_token }}
+    --organization {{ influxdb_metrics_organization }}
+    --bucket {{ influxdb_metrics_bucket }}
+  no_log: true
+
+- name: Update InfluxDB metrics server
+  when: metrics_server_check.rc == 0
+  ansible.builtin.command: >-
+    pvesh set /cluster/metrics/server/{{ influxdb_metrics_id }}
+    --server {{ influxdb_metrics_server }}
+    --port {{ influxdb_metrics_port }}
+    --influxdbproto {{ influxdb_metrics_proto }}
+    --token {{ influxdb_admin_token }}
+    --organization {{ influxdb_metrics_organization }}
+    --bucket {{ influxdb_metrics_bucket }}
+  no_log: true

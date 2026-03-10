@@ -27,6 +27,7 @@
       no_log: true
   roles:
     - vps-relay
+    - vps-hardening
 
 # Play 2 — MikroTik: create WireGuard interface, register its public key,
 #           add VPS as peer (using VPS public key from Play 1 via hostvars)
