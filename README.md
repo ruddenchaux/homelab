@@ -145,6 +145,7 @@ kubernetes/
 | `https://jellyfin.ruddenchaux.xyz` | Jellyfin | Media server (also public via VPS relay) |
 | `https://seerr.ruddenchaux.xyz` | Seerr | Media requests |
 | `https://loki.ruddenchaux.xyz` | Loki | Log aggregation (internal, allowlist-protected) |
+| `https://paperless.ruddenchaux.xyz` | Paperless-ngx | Document management & OCR |
 
 Internal-only (no ingress): Prometheus, FlareSolverr, Recyclarr (CronJob).
 

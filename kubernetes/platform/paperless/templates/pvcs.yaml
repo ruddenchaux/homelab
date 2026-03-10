@@ -1,0 +1,57 @@
+---
+# Document library — keep on prune, data must survive chart updates
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-media
+  namespace: paperless
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    app.kubernetes.io/name: paperless
+    app.kubernetes.io/instance: paperless
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.media.size }}
+---
+# Search index and task data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-data
+  namespace: paperless
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    app.kubernetes.io/name: paperless
+    app.kubernetes.io/instance: paperless
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.data.size }}
+---
+# PostgreSQL data directory
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-postgresql
+  namespace: paperless
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    app.kubernetes.io/name: paperless-postgresql
+    app.kubernetes.io/instance: paperless
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.postgresql.size }}

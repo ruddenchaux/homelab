@@ -1,0 +1,4 @@
+apiVersion: v2
+name: paperless
+description: Paperless-ngx document management chart
+version: 0.1.0

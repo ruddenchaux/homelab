@@ -103,6 +103,11 @@ homepage:
               href: https://ha.ruddenchaux.xyz
               description: Home automation
               icon: home-assistant
+      - Documents:
+          - Paperless:
+              href: https://paperless.ruddenchaux.xyz
+              description: Document management
+              icon: paperless-ngx
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006

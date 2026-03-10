@@ -1,0 +1,15 @@
+domain: ruddenchaux.xyz
+
+images:
+  paperless: ghcr.io/paperless-ngx/paperless-ngx:2.14.7
+  postgres: docker.io/library/postgres:16-alpine
+  redis: docker.io/valkey/valkey:8-alpine
+
+storage:
+  storageClass: local-path
+  media:
+    size: 20Gi
+  data:
+    size: 5Gi
+  postgresql:
+    size: 5Gi

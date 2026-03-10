@@ -1,0 +1,68 @@
+---
+# Create paperless namespace and pre-generate credentials secret.
+# Idempotent: only generates secret if it doesn't already exist.
+
+- name: Create paperless namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ paperless_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: paperless_ns
+  changed_when: "'created' in paperless_ns.stdout"
+  failed_when: paperless_ns.rc != 0 and 'already exists' not in paperless_ns.stderr
+
+- name: Check if paperless-secrets exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ paperless_secret_name }}
+    -n {{ paperless_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: paperless_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate and create paperless-secrets
+  when: paperless_secret_check.rc != 0
+  block:
+    - name: Generate PostgreSQL password
+      become: false
+      ansible.builtin.command: openssl rand -base64 30
+      register: paperless_db_password
+      changed_when: false
+      no_log: true
+
+    - name: Generate Django secret key
+      become: false
+      ansible.builtin.command: openssl rand -hex 32
+      register: paperless_secret_key
+      changed_when: false
+      no_log: true
+
+    - name: Generate admin password
+      become: false
+      ansible.builtin.command: openssl rand -base64 20
+      register: paperless_admin_password
+      changed_when: false
+      no_log: true
+
+    - name: Create paperless-secrets
+      become: false
+      ansible.builtin.command: >-
+        kubectl create secret generic {{ paperless_secret_name }}
+        -n {{ paperless_namespace }}
+        --from-literal=PAPERLESS_DBPASS={{ paperless_db_password.stdout }}
+        --from-literal=PAPERLESS_SECRET_KEY={{ paperless_secret_key.stdout }}
+        --from-literal=PAPERLESS_ADMIN_PASSWORD={{ paperless_admin_password.stdout }}
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      no_log: true
+
+    - name: Display admin password (save this!)
+      ansible.builtin.debug:
+        msg: "Paperless admin password: {{ paperless_admin_password.stdout }}"
+
+- name: paperless-secrets already exists
+  ansible.builtin.debug:
+    msg: "Secret {{ paperless_secret_name }} already exists — skipping generation"
+  when: paperless_secret_check.rc == 0
