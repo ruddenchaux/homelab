@@ -16,6 +16,24 @@ spec:
     requests:
       storage: {{ .Values.storage.mediaLibrary.size }}
 ---
+# Jellyfin transcode PVC — HDD-backed to avoid ephemeral storage pressure on root overlay
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-transcode
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    {{- include "media.labels" . | nindent 4 }}
+    app.kubernetes.io/name: jellyfin
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: 50Gi
+---
 # Config PVCs — one per service
 {{- $services := list "qbittorrent" "nzbget" "radarr" "sonarr" "prowlarr" "lidarr" "readarr" "bazarr" "jellyfin" "seerr" }}
 {{- range $svc := $services }}

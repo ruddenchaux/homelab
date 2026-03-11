@@ -47,7 +47,7 @@ spec:
               readOnly: true
             - name: config
               mountPath: /config
-            - name: cache
+            - name: transcode
               mountPath: /config/cache
           resources:
             requests:
@@ -60,8 +60,9 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: jellyfin-config
-        - name: cache
-          emptyDir: {}
+        - name: transcode
+          persistentVolumeClaim:
+            claimName: jellyfin-transcode
 ---
 apiVersion: v1
 kind: Service
