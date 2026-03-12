@@ -52,6 +52,10 @@ kube-prometheus-stack:
             - ALL
         runAsNonRoot: false
         runAsUser: 0
+  prometheusOperator:
+    admissionWebhooks:
+      certManager:
+        enabled: true
   prometheus:
     prometheusSpec:
       retention: 15d
