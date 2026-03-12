@@ -1,5 +1,9 @@
 kube-prometheus-stack:
   grafana:
+    admin:
+      existingSecret: grafana-admin-creds
+      userKey: admin-user
+      passwordKey: admin-password
     ingress:
       enabled: true
       ingressClassName: traefik
