@@ -38,6 +38,16 @@ kube-prometheus-stack:
       enabled: true
       size: 5Gi
       storageClassName: local-path
+    initChownData:
+      securityContext:
+        capabilities:
+          add:
+            - CHOWN
+            - DAC_OVERRIDE
+          drop:
+            - ALL
+        runAsNonRoot: false
+        runAsUser: 0
   prometheus:
     prometheusSpec:
       retention: 15d
