@@ -28,7 +28,7 @@ homepage:
           - ArgoCD:
               href: https://argocd.ruddenchaux.xyz
               description: GitOps deployment
-              icon: argocd
+              icon: argo-cd
           - Traefik:
               href: https://traefik.ruddenchaux.xyz
               description: Ingress controller
