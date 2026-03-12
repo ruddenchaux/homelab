@@ -2,6 +2,35 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
+  name: home-assistant-code-server
+  namespace: home-assistant
+  labels:
+    app.kubernetes.io/name: home-assistant
+    app.kubernetes.io/instance: home-assistant
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: authentik-authentik-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - haconfig.{{ .Values.domain }}
+      secretName: haconfig-tls
+  rules:
+    - host: haconfig.{{ .Values.domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: home-assistant-code-server
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
   name: home-assistant
   namespace: home-assistant
   labels:

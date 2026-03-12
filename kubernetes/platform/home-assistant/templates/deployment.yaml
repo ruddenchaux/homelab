@@ -23,6 +23,18 @@ spec:
         app.kubernetes.io/name: home-assistant
     spec:
       initContainers:
+        - name: setup-config-dirs
+          image: alpine:3.21
+          command: [sh, -c]
+          args:
+            - |
+              mkdir -p /config/packages
+              for f in automations.yaml scripts.yaml scenes.yaml; do
+                [ -f "/config/$f" ] || echo "[]" > "/config/$f"
+              done
+          volumeMounts:
+            - name: ha-config
+              mountPath: /config
         - name: install-hass-openid
           image: alpine:3.21
           command: [sh, -c]
@@ -98,6 +110,27 @@ spec:
             limits:
               memory: 1Gi
               cpu: 500m
+        - name: code-server
+          image: {{ .Values.codeServer.image }}
+          args:
+            - --auth=none
+            - --bind-addr=0.0.0.0:8080
+            - /config
+          ports:
+            - name: code-server
+              containerPort: 8080
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: ha-config
+              mountPath: /config
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 50m
+            limits:
+              memory: 768Mi
+              cpu: 500m
       volumes:
         - name: ha-config
           persistentVolumeClaim:
@@ -124,3 +157,19 @@ spec:
     - name: http
       port: 8123
       targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: home-assistant-code-server
+  namespace: home-assistant
+  labels:
+    app.kubernetes.io/name: home-assistant
+    app.kubernetes.io/instance: home-assistant
+spec:
+  selector:
+    app.kubernetes.io/name: home-assistant
+  ports:
+    - name: code-server
+      port: 8080
+      targetPort: code-server

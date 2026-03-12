@@ -11,6 +11,9 @@ data:
   configuration.yaml: |
     default_config:
 
+    homeassistant:
+      packages: !include_dir_named packages/
+
     openid:
       client_id: !secret ha_oidc_client_id
       client_secret: !secret ha_oidc_client_secret
