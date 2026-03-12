@@ -718,6 +718,35 @@ ssh debian@10.30.0.10 "kubectl get deployment monitoring-grafana -n monitoring \
 
 ---
 
+### Bug 2 follow-up — stale hook RBAC resources block sync after certManager migration
+
+**Symptom:** After committing `certManager.enabled: true`, the sync loop persists. ArgoCD message changes to `waiting for deletion of /ServiceAccount/monitoring-kube-prometheus-admission and 4 more hooks`. A new sync immediately recreates them. The pattern repeats indefinitely.
+
+**Root cause:** The old job-patch hook resources (ServiceAccount + ClusterRole + ClusterRoleBinding + Role + RoleBinding) have `helm.sh/hook` annotations and remain in the cluster after switching to certManager mode. Unlike the Jobs (which have `ttlSecondsAfterFinished: 60` and self-delete), the RBAC resources have no auto-delete mechanism. ArgoCD treats them as active hooks and gets stuck "waiting for deletion". When the sync restarts, it sees them missing from the desired state and tries to prune them again — loop continues.
+
+**Fix:** Delete the 5 stale hook resources manually once. ArgoCD can then complete the transition:
+
+```bash
+# Delete stale admission webhook hook resources
+ssh debian@10.30.0.10 "kubectl delete serviceaccount monitoring-kube-prometheus-admission -n monitoring --ignore-not-found"
+ssh debian@10.30.0.10 "kubectl delete clusterrole monitoring-kube-prometheus-admission --ignore-not-found"
+ssh debian@10.30.0.10 "kubectl delete clusterrolebinding monitoring-kube-prometheus-admission --ignore-not-found"
+ssh debian@10.30.0.10 "kubectl delete role monitoring-kube-prometheus-admission -n monitoring --ignore-not-found"
+ssh debian@10.30.0.10 "kubectl delete rolebinding monitoring-kube-prometheus-admission -n monitoring --ignore-not-found"
+
+# Verify ArgoCD completes the sync and creates cert-manager resources
+ssh debian@10.30.0.10 "kubectl get certificates,issuers -n monitoring"
+# Should show: monitoring-kube-prometheus-admission, monitoring-kube-prometheus-root-cert, 2 issuers
+
+# Confirm no more admission jobs are being created
+ssh debian@10.30.0.10 "kubectl get jobs -n monitoring"
+# Expected: No resources found
+```
+
+After deletion, ArgoCD creates the cert-manager Issuers and Certificates and reaches `Synced Healthy` permanently.
+
+---
+
 ## General cluster health
 
 ```bash
