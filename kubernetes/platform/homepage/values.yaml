@@ -103,6 +103,10 @@ homepage:
               href: https://ha.ruddenchaux.xyz
               description: Home automation
               icon: home-assistant
+          - HA Config:
+              href: https://haconfig.ruddenchaux.xyz
+              description: Home Assistant config editor
+              icon: vscode
       - Documents:
           - Paperless:
               href: https://paperless.ruddenchaux.xyz
