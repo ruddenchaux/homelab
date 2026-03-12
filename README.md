@@ -133,6 +133,7 @@ kubernetes/
 | `https://argocd.ruddenchaux.xyz` | ArgoCD | GitOps deployment |
 | `https://traefik.ruddenchaux.xyz` | Traefik | Ingress routing |
 | `https://ha.ruddenchaux.xyz` | Home Assistant | Home automation |
+| `https://haconfig.ruddenchaux.xyz` | code-server (VS Code) | Home Assistant config editor |
 | `https://immich.ruddenchaux.xyz` | Immich | Photo library & backup |
 | `https://radarr.ruddenchaux.xyz` | Radarr | Movie management |
 | `https://sonarr.ruddenchaux.xyz` | Sonarr | TV show management |

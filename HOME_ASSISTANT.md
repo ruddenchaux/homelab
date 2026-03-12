@@ -30,129 +30,136 @@ Battery:     P_battery = P_solar - Inverter_DC_in
 
 ---
 
-## Manual HA configuration
+## Config structure
+
+`configuration.yaml` is a frozen ConfigMap (managed via Git/ArgoCD). It loads:
+- `automations.yaml` — HA UI automations (written by HA itself)
+- `packages/` — all integration config (YAML files dropped here, no ConfigMap changes needed)
+
+To add new integrations, create files in `/config/packages/` via **code-server** at
+`https://haconfig.ruddenchaux.xyz`. HA will pick them up after a config reload
+(Developer Tools → All YAML → Check Configuration → Restart).
+
+---
+
+## HA configuration
 
 ### Prerequisites
 
 1. Add the MQTT broker once via the UI:
    **Settings → Integrations → MQTT → `192.168.88.237:1883`**
 
-2. All sensor definitions below go in `configuration.yaml` (or separate included files).
+2. All sensor definitions below go in `/config/packages/` files, edited via code-server.
 
 ---
 
-### mqtt.yaml
+### packages/mqtt.yaml
 
-Paste under `mqtt:` in `configuration.yaml`, or in a separate `mqtt.yaml` included via `mqtt: !include mqtt.yaml`.
+Create at `/config/packages/mqtt.yaml` via code-server.
 
 ```yaml
+mqtt:
+  sensor:
+    - name: "House Load Power"
+      unique_id: house_load_power
+      state_topic: "emon/emonTx4_17/P2"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+
+    - name: "Grid Import Power"
+      unique_id: grid_import_power
+      state_topic: "emon/emonTx4_17/P3"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+
+    - name: "Solar Power"
+      unique_id: solar_power
+      state_topic: "emon/system/solar-power"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+```
+
+---
+
+### packages/energy.yaml
+
+Create at `/config/packages/energy.yaml` via code-server.
+Contains template sensors (battery power derived from solar/grid) and Riemann sum
+integrations (W → kWh) for the HA Energy Dashboard.
+
+```yaml
+template:
+  - sensor:
+      - name: "Battery Power"
+        unique_id: battery_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set solar = states('sensor.solar_power') | float(0) %}
+          {% set house = states('sensor.house_load_power') | float(0) %}
+          {% set grid  = states('sensor.grid_import_power') | float(0) %}
+          {{ (solar - house + grid - 50) | round(1) }}
+        availability: >
+          {{ states('sensor.solar_power') not in ['unavailable', 'unknown', 'none']
+             and states('sensor.house_load_power') not in ['unavailable', 'unknown', 'none']
+             and states('sensor.grid_import_power') not in ['unavailable', 'unknown', 'none'] }}
+
+      - name: "Battery Charging Power"
+        unique_id: battery_charging_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set bat = states('sensor.battery_power') | float(0) %}
+          {{ [bat, 0] | max | round(1) }}
+        availability: "{{ states('sensor.battery_power') not in ['unavailable', 'unknown', 'none'] }}"
+
+      - name: "Battery Discharging Power"
+        unique_id: battery_discharging_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set bat = states('sensor.battery_power') | float(0) %}
+          {{ ([bat, 0] | min | abs) | round(1) }}
+        availability: "{{ states('sensor.battery_power') not in ['unavailable', 'unknown', 'none'] }}"
+
 sensor:
-  - name: "House Load Power"
-    unique_id: house_load_power
-    state_topic: "emon/emonTx4_17/P2"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
+  - platform: integration
+    source: sensor.solar_power
+    name: "Solar Energy"
+    unique_id: solar_energy
+    unit_prefix: k
+    method: trapezoidal
+    round: 3
 
-  - name: "Grid Import Power"
-    unique_id: grid_import_power
-    state_topic: "emon/emonTx4_17/P3"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
+  - platform: integration
+    source: sensor.grid_import_power
+    name: "Grid Energy Import"
+    unique_id: grid_energy_import
+    unit_prefix: k
+    method: trapezoidal
+    round: 3
 
-  - name: "Solar Power"
-    unique_id: solar_power
-    state_topic: "emon/system/solar-power"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-```
+  - platform: integration
+    source: sensor.battery_charging_power
+    name: "Battery Energy Charged"
+    unique_id: battery_energy_charged
+    unit_prefix: k
+    method: trapezoidal
+    round: 3
 
----
-
-### template.yaml
-
-Paste under `template:` in `configuration.yaml`, or in a separate `template.yaml` included via `template: !include template.yaml`.
-
-```yaml
-- sensor:
-    - name: "Battery Power"
-      unique_id: battery_power
-      unit_of_measurement: "W"
-      device_class: power
-      state_class: measurement
-      state: >
-        {% set solar = states('sensor.solar_power') | float(0) %}
-        {% set house = states('sensor.house_load_power') | float(0) %}
-        {% set grid  = states('sensor.grid_import_power') | float(0) %}
-        {{ (solar - house + grid - 50) | round(1) }}
-      availability: >
-        {{ states('sensor.solar_power') not in ['unavailable', 'unknown', 'none']
-           and states('sensor.house_load_power') not in ['unavailable', 'unknown', 'none']
-           and states('sensor.grid_import_power') not in ['unavailable', 'unknown', 'none'] }}
-
-    - name: "Battery Charging Power"
-      unique_id: battery_charging_power
-      unit_of_measurement: "W"
-      device_class: power
-      state_class: measurement
-      state: >
-        {% set bat = states('sensor.battery_power') | float(0) %}
-        {{ [bat, 0] | max | round(1) }}
-      availability: "{{ states('sensor.battery_power') not in ['unavailable', 'unknown', 'none'] }}"
-
-    - name: "Battery Discharging Power"
-      unique_id: battery_discharging_power
-      unit_of_measurement: "W"
-      device_class: power
-      state_class: measurement
-      state: >
-        {% set bat = states('sensor.battery_power') | float(0) %}
-        {{ ([bat, 0] | min | abs) | round(1) }}
-      availability: "{{ states('sensor.battery_power') not in ['unavailable', 'unknown', 'none'] }}"
-```
-
----
-
-### sensor.yaml
-
-Paste under `sensor:` in `configuration.yaml`, or in a separate `sensor.yaml` included via `sensor: !include sensor.yaml`.
-
-These are Riemann sum integrations (W → kWh) for the HA Energy Dashboard.
-
-```yaml
-- platform: integration
-  source: sensor.solar_power
-  name: "Solar Energy"
-  unique_id: solar_energy
-  unit_prefix: k
-  method: trapezoidal
-  round: 3
-
-- platform: integration
-  source: sensor.grid_import_power
-  name: "Grid Energy Import"
-  unique_id: grid_energy_import
-  unit_prefix: k
-  method: trapezoidal
-  round: 3
-
-- platform: integration
-  source: sensor.battery_charging_power
-  name: "Battery Energy Charged"
-  unique_id: battery_energy_charged
-  unit_prefix: k
-  method: trapezoidal
-  round: 3
-
-- platform: integration
-  source: sensor.battery_discharging_power
-  name: "Battery Energy Discharged"
-  unique_id: battery_energy_discharged
-  unit_prefix: k
-  method: trapezoidal
-  round: 3
+  - platform: integration
+    source: sensor.battery_discharging_power
+    name: "Battery Energy Discharged"
+    unique_id: battery_energy_discharged
+    unit_prefix: k
+    method: trapezoidal
+    round: 3
 ```
 
 ---
@@ -187,34 +194,15 @@ These are Riemann sum integrations (W → kWh) for the HA Energy Dashboard.
 
 ---
 
-## GitOps integration (when ready)
+## Adding new integrations
 
-When the manual config is validated, the same YAML is applied via the k8s ConfigMap in
-`kubernetes/platform/home-assistant/templates/configmap.yaml`.
+`configuration.yaml` is frozen. All new config goes in `/config/packages/` via code-server
+at `https://haconfig.ruddenchaux.xyz`. After saving, reload HA:
 
-Add to `configuration.yaml` in the ConfigMap:
-```yaml
-mqtt: !include mqtt.yaml
-template: !include template.yaml
-sensor: !include sensor.yaml
-```
+**Developer Tools → All YAML → Check Configuration → Restart**
 
-Add three new ConfigMap keys (`mqtt.yaml`, `template.yaml`, `sensor.yaml`) with the content above.
-
-Mount each in `deployment.yaml` alongside the existing `configuration.yaml` subPath mount:
-```yaml
-- name: ha-configuration
-  mountPath: /config/mqtt.yaml
-  subPath: mqtt.yaml
-- name: ha-configuration
-  mountPath: /config/template.yaml
-  subPath: template.yaml
-- name: ha-configuration
-  mountPath: /config/sensor.yaml
-  subPath: sensor.yaml
-```
-
-Trigger a rollout after ArgoCD syncs:
+Or via the HA REST API:
 ```bash
-ssh debian@10.30.0.10 'kubectl rollout restart deployment/home-assistant -n home-assistant'
+curl -X POST http://ha.ruddenchaux.xyz/api/services/homeassistant/reload_all \
+  -H "Authorization: Bearer <long-lived-token>"
 ```
