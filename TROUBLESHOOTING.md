@@ -610,6 +610,114 @@ for e in data['data']['entities']:
 
 ---
 
+## Grafana: ArgoCD continuous sync loop + stuck rolling update
+
+Two independent bugs that became visible together on 2026-03-12.
+
+### Bug 1 — Stuck rolling update (Degraded health)
+
+**Symptom:** Grafana deployment has `ProgressDeadlineExceeded`. Many evicted pods from a stalled replicaset. New pods stuck in `Init:CrashLoopBackOff`.
+
+**Root cause:** Grafana creates `csv`, `pdf`, `png` directories at startup with `drwx------` (mode 700). The `init-chown-data` init container drops ALL capabilities and only adds `CHOWN` — without `DAC_OVERRIDE`, it cannot traverse those 700 dirs even as UID 0, giving `Permission denied`. This only manifests on a rolling update while an old pod is running (dirs already exist). First deployment never hits it.
+
+**Triggered by:** `kubectl rollout restart` on 2026-03-10, which created a new replicaset that could not start.
+
+**Fix:**
+
+```bash
+# 1. Unblock the stuck rollout by fixing permissions on the running pod
+ssh debian@10.30.0.10 "kubectl exec -n monitoring monitoring-grafana-<old-rs>-<hash> -c grafana -- \
+  chmod 755 /var/lib/grafana/csv /var/lib/grafana/pdf /var/lib/grafana/png"
+
+# 2. Delete the stuck pods so they restart with correct permissions
+ssh debian@10.30.0.10 "kubectl get pods -n monitoring --field-selector=status.phase=Failed -o name \
+  | xargs kubectl delete -n monitoring"
+```
+
+**Permanent fix:** Add `DAC_OVERRIDE` to the init container in `kubernetes/platform/monitoring/values.yaml`:
+
+```yaml
+kube-prometheus-stack:
+  grafana:
+    initChownData:
+      securityContext:
+        capabilities:
+          add:
+            - CHOWN
+            - DAC_OVERRIDE
+          drop:
+            - ALL
+        runAsNonRoot: false
+        runAsUser: 0
+```
+
+---
+
+### Bug 2 — Continuous ArgoCD sync loop (133 rolling update revisions)
+
+**Symptom:** The monitoring ArgoCD app is always `OutOfSync`. `kubectl rollout history deployment/monitoring-grafana -n monitoring` shows 100+ revisions. ArgoCD admission webhook jobs (`monitoring-kube-prometheus-admission-create/patch`) are created and deleted every few minutes.
+
+**Root cause (chain of three issues):**
+
+1. **Random Grafana admin password** — the Grafana Helm chart generates a random `adminPassword` via `randAlphaNum 40` on every `helm template` render when no fixed password is set. ArgoCD renders the chart every ~3 minutes (refresh interval). Each render produces a new password → `monitoring-grafana` Secret is OutOfSync → sync → new `checksum/secret` annotation on Deployment → Deployment is OutOfSync → repeat forever.
+
+2. **`restartedAt` annotation** — a `kubectl rollout restart` adds `kubectl.kubernetes.io/restartedAt` to the pod template, owned by the `argocd-server` SSA field manager. ArgoCD's controller (`argocd-controller`) cannot remove a field owned by another manager, so the Deployment remains permanently OutOfSync.
+
+3. **Admission webhook pre-sync jobs stuck** — the prometheus-operator admission patch jobs (`batch/Job/monitoring-kube-prometheus-admission-*`) have `ttlSecondsAfterFinished: 60`. Kubernetes TTL controller deletes them 60s after completion, before ArgoCD can issue its own delete (as required by `hook-delete-policy: hook-succeeded`). ArgoCD's sync gets stuck "waiting for deletion" of a resource that no longer exists. The sync never reaches the main apply/prune phase.
+
+**Fix:**
+
+```bash
+# Step 1 — create a stable admin credentials secret with the current password
+CURRENT_PW=$(ssh debian@10.30.0.10 "kubectl get secret monitoring-grafana -n monitoring \
+  -o jsonpath='{.data.admin-password}' | base64 -d")
+ssh debian@10.30.0.10 "kubectl create secret generic grafana-admin-creds -n monitoring \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password=$CURRENT_PW \
+  --dry-run=client -o yaml | kubectl apply -f -"
+
+# Step 2 — remove the stale restartedAt annotation
+ssh debian@10.30.0.10 "kubectl patch deployment monitoring-grafana -n monitoring \
+  --type=json -p '[{\"op\":\"remove\",\"path\":\"/spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt\"}]'"
+
+# Step 3 — delete the orphaned monitoring-grafana secret (will not be recreated after fix)
+ssh debian@10.30.0.10 "kubectl delete secret monitoring-grafana -n monitoring"
+```
+
+Add to `kubernetes/platform/monitoring/values.yaml`:
+
+```yaml
+kube-prometheus-stack:
+  grafana:
+    admin:
+      existingSecret: grafana-admin-creds  # stops random password generation
+      userKey: admin-user
+      passwordKey: admin-password
+  prometheusOperator:
+    admissionWebhooks:
+      certManager:
+        enabled: true  # replaces patch jobs with cert-manager Certificate resources
+                       # eliminates pre-sync hooks that caused the stuck sync loop
+```
+
+**Why it only became visible:** The sync loop was running since day 1 (proving it: 133 deployment revisions over 24 days). But rolling updates completed in ~30s and Grafana remained Healthy, so nothing appeared broken. The stuck rolling update (Bug 1) caused a `Degraded` health status, which drew attention to the monitoring namespace, revealing the loop.
+
+```bash
+# Diagnose a continuous sync loop
+ssh debian@10.30.0.10 "kubectl rollout history deployment/monitoring-grafana -n monitoring"
+# Large revision count (> 10) with no intentional changes = sync loop
+
+ssh debian@10.30.0.10 "kubectl get application monitoring -n argocd \
+  -o jsonpath='{.status.operationState.message}'"
+# "waiting for deletion of batch/Job/..." = stuck admission webhook hook
+
+# Check who owns a deployment annotation (SSA field manager)
+ssh debian@10.30.0.10 "kubectl get deployment monitoring-grafana -n monitoring \
+  -o jsonpath='{.metadata.managedFields[*].manager}'"
+```
+
+---
+
 ## General cluster health
 
 ```bash
