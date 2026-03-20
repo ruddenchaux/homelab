@@ -94,7 +94,7 @@
       client_secret: "{{ ghostfolio_client_secret }}"
       redirect_uris:
         - matching_mode: strict
-          url: "https://portfolio.{{ authentik_domain }}/api/v1/auth/oidc/callback"
+          url: "https://portfolio.{{ authentik_domain }}/api/auth/oidc/callback"
       authorization_flow: "{{ authentik_authorization_flow }}"
       authentication_flow: "{{ authentik_authentication_flow }}"
       invalidation_flow: "{{ authentik_invalidation_flow }}"
@@ -159,7 +159,7 @@
       - "--from-literal=OIDC_CLIENT_SECRET={{ ghostfolio_client_secret }}"
       - "--from-literal=OIDC_ISSUER={{ authentik_external_url }}/application/o/{{ authentik_ghostfolio_app_slug }}/"
       - "--from-literal=OIDC_DISCOVERY_URL={{ authentik_external_url }}/application/o/{{ authentik_ghostfolio_app_slug }}/.well-known/openid-configuration"
-      - "--from-literal=OIDC_CALLBACK_URL=https://portfolio.{{ authentik_domain }}/api/v1/auth/oidc/callback"
+      - "--from-literal=OIDC_CALLBACK_URL=https://portfolio.{{ authentik_domain }}/api/auth/oidc/callback"
   environment:
     KUBECONFIG: /home/debian/.kube/config
   no_log: true
