@@ -157,6 +157,7 @@
       - "--from-literal=ENABLE_FEATURE_AUTH_OIDC=true"
       - "--from-literal=OIDC_CLIENT_ID={{ ghostfolio_client_id }}"
       - "--from-literal=OIDC_CLIENT_SECRET={{ ghostfolio_client_secret }}"
+      - "--from-literal=OIDC_ISSUER={{ authentik_external_url }}/application/o/{{ authentik_ghostfolio_app_slug }}/"
       - "--from-literal=OIDC_DISCOVERY_URL={{ authentik_external_url }}/application/o/{{ authentik_ghostfolio_app_slug }}/.well-known/openid-configuration"
       - "--from-literal=OIDC_CALLBACK_URL=https://portfolio.{{ authentik_domain }}/api/v1/auth/oidc/callback"
   environment:
