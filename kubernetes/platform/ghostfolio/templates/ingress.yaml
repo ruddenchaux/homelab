@@ -1,0 +1,27 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ghostfolio
+  labels:
+    app.kubernetes.io/name: ghostfolio
+    app.kubernetes.io/instance: ghostfolio
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - portfolio.{{ .Values.domain }}
+      secretName: ghostfolio-tls
+  rules:
+    - host: portfolio.{{ .Values.domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ghostfolio
+                port:
+                  number: 3333

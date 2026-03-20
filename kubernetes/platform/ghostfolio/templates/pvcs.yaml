@@ -1,0 +1,19 @@
+---
+# PostgreSQL data directory
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ghostfolio-postgresql
+  namespace: ghostfolio
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    app.kubernetes.io/name: ghostfolio-postgresql
+    app.kubernetes.io/instance: ghostfolio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.postgresql.size }}

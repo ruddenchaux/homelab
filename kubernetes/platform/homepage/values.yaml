@@ -112,6 +112,11 @@ homepage:
               href: https://paperless.ruddenchaux.xyz
               description: Document management
               icon: paperless-ngx
+      - Finance:
+          - Ghostfolio:
+              href: https://portfolio.ruddenchaux.xyz
+              description: Wealth portfolio tracker
+              icon: ghostfolio
       - Management:
           - Proxmox:
               href: https://10.10.0.2:8006

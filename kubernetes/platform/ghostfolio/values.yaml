@@ -1,0 +1,11 @@
+domain: ruddenchaux.xyz
+
+images:
+  ghostfolio: docker.io/ghostfolio/ghostfolio:2.150.0
+  postgres: docker.io/library/postgres:15-alpine
+  redis: docker.io/library/redis:7-alpine
+
+storage:
+  storageClass: local-path
+  postgresql:
+    size: 5Gi

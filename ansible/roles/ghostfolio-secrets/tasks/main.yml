@@ -1,0 +1,91 @@
+---
+# Create ghostfolio namespace and pre-generate credentials secret.
+# Idempotent: only generates secret if it doesn't already exist.
+
+- name: Create ghostfolio namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ ghostfolio_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: ghostfolio_ns
+  changed_when: "'created' in ghostfolio_ns.stdout"
+  failed_when: ghostfolio_ns.rc != 0 and 'already exists' not in ghostfolio_ns.stderr
+
+- name: Check if ghostfolio-secrets exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ ghostfolio_secret_name }}
+    -n {{ ghostfolio_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: ghostfolio_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate and create ghostfolio-secrets
+  when: ghostfolio_secret_check.rc != 0
+  block:
+    - name: Generate PostgreSQL password
+      become: false
+      ansible.builtin.command: openssl rand -hex 32
+      register: ghostfolio_db_password
+      changed_when: false
+      no_log: true
+
+    - name: Generate Redis password
+      become: false
+      ansible.builtin.command: openssl rand -hex 32
+      register: ghostfolio_redis_password
+      changed_when: false
+      no_log: true
+
+    - name: Generate JWT secret key
+      become: false
+      ansible.builtin.command: openssl rand -hex 32
+      register: ghostfolio_jwt_secret
+      changed_when: false
+      no_log: true
+
+    - name: Generate access token salt
+      become: false
+      ansible.builtin.command: openssl rand -hex 32
+      register: ghostfolio_access_token_salt
+      changed_when: false
+      no_log: true
+
+    - name: Build DATABASE_URL
+      ansible.builtin.set_fact:
+        ghostfolio_database_url: >-
+          postgresql://ghostfolio:{{ ghostfolio_db_password.stdout }}@ghostfolio-postgresql:5432/ghostfolio-db?connect_timeout=300&sslmode=prefer
+      no_log: true
+
+    - name: Create ghostfolio-secrets
+      become: false
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - create
+          - secret
+          - generic
+          - "{{ ghostfolio_secret_name }}"
+          - "-n"
+          - "{{ ghostfolio_namespace }}"
+          - "--from-literal=POSTGRES_USER=ghostfolio"
+          - "--from-literal=POSTGRES_DB=ghostfolio-db"
+          - "--from-literal=POSTGRES_PASSWORD={{ ghostfolio_db_password.stdout }}"
+          - "--from-literal=DATABASE_URL={{ ghostfolio_database_url }}"
+          - "--from-literal=REDIS_HOST=ghostfolio-redis"
+          - "--from-literal=REDIS_PORT=6379"
+          - "--from-literal=REDIS_PASSWORD={{ ghostfolio_redis_password.stdout }}"
+          - "--from-literal=JWT_SECRET_KEY={{ ghostfolio_jwt_secret.stdout }}"
+          - "--from-literal=ACCESS_TOKEN_SALT={{ ghostfolio_access_token_salt.stdout }}"
+          - "--from-literal=ROOT_URL=https://portfolio.ruddenchaux.xyz"
+          - "--from-literal=ENABLE_FEATURE_AUTH_OIDC=false"
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      no_log: true
+
+- name: ghostfolio-secrets already exists
+  ansible.builtin.debug:
+    msg: "Secret {{ ghostfolio_secret_name }} already exists — skipping generation"
+  when: ghostfolio_secret_check.rc == 0

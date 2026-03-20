@@ -1,0 +1,66 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ghostfolio-redis
+  labels:
+    app.kubernetes.io/name: ghostfolio-redis
+    app.kubernetes.io/instance: ghostfolio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ghostfolio-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ghostfolio-redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.images.redis }}
+          command:
+            - /bin/sh
+            - -c
+            - redis-server --requirepass "$(REDIS_PASSWORD)"
+          ports:
+            - name: redis
+              containerPort: 6379
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ghostfolio-secrets
+                  key: REDIS_PASSWORD
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" ping | grep PONG
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 20m
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ghostfolio-redis
+  labels:
+    app.kubernetes.io/name: ghostfolio-redis
+    app.kubernetes.io/instance: ghostfolio
+spec:
+  selector:
+    app.kubernetes.io/name: ghostfolio-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

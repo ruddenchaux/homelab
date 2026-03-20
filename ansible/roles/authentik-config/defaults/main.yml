@@ -38,3 +38,9 @@ authentik_immich_provider_name: "Immich"
 authentik_immich_app_slug: "immich"
 authentik_immich_secret_name: "immich-oidc-config"
 authentik_immich_secret_namespace: "immich"
+
+# Ghostfolio OIDC
+authentik_ghostfolio_provider_name: "Ghostfolio"
+authentik_ghostfolio_app_slug: "ghostfolio"
+authentik_ghostfolio_secret_name: "ghostfolio-oidc"
+authentik_ghostfolio_secret_namespace: "ghostfolio"

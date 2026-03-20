@@ -1,0 +1,83 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ghostfolio-postgresql
+  labels:
+    app.kubernetes.io/name: ghostfolio-postgresql
+    app.kubernetes.io/instance: ghostfolio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ghostfolio-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ghostfolio-postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: {{ .Values.images.postgres }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: ghostfolio
+            - name: POSTGRES_DB
+              value: ghostfolio-db
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ghostfolio-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - ghostfolio
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - ghostfolio
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ghostfolio-postgresql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ghostfolio-postgresql
+  labels:
+    app.kubernetes.io/name: ghostfolio-postgresql
+    app.kubernetes.io/instance: ghostfolio
+spec:
+  selector:
+    app.kubernetes.io/name: ghostfolio-postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql

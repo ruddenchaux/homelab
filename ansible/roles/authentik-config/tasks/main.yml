@@ -188,6 +188,9 @@
 - name: Configure Immich OIDC provider and application
   ansible.builtin.include_tasks: oidc-immich.yml
 
+- name: Configure Ghostfolio OIDC provider and application
+  ansible.builtin.include_tasks: oidc-ghostfolio.yml
+
 - name: Configure embedded outpost
   ansible.builtin.include_tasks: outpost.yml
 

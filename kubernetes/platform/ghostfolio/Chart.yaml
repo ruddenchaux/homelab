@@ -1,0 +1,4 @@
+apiVersion: v2
+name: ghostfolio
+description: Ghostfolio wealth portfolio chart
+version: 0.1.0
