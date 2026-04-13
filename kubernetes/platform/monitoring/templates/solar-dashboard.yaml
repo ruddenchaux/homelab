@@ -11,7 +11,7 @@ data:
       "title": "Solar PV System",
       "uid": "solar-pv",
       "schemaVersion": 38,
-      "version": 2,
+      "version": 3,
       "refresh": "5m",
       "time": { "from": "now-7d", "to": "now" },
       "timepicker": {},
@@ -33,7 +33,7 @@ data:
           "id": 1,
           "title": "Solar Power",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "reduceOptions": { "calcs": ["lastNotNull"] },
@@ -68,7 +68,7 @@ data:
           "id": 2,
           "title": "House Consumption",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "reduceOptions": { "calcs": ["lastNotNull"] },
@@ -101,154 +101,77 @@ data:
         },
         {
           "id": 3,
-          "title": "Battery SoC",
+          "title": "Battery",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "reduceOptions": { "calcs": ["lastNotNull"] },
             "colorMode": "background",
             "graphMode": "area",
-            "orientation": "auto",
+            "orientation": "horizontal",
             "textMode": "auto"
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "percent",
-              "min": 0,
-              "max": 100,
-              "color": { "mode": "thresholds" },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "yellow", "value": 20 },
-                  { "color": "green", "value": 50 }
+              "color": { "mode": "thresholds" }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "SoC" },
+                "properties": [
+                  { "id": "unit", "value": "percent" },
+                  { "id": "min", "value": 0 },
+                  { "id": "max", "value": 100 },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "red", "value": null },
+                        { "color": "yellow", "value": 20 },
+                        { "color": "green", "value": 50 }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Voltage" },
+                "properties": [
+                  { "id": "unit", "value": "volt" },
+                  { "id": "decimals", "value": 1 },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "red", "value": null },
+                        { "color": "yellow", "value": 50 },
+                        { "color": "green", "value": 53 }
+                      ]
+                    }
+                  }
                 ]
               }
-            },
-            "overrides": []
+            ]
           },
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_soc\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_soc\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"SoC\")"
+            },
+            {
+              "refId": "B",
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_volt\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Voltage\")"
             }
           ]
         },
         {
           "id": 4,
-          "title": "Battery Voltage",
-          "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
-          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
-          "options": {
-            "reduceOptions": { "calcs": ["lastNotNull"] },
-            "colorMode": "value",
-            "graphMode": "area",
-            "orientation": "auto",
-            "textMode": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "volt",
-              "decimals": 1,
-              "color": { "mode": "thresholds" },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "yellow", "value": 50 },
-                  { "color": "green", "value": 53 }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_volt\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
-            }
-          ]
-        },
-        {
-          "id": 5,
-          "title": "Solar Yield (period)",
-          "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
-          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
-          "options": {
-            "reduceOptions": { "calcs": ["lastNotNull"] },
-            "colorMode": "background",
-            "graphMode": "none",
-            "orientation": "auto",
-            "textMode": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "kwatth",
-              "decimals": 2,
-              "color": { "mode": "thresholds" },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "blue", "value": null },
-                  { "color": "yellow", "value": 2 },
-                  { "color": "green", "value": 5 }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
-            }
-          ]
-        },
-        {
-          "id": 6,
-          "title": "House Energy Used (period)",
-          "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
-          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
-          "options": {
-            "reduceOptions": { "calcs": ["lastNotNull"] },
-            "colorMode": "background",
-            "graphMode": "none",
-            "orientation": "auto",
-            "textMode": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "kwatth",
-              "decimals": 2,
-              "color": { "mode": "thresholds" },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 3 },
-                  { "color": "red", "value": 8 }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
-            }
-          ]
-        },
-        {
-          "id": 11,
           "title": "Grid Import",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "reduceOptions": { "calcs": ["lastNotNull"] },
@@ -280,38 +203,118 @@ data:
           ]
         },
         {
-          "id": 12,
-          "title": "Grid Import (period)",
-          "type": "stat",
-          "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+          "id": 5,
+          "title": "Today",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
-            "reduceOptions": { "calcs": ["lastNotNull"] },
-            "colorMode": "background",
-            "graphMode": "none",
-            "orientation": "auto",
-            "textMode": "auto"
+            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10
           },
           "fieldConfig": {
             "defaults": {
               "unit": "kwatth",
               "decimals": 2,
+              "min": 0,
               "color": { "mode": "thresholds" },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 3 },
-                  { "color": "red", "value": 10 }
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Solar Yield" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "House Consumption" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "light-blue" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Grid Import" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
                 ]
               }
-            },
-            "overrides": []
+            ]
           },
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"Solar Yield\")"
+            },
+            {
+              "refId": "B",
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"House Consumption\")"
+            },
+            {
+              "refId": "C",
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"Grid Import\")"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "This Month",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
+          "options": {
+            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "kwatth",
+              "decimals": 1,
+              "min": 0,
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Solar Yield" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "House Consumption" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "light-blue" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Grid Import" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "query": "from(bucket:\"long-term-data\")\n  |> range(start: -32d)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"Solar Yield\")"
+            },
+            {
+              "refId": "B",
+              "query": "from(bucket:\"long-term-data\")\n  |> range(start: -32d)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"House Consumption\")"
+            },
+            {
+              "refId": "C",
+              "query": "from(bucket:\"long-term-data\")\n  |> range(start: -32d)\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> last()\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"Grid Import\")"
             }
           ]
         },
@@ -319,7 +322,7 @@ data:
           "id": 7,
           "title": "Power Flow",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "tooltip": { "mode": "multi", "sort": "none" },
@@ -376,7 +379,7 @@ data:
           "id": 8,
           "title": "Battery State",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "tooltip": { "mode": "multi", "sort": "none" },
@@ -429,7 +432,7 @@ data:
           "id": 9,
           "title": "Grid & Load Power",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "tooltip": { "mode": "multi", "sort": "none" },
@@ -475,7 +478,7 @@ data:
           "id": 10,
           "title": "Monthly Energy Overview",
           "type": "timeseries",
-          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
             "tooltip": { "mode": "multi", "sort": "none" },
