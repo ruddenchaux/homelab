@@ -68,6 +68,10 @@ spec:
               value: eng+ita
             - name: PAPERLESS_CONSUMER_POLLING
               value: "60"
+            - name: PAPERLESS_TASK_WORKERS
+              value: "1"
+            - name: PAPERLESS_THREADS_PER_WORKER
+              value: "2"
           livenessProbe:
             httpGet:
               path: /
@@ -88,10 +92,10 @@ spec:
               mountPath: /usr/src/paperless/data
           resources:
             requests:
-              memory: 256Mi
+              memory: 512Mi
               cpu: 100m
             limits:
-              memory: 1Gi
+              memory: 2Gi
       volumes:
         - name: media
           persistentVolumeClaim:
