@@ -11,7 +11,7 @@ data:
       "title": "Solar PV System",
       "uid": "solar-pv",
       "schemaVersion": 38,
-      "version": 1,
+      "version": 2,
       "refresh": "5m",
       "time": { "from": "now-7d", "to": "now" },
       "timepicker": {},
@@ -60,7 +60,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
             }
           ]
         },
@@ -95,7 +95,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_use\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
             }
           ]
         },
@@ -132,7 +132,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_soc\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_soc\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
             }
           ]
         },
@@ -168,7 +168,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_volt\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_volt\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
             }
           ]
         },
@@ -204,7 +204,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
             }
           ]
         },
@@ -240,7 +240,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_use\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))"
             }
           ]
         },
@@ -279,7 +279,7 @@ data:
                 ]
               },
               {
-                "matcher": { "id": "byName", "options": "Grid Import" },
+                "matcher": { "id": "byName", "options": "Grid Power" },
                 "properties": [
                   { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
                 ]
@@ -289,15 +289,15 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Solar Production\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Solar Production\")"
             },
             {
               "refId": "B",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_use\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"House Consumption\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"House Consumption\")"
             },
             {
               "refId": "C",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"import\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Grid Import\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Grid Power\")"
             }
           ]
         },
@@ -346,11 +346,11 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_soc\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"State of Charge\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_soc\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"State of Charge\")"
             },
             {
               "refId": "B",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_volt\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Voltage\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"battery_volt\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Voltage\")"
             }
           ]
         },
@@ -392,45 +392,71 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Grid Power\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Grid Power\")"
             },
             {
               "refId": "B",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"House Load Power\")"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"House Load Power\")"
             }
           ]
         },
         {
           "id": 10,
-          "title": "Monthly Solar Yield",
+          "title": "Monthly Energy Overview",
           "type": "timeseries",
           "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
           "datasource": { "type": "influxdb", "uid": "${influxDs}" },
           "options": {
-            "tooltip": { "mode": "single", "sort": "none" },
-            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }
+            "tooltip": { "mode": "multi", "sort": "none" },
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
           },
           "fieldConfig": {
             "defaults": {
               "unit": "kwatth",
-              "decimals": 1,
-              "color": { "mode": "fixed", "fixedColor": "yellow" },
+              "decimals": 0,
               "custom": {
                 "drawStyle": "bars",
                 "barAlignment": 0,
                 "lineWidth": 1,
-                "fillOpacity": 80,
+                "fillOpacity": 70,
                 "gradientMode": "none",
                 "showPoints": "never",
                 "spanNulls": false
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Solar Yield" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "House Consumption" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "light-blue" } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Grid Import" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+                ]
+              }
+            ]
           },
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"homelab\")\n  |> range(start: -12mo)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> window(every: 1mo, createEmpty: false)\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._start, _field: r._field, _measurement: r._measurement, _value: r._value / 1000.0}))\n  |> window(every: inf)"
+              "query": "from(bucket:\"long-term-data\")\n  |> range(start: -24mo)\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"Solar Yield\")"
+            },
+            {
+              "refId": "B",
+              "query": "from(bucket:\"long-term-data\")\n  |> range(start: -24mo)\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"House Consumption\")"
+            },
+            {
+              "refId": "C",
+              "query": "from(bucket:\"long-term-data\")\n  |> range(start: -24mo)\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> map(fn: (r) => ({r with _value: r._value / 1000.0}))\n  |> set(key: \"_field\", value: \"Grid Import\")"
             }
           ]
         }
