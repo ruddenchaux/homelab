@@ -248,15 +248,15 @@ data:
           "targets": [
             {
               "refId": "A",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value / 1000.0, _field: \"Solar Yield\"}))"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"solar_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._stop, _value: r._value / 1000.0, _field: \"Solar Yield\"}))"
             },
             {
               "refId": "B",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value / 1000.0, _field: \"House Consumption\"}))"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"house_load_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._stop, _value: r._value / 1000.0, _field: \"House Consumption\"}))"
             },
             {
               "refId": "C",
-              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value / 1000.0, _field: \"Grid Import\"}))"
+              "query": "from(bucket:\"real-time-data\")\n  |> range(start: today())\n  |> filter(fn: (r) => r._measurement == \"grid_power\" and r._field == \"value\")\n  |> integral(unit: 1h)\n  |> map(fn: (r) => ({_time: r._stop, _value: r._value / 1000.0, _field: \"Grid Import\"}))"
             }
           ]
         },
