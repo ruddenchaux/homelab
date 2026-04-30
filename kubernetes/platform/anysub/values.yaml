@@ -9,7 +9,7 @@ nodeName: k8s-worker-04
 images:
   # Self-built from src/worker.cpu.Dockerfile (Go anysub binary +
   # pluja/whisperx-api:cpu base). See README for the build/push procedure.
-  worker: ghcr.io/ruddenchaux/anysub-worker:95b7915
+  worker: ghcr.io/ruddenchaux/anysub-worker:cpu-95b7915
   redis: docker.io/valkey/valkey:8-alpine
   mariadb: docker.io/library/mariadb:11
   libretranslate: docker.io/libretranslate/libretranslate:latest
