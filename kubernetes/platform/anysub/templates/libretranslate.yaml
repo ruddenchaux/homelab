@@ -1,0 +1,78 @@
+{{- if .Values.libretranslate.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: libretranslate
+  namespace: anysub
+  labels:
+    {{- include "anysub.selectorLabels" "libretranslate" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "anysub.selectorLabels" "libretranslate" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "anysub.selectorLabels" "libretranslate" | nindent 8 }}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ .Values.nodeName }}
+      securityContext:
+        runAsUser: 0
+      containers:
+        - name: libretranslate
+          image: {{ .Values.images.libretranslate }}
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: LT_DISABLE_WEB_UI
+              value: {{ .Values.libretranslate.disableWebUi | quote }}
+            - name: LT_UPDATE_MODELS
+              value: {{ .Values.libretranslate.updateModels | quote }}
+            - name: LT_LOAD_ONLY
+              value: {{ .Values.libretranslate.loadOnly | quote }}
+          # Model download on first run can take several minutes; long startup grace.
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+          volumeMounts:
+            - name: data
+              mountPath: /home/libretranslate/.local
+          resources:
+            {{- toYaml .Values.resources.libretranslate | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: libretranslate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: libretranslate
+  namespace: anysub
+  labels:
+    {{- include "anysub.selectorLabels" "libretranslate" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "anysub.selectorLabels" "libretranslate" | nindent 4 }}
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+{{- end }}

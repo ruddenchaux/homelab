@@ -136,5 +136,13 @@ variable "workers" {
       memory = 16384
       disk   = 50
     }
+    worker-4 = {
+      name   = "k8s-worker-04"
+      vm_id  = 204
+      ip     = "10.30.0.14"
+      cores  = 20
+      memory = 24576
+      disk   = 50
+    }
   }
 }

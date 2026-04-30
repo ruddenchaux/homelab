@@ -1,0 +1,57 @@
+domain: ruddenchaux.xyz
+subdomain: transcribe
+
+# All anysub workloads are pinned to one worker because local-path PVCs
+# are node-local. k8s-worker-04 was provisioned specifically for this app
+# (20 vCPU / 24 Gi). Changing this requires draining + reseeding the PVCs.
+nodeName: k8s-worker-04
+
+images:
+  # Self-built from src/worker.cpu.Dockerfile (Go anysub binary +
+  # pluja/whisperx-api:cpu base). See README for the build/push procedure.
+  worker: ghcr.io/ruddenchaux/anysub-worker:95b7915
+  redis: docker.io/valkey/valkey:8-alpine
+  mariadb: docker.io/library/mariadb:11
+  libretranslate: docker.io/libretranslate/libretranslate:latest
+
+storage:
+  storageClass: local-path
+  uploads:
+    size: 100Gi
+  models:
+    size: 10Gi
+  mariadb:
+    size: 5Gi
+  libretranslate:
+    size: 10Gi
+
+# Whisper backend
+whisper:
+  models: large-v3        # comma-separated; preloaded at worker startup
+  threads: "18"           # one socket on Xeon Gold 6140
+  device: cpu             # int8 quantization auto-selected when device=cpu
+
+# LibreTranslate
+libretranslate:
+  enabled: true
+  loadOnly: en,it,es,fr,de
+  disableWebUi: "True"
+  updateModels: "True"
+
+# Resource budgets
+resources:
+  web:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  worker:
+    requests: { cpu: "8",  memory: 8Gi }
+    limits:   { cpu: "18", memory: 12Gi }
+  redis:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+  mariadb:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+  libretranslate:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: "2",  memory: 2Gi }

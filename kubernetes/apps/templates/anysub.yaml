@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: anysub
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.spec.repoURL }}
+    targetRevision: {{ .Values.spec.targetRevision }}
+    path: kubernetes/platform/anysub
+  destination:
+    server: {{ .Values.spec.destination.server }}
+    namespace: anysub
+  # Manual sync for the first deploy. After validating the stack, switch to:
+  #   automated:
+  #     prune: true
+  #     selfHeal: true
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

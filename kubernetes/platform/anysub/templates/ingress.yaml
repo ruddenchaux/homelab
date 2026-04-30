@@ -1,0 +1,30 @@
+---
+# No ForwardAuth annotation: Anysub ships its own /login + /register and
+# multi-user workspaces, mirroring how Jellyfin/Seerr/NZBGet are wired.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: anysub
+  namespace: anysub
+  labels:
+    {{- include "anysub.selectorLabels" "anysub" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {{ .Values.subdomain }}.{{ .Values.domain }}
+      secretName: anysub-tls
+  rules:
+    - host: {{ .Values.subdomain }}.{{ .Values.domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: anysub
+                port:
+                  number: 1337

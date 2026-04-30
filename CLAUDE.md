@@ -61,6 +61,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
   - Ansible role `media-config`: configures inter-service connections via REST APIs + port-forwards
   - Shared 400Gi `media-library` PVC at `/data/media`, per-service 2Gi config PVCs
   - All services on Homepage dashboard, most behind ForwardAuth (except Jellyfin, Seerr, NZBGet which have built-in auth)
+- Ghostfolio (portfolio tracker) at portfolio.ruddenchaux.xyz — PostgreSQL + Redis, Authentik ForwardAuth. Degiro imports via dickwolff/Export-To-Ghostfolio. See `GHOSTFOLIO.md` for import workflow, dashboard-crash diagnosis, and in-kind-transfer handling.
 - Public internet access via VPS relay + client VPN (Hetzner CX22, 89.167.62.126)
   - `jellyfin.ruddenchaux.xyz` A record → VPS IP (grey-cloud, DNS-only), nginx TCP stream → WireGuard tunnel → MikroTik → Traefik
   - nginx is a generic blind TCP passthrough — any service gets IPv4 access just by adding an A record pointing to the VPS
@@ -192,7 +193,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Inventory app
 - Git server (Forgejo) — bootstrap problem: needed before GitOps
 - VPN mesh
-- Wealth portfolio (Ghostfolio/Wealthfolio)
+- ~~Wealth portfolio (Ghostfolio)~~ — see `GHOSTFOLIO.md`
 - NVR system
 - Expense sharing app (Splitwise alternative)
 - Document management (Paperless-ngx)

@@ -1,0 +1,78 @@
+---
+# Uploaded audio + extracted features. User data — never auto-prune.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: anysub-uploads
+  namespace: anysub
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    {{- include "anysub.selectorLabels" "anysub" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.uploads.size }}
+---
+# Whisper / WhisperX / pyannote model cache. Re-downloadable but slow.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: anysub-models
+  namespace: anysub
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    {{- include "anysub.selectorLabels" "anysub" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.models.size }}
+---
+# MariaDB data directory.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb
+  namespace: anysub
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    {{- include "anysub.selectorLabels" "mariadb" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.mariadb.size }}
+{{- if .Values.libretranslate.enabled }}
+---
+# LibreTranslate downloads ~5 Gi of language models on first start.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: libretranslate
+  namespace: anysub
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+  labels:
+    {{- include "anysub.selectorLabels" "libretranslate" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.libretranslate.size }}
+{{- end }}

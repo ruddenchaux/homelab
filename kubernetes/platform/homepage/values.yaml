@@ -112,6 +112,11 @@ homepage:
               href: https://paperless.ruddenchaux.xyz
               description: Document management
               icon: paperless-ngx
+      - Productivity:
+          - Anysub:
+              href: https://transcribe.ruddenchaux.xyz
+              description: Audio transcription
+              icon: whisper
       - Finance:
           - Ghostfolio:
               href: https://portfolio.ruddenchaux.xyz

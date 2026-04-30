@@ -1,0 +1,4 @@
+apiVersion: v2
+name: anysub
+description: Anysub (Whishper v4) self-hosted transcription chart
+version: 0.1.0

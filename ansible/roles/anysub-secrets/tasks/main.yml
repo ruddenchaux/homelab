@@ -1,0 +1,91 @@
+---
+# Create anysub namespace and pre-generate credentials secret.
+# Idempotent: only generates secret if it doesn't already exist.
+#
+# Requires `anysub_hf_token` to be set (loaded via community.sops.load_vars
+# from ansible/secrets.sops.yml in the calling playbook).
+
+- name: Verify Hugging Face token is provided
+  ansible.builtin.assert:
+    that:
+      - anysub_hf_token is defined
+      - anysub_hf_token | length > 0
+    fail_msg: >-
+      anysub_hf_token must be set. Add it to ansible/secrets.sops.yml
+      via `sops ansible/secrets.sops.yml`, then re-run.
+
+- name: Create anysub namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ anysub_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: anysub_ns
+  changed_when: "'created' in anysub_ns.stdout"
+  failed_when: anysub_ns.rc != 0 and 'already exists' not in anysub_ns.stderr
+
+- name: Check if anysub-secrets exists
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ anysub_secret_name }}
+    -n {{ anysub_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: anysub_secret_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate and create anysub-secrets
+  when: anysub_secret_check.rc != 0
+  block:
+    - name: Generate MariaDB password
+      become: false
+      ansible.builtin.command: openssl rand -base64 30
+      register: anysub_db_password
+      changed_when: false
+      no_log: true
+
+    - name: Build DATABASE_URI
+      ansible.builtin.set_fact:
+        anysub_database_uri: >-
+          anysub:{{ anysub_db_password.stdout }}@tcp(mariadb:3306)/anysub?parseTime=True
+      no_log: true
+
+    - name: Create anysub-secrets
+      become: false
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - create
+          - secret
+          - generic
+          - "{{ anysub_secret_name }}"
+          - "-n"
+          - "{{ anysub_namespace }}"
+          - "--from-literal=MARIADB_USER=anysub"
+          - "--from-literal=MARIADB_DATABASE=anysub"
+          - "--from-literal=MARIADB_PASSWORD={{ anysub_db_password.stdout }}"
+          - "--from-literal=DATABASE_URI={{ anysub_database_uri }}"
+          - "--from-literal=WHISPER_HF_TOKEN={{ anysub_hf_token }}"
+      environment:
+        KUBECONFIG: /home/debian/.kube/config
+      no_log: true
+
+- name: Patch HF token into existing secret (token may rotate)
+  become: false
+  ansible.builtin.command: >-
+    kubectl patch secret {{ anysub_secret_name }}
+    -n {{ anysub_namespace }}
+    --type merge
+    -p {{ patch_payload | to_json | quote }}
+  vars:
+    patch_payload:
+      stringData:
+        WHISPER_HF_TOKEN: "{{ anysub_hf_token }}"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  no_log: true
+  when: anysub_secret_check.rc == 0
+
+- name: anysub-secrets ready
+  ansible.builtin.debug:
+    msg: "Secret {{ anysub_secret_name }} is provisioned in namespace {{ anysub_namespace }}"

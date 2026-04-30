@@ -747,6 +747,53 @@ After deletion, ArgoCD creates the cert-manager Issuers and Certificates and rea
 
 ---
 
+## Lost SSH access to k8s VMs (pubkey was on another machine)
+
+When the laptop that originally ran `terraform apply` is unavailable, its SSH pubkey is the only one in `/home/debian/.ssh/authorized_keys` on the k8s VMs. Cloud-init's `users` module only runs on first boot, so re-running Terraform won't propagate a new key to already-running VMs.
+
+**Fix:** use `qm guest exec` from the Proxmox host — the VMs have `qemu-guest-agent` installed (baked into the template), which gives the Proxmox host a root-level command channel into each VM without needing SSH at all.
+
+```bash
+# 1. On the laptop you want to regain access from — get the pubkey
+cat ~/.ssh/id_ed25519.pub
+# (generate one first if missing: ssh-keygen -t ed25519)
+
+# 2. SSH to Proxmox (root access is still via password or separate key)
+ssh root@10.10.0.2
+
+# 3. On pve01 — export the pubkey to avoid quoting headaches
+PUBKEY='ssh-ed25519 AAAA...PASTE_WHOLE_LINE... user@host'
+
+# 4. Sanity check the guest agent channel works
+qm guest exec 200 -- bash -c 'whoami && hostname'
+# Expected: {"exitcode": 0, "out-data": "root\nk8s-ctrl-01\n"}
+
+# 5. Push the key into every k8s VM (200 = ctrl, 201-203 = workers)
+for vmid in 200 201 202 203; do
+  qm guest exec $vmid --timeout 10 -- bash -c "mkdir -p /home/debian/.ssh && echo '$PUBKEY' >> /home/debian/.ssh/authorized_keys && chown -R debian:debian /home/debian/.ssh && chmod 700 /home/debian/.ssh && chmod 600 /home/debian/.ssh/authorized_keys && echo OK"
+done
+# Expected per VM: {"exitcode": 0, "out-data": "OK\n"}
+
+# 6. Verify from the laptop
+ssh debian@10.30.0.10 'hostname'
+```
+
+**Quoting notes** (the part that bites):
+- **Outer `"..."` around `bash -c`** — so pve01 expands `$PUBKEY` from your shell variable.
+- **Inner `'...'` around `$PUBKEY`** in the `echo` — so the key bytes land in `authorized_keys` verbatim, even with spaces and `+`/`=` characters.
+- `qm guest exec ... -- bash -c '<script>'` — the `--` separates `qm` flags from the command that runs inside the VM.
+
+**After regaining access:** copy `/etc/kubernetes/admin.conf` from the control plane to your laptop's `~/.kube/config`, then consider committing a SOPS-encrypted copy to the repo so a future laptop doesn't hit the same problem:
+
+```bash
+ssh debian@10.30.0.10 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/config
+chmod 600 ~/.kube/config
+```
+
+**Why not `terraform apply`:** the `user_account.keys` field only writes to the cloud-init datasource image. Cloud-init's `users` module runs once per-instance (tracked in `/var/lib/cloud/instances/<id>/sem/`), so the new key is present on the cloud-init drive but never copied into `authorized_keys` on the live VM.
+
+---
+
 ## General cluster health
 
 ```bash

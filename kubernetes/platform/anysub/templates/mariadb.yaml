@@ -1,0 +1,91 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: anysub
+  labels:
+    {{- include "anysub.selectorLabels" "mariadb" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "anysub.selectorLabels" "mariadb" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "anysub.selectorLabels" "mariadb" | nindent 8 }}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ .Values.nodeName }}
+      containers:
+        - name: mariadb
+          image: {{ .Values.images.mariadb }}
+          ports:
+            - name: mariadb
+              containerPort: 3306
+          env:
+            - name: MARIADB_RANDOM_ROOT_PASSWORD
+              value: "yes"
+            - name: MARIADB_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: anysub-secrets
+                  key: MARIADB_DATABASE
+            - name: MARIADB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: anysub-secrets
+                  key: MARIADB_USER
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: anysub-secrets
+                  key: MARIADB_PASSWORD
+          livenessProbe:
+            exec:
+              command:
+                - healthcheck.sh
+                - --su-mysql
+                - --connect
+                - --innodb_initialized
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - healthcheck.sh
+                - --su-mysql
+                - --connect
+                - --innodb_initialized
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          resources:
+            {{- toYaml .Values.resources.mariadb | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mariadb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: anysub
+  labels:
+    {{- include "anysub.selectorLabels" "mariadb" | nindent 4 }}
+    {{- include "anysub.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "anysub.selectorLabels" "mariadb" | nindent 4 }}
+  ports:
+    - name: mariadb
+      port: 3306
+      targetPort: mariadb
