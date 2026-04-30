@@ -16,6 +16,27 @@ ssh debian@10.30.0.10 "kubectl -n kube-system rollout restart daemonset/cilium"
 ssh debian@10.30.0.10 "kubectl -n kube-system rollout status daemonset/cilium --timeout=300s"
 ```
 
+## Re-running `kubernetes-install.yml` resets Cilium config (LoadBalancer IPs go dark)
+
+The `k8s-control-plane` role's `Install Cilium` task runs `helm upgrade --install cilium --set operator.replicas=1` **without `--reuse-values`**. The `cilium-l2` role later layers on `l2announcements.enabled`, `externalIPs.enabled`, `hubble.relay.enabled`, `hubble.ui.enabled` via `--reuse-values`. If you ever re-run `kubernetes-install.yml` (e.g. to add a new worker node), the control-plane play wipes those layered values back to chart defaults, the new Cilium pod boots with `enable-l2-announcements=false`, and no node will announce the LB IP for any Service. Symptom: every ingress hostname returns "connection refused" / curl times out from outside the cluster, even though pods/services look healthy.
+
+Fix: re-apply the L2 + Hubble values, then restart Cilium:
+
+```bash
+ssh debian@10.30.0.10 "helm repo add cilium https://helm.cilium.io/ 2>/dev/null; \
+  helm repo update cilium && \
+  helm upgrade cilium cilium/cilium \
+    --namespace kube-system --reuse-values --version 1.19.0 \
+    --set l2announcements.enabled=true \
+    --set externalIPs.enabled=true \
+    --set hubble.relay.enabled=true \
+    --set hubble.ui.enabled=true && \
+  kubectl -n kube-system rollout restart daemonset/cilium && \
+  kubectl -n kube-system rollout status daemonset/cilium --timeout=300s"
+```
+
+Permanent fix (when you next touch the role): add `--reuse-values` to the `helm upgrade` line in `ansible/roles/k8s-control-plane/tasks/main.yml` so re-runs preserve any later customizations.
+
 ## ArgoCD application stuck on Unknown/OutOfSync
 
 ArgoCD caches the Git repo. If you just pushed changes and the application hasn't synced:

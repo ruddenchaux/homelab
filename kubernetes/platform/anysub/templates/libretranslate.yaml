@@ -40,13 +40,13 @@ spec:
           # Model download on first run can take several minutes; long startup grace.
           startupProbe:
             httpGet:
-              path: /
+              path: /languages
               port: http
             failureThreshold: 60
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /
+              path: /languages
               port: http
             periodSeconds: 30
             failureThreshold: 5
