@@ -21,6 +21,14 @@ authentik:
   redis:
     enabled: true
   server:
+    volumes:
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 256Mi
+    volumeMounts:
+      - name: shm
+        mountPath: /dev/shm
     ingress:
       enabled: true
       ingressClassName: traefik
