@@ -210,7 +210,7 @@ data:
             {
               "refId": "A",
               "expr": "pvc_usage_bytes",
-              "legendFormat": "{{namespace}}/{{pvc}}",
+              "legendFormat": "{{ "{{" }}namespace{{ "}}" }}/{{ "{{" }}pvc{{ "}}" }}",
               "instant": true
             }
           ]
