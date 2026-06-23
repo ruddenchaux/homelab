@@ -11,7 +11,7 @@ data:
     while true; do
       OUT=/textfile/pvc_usage_bytes.prom.tmp
       : > "$OUT"
-      for d in /data/local-path-provisioner/*/; do
+      for d in /data/local-path-provisioner/pvc-*/; do
         base=$(basename "$d")
         ns=$(echo "$base" | cut -d'_' -f2)
         pvc=$(echo "$base" | cut -d'_' -f3-)
