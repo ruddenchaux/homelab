@@ -210,7 +210,7 @@ data:
             {
               "refId": "A",
               "expr": "pvc_usage_bytes",
-              "legendFormat": "{{ "{{" }}namespace{{ "}}" }}/{{ "{{" }}pvc{{ "}}" }}",
+              "legendFormat": "{{ "{{" }}exported_namespace{{ "}}" }}/{{ "{{" }}pvc{{ "}}" }}",
               "instant": true
             }
           ]
@@ -233,8 +233,8 @@ data:
             {
               "id": "organize",
               "options": {
-                "excludeByName": { "Time": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "node": true, "service": true },
-                "renameByName": { "Value": "Used", "namespace": "Namespace", "pvc": "PVC" }
+                "excludeByName": { "Time": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "node": true, "service": true, "namespace": true, "container": true, "pod": true },
+                "renameByName": { "Value": "Used", "exported_namespace": "Namespace", "pvc": "PVC" }
               }
             }
           ],
