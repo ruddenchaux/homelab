@@ -1,0 +1,6 @@
+---
+zfs_metrics_pool: "datapool"
+zfs_metrics_url: "https://influxdb.ruddenchaux.xyz"
+zfs_metrics_org: "homelab"
+zfs_metrics_bucket: "proxmox"
+zfs_metrics_interval: "1min"

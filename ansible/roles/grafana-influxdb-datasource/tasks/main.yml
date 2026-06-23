@@ -1,0 +1,20 @@
+---
+- name: Render InfluxDB Grafana datasource secret
+  ansible.builtin.template:
+    src: influxdb-datasource-secret.yaml.j2
+    dest: /tmp/grafana-influxdb-datasource.yaml
+    mode: "0600"
+  no_log: true
+
+- name: Apply InfluxDB Grafana datasource secret
+  become: false
+  ansible.builtin.command: >-
+    kubectl apply -f /tmp/grafana-influxdb-datasource.yaml
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: true
+
+- name: Remove rendered secret file
+  ansible.builtin.file:
+    path: /tmp/grafana-influxdb-datasource.yaml
+    state: absent

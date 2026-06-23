@@ -1,0 +1,36 @@
+---
+- name: Deploy zfs-influxdb-metrics script
+  ansible.builtin.template:
+    src: zfs-influxdb-metrics.sh.j2
+    dest: /usr/local/bin/zfs-influxdb-metrics.sh
+    mode: "0755"
+
+- name: Deploy zfs-influxdb-metrics env file
+  ansible.builtin.template:
+    src: zfs-influxdb-metrics.env.j2
+    dest: /etc/zfs-influxdb-metrics.env
+    mode: "0600"
+  no_log: true
+
+- name: Deploy zfs-influxdb-metrics systemd service
+  ansible.builtin.template:
+    src: zfs-influxdb-metrics.service.j2
+    dest: /etc/systemd/system/zfs-influxdb-metrics.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy zfs-influxdb-metrics systemd timer
+  ansible.builtin.template:
+    src: zfs-influxdb-metrics.timer.j2
+    dest: /etc/systemd/system/zfs-influxdb-metrics.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start zfs-influxdb-metrics timer
+  ansible.builtin.systemd:
+    name: zfs-influxdb-metrics.timer
+    enabled: true
+    state: started

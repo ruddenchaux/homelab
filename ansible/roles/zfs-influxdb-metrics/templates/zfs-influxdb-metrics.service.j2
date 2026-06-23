@@ -1,0 +1,7 @@
+[Unit]
+Description=Push ZFS per-dataset usage to InfluxDB
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/zfs-influxdb-metrics.sh

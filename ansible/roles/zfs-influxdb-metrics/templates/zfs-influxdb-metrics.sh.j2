@@ -1,0 +1,35 @@
+#!/bin/bash
+set -euo pipefail
+
+source /etc/zfs-influxdb-metrics.env
+
+NODENAME="$(hostname)"
+WRITE_URL="{{ zfs_metrics_url }}/api/v2/write?org={{ zfs_metrics_org }}&bucket={{ zfs_metrics_bucket }}&precision=s"
+
+LINES="$(
+  zfs list -Hp -o name,used,refer -r {{ zfs_metrics_pool }} | while IFS=$'\t' read -r name used refer; do
+    case "$name" in
+      */vm-*-disk-*)
+        vmid="$(echo "$name" | sed -n 's#.*/vm-\([0-9]\+\)-disk-.*#\1#p')"
+        disk="$(echo "$name" | sed -n 's#.*-\(disk-[0-9]\+\)$#\1#p')"
+        echo "zfs_zvol,nodename=${NODENAME},dataset=${name},vmid=${vmid},disk=${disk} used=${used},refer=${refer}"
+        ;;
+      */subvol-*-disk-*)
+        vmid="$(echo "$name" | sed -n 's#.*/subvol-\([0-9]\+\)-disk-.*#\1#p')"
+        disk="$(echo "$name" | sed -n 's#.*-\(disk-[0-9]\+\)$#\1#p')"
+        echo "zfs_zvol,nodename=${NODENAME},dataset=${name},vmid=${vmid},disk=${disk} used=${used},refer=${refer}"
+        ;;
+      {{ zfs_metrics_pool }})
+        echo "zfs_zvol,nodename=${NODENAME},dataset=${name} used=${used},refer=${refer}"
+        ;;
+    esac
+  done
+)"
+
+if [ -z "$LINES" ]; then
+  exit 0
+fi
+
+printf '%s\n' "$LINES" | curl -sf -m 10 -XPOST "$WRITE_URL" \
+  -H "Authorization: Token ${INFLUXDB_TOKEN}" \
+  --data-binary @-

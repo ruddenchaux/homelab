@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic ZFS usage push to InfluxDB
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ zfs_metrics_interval }}
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

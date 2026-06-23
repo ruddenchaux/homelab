@@ -46,9 +46,30 @@
         KUBECONFIG: /home/debian/.kube/config
       no_log: true
 
+- name: Provision Grafana InfluxDB datasource
+  hosts: k8s_control_plane
+  gather_facts: false
+  vars:
+    influxdb_admin_token: "{{ hostvars['k8s-ctrl-01']['influxdb_admin_token'] }}"
+    influxdb_metrics_organization: "homelab"
+    influxdb_metrics_bucket: "proxmox"
+  roles:
+    - grafana-influxdb-datasource
+
 - name: Configure Proxmox datacenter metrics
   hosts: proxmox
   vars:
     influxdb_admin_token: "{{ hostvars['k8s-ctrl-01']['influxdb_admin_token'] }}"
   roles:
     - proxmox-influxdb-metrics
+    - zfs-influxdb-metrics
+
+- name: Pre-create node-exporter textfile collector directory
+  hosts: k8s
+  gather_facts: false
+  tasks:
+    - name: Create textfile collector directory
+      ansible.builtin.file:
+        path: /var/lib/node_exporter/textfile_collector
+        state: directory
+        mode: "0755"

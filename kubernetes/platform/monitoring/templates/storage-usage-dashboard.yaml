@@ -1,0 +1,251 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-storage-usage
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  storage-usage.json: |
+    {
+      "title": "Storage Usage",
+      "uid": "storage-usage",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "5m",
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": {},
+      "templating": {
+        "list": [
+          {
+            "name": "influxDs",
+            "type": "datasource",
+            "pluginId": "influxdb",
+            "query": "influxdb",
+            "refresh": 1,
+            "hide": 2
+          },
+          {
+            "name": "promDs",
+            "type": "datasource",
+            "pluginId": "prometheus",
+            "query": "prometheus",
+            "refresh": 1,
+            "hide": 2
+          }
+        ]
+      },
+      "annotations": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Datapool Used",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "colorMode": "background",
+            "graphMode": "none",
+            "orientation": "auto",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "decbytes",
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 2000000000000 },
+                  { "color": "red", "value": 3200000000000 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "query": "from(bucket:\"proxmox\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r.object == \"storages\" and r.host == \"datapool\" and r._field == \"used\")\n  |> last()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: \"Used\"}))"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Datapool Available",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "colorMode": "background",
+            "graphMode": "none",
+            "orientation": "auto",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "decbytes",
+              "color": { "mode": "fixed", "fixedColor": "green" }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "query": "from(bucket:\"proxmox\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r.object == \"storages\" and r.host == \"datapool\" and r._field == \"avail\")\n  |> last()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: \"Available\"}))"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Datapool Total",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "colorMode": "background",
+            "graphMode": "none",
+            "orientation": "auto",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "decbytes",
+              "color": { "mode": "fixed", "fixedColor": "blue" }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "query": "from(bucket:\"proxmox\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r.object == \"storages\" and r.host == \"datapool\" and r._field == \"total\")\n  |> last()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: \"Total\"}))"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Datapool Used vs Available",
+          "type": "piechart",
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "pieType": "donut",
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+          },
+          "fieldConfig": {
+            "defaults": { "unit": "decbytes" },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Used" },
+                "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Available" },
+                "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "query": "from(bucket:\"proxmox\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r.object == \"storages\" and r.host == \"datapool\" and (r._field == \"used\" or r._field == \"avail\"))\n  |> last()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: if r._field == \"used\" then \"Used\" else \"Available\"}))"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Per-VM ZFS Disk Usage (datapool zvols)",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "datasource": { "type": "influxdb", "uid": "${influxDs}" },
+          "options": {
+            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "decbytes",
+              "min": 0,
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "query": "from(bucket:\"proxmox\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"zfs_zvol\" and r._field == \"used\" and exists r.vmid)\n  |> last()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: \"vm-\" + r.vmid + \"/\" + r.disk}))"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Per-Application PVC Usage (k8s local-path)",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "datasource": { "type": "prometheus", "uid": "${promDs}" },
+          "options": {
+            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "min": 0,
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "pvc_usage_bytes",
+              "legendFormat": "{{namespace}}/{{pvc}}",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Per-Application PVC Usage (table)",
+          "type": "table",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+          "datasource": { "type": "prometheus", "uid": "${promDs}" },
+          "options": {
+            "showHeader": true,
+            "sortBy": [{ "displayName": "Value", "desc": true }]
+          },
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" },
+            "overrides": []
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "node": true, "service": true },
+                "renameByName": { "Value": "Used", "namespace": "Namespace", "pvc": "PVC" }
+              }
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "pvc_usage_bytes",
+              "format": "table",
+              "instant": true
+            }
+          ]
+        }
+      ]
+    }
