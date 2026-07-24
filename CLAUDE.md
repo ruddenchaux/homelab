@@ -1,5 +1,15 @@
 # Homelab IaC Project
 
+**Rules that apply to every task live in [`AGENTS.md`](AGENTS.md) — read that
+first.** This file is project context, not rules; do not duplicate `AGENTS.md`
+content here.
+
+Network/site design decisions are the responsibility of [`specs/`](specs/README.md)
+— see `specs/network/topology.md`, `specs/sites/bottega.md`,
+`specs/sites/casa.md`. Anything in this file that describes a decision now
+superseded by the two-site architecture is historical; `specs/` and
+`MIGRATION.md` are authoritative going forward.
+
 ## Project Overview
 
 Building a professional homelab with Infrastructure as Code. The owner is a software engineer with 13 years of experience, learning Proxmox and Kubernetes for the first time. This project serves multiple purposes: data privacy, cost savings, learning, CV enhancement, and blog content.
@@ -183,6 +193,9 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 ## Pending Tasks (in order)
 
 1. **Deploy services via GitOps** — add service Applications to `kubernetes/`
+2. **Two-site move (Bottega hub, Casa spoke)** — see `specs/network/topology.md`,
+   `specs/sites/bottega.md`, `specs/sites/casa.md`, and `MIGRATION.md` for the
+   decommission plan for the VPS relay described below.
 
 ## Services to Deploy (on k8s)
 
@@ -199,6 +212,11 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 - Document management (Paperless-ngx)
 
 ## Public Internet Access
+
+> **Superseded**: this describes the single-site (Casa-only, CGNAT) design.
+> Once Bottega is live as the hub with its own static IP, the VPS relay
+> becomes unnecessary — see `MIGRATION.md` for what replaces it and the safe
+> decommission order. Kept here as accurate history until that cutover.
 
 ISP: Starlink Residential Lite (CGNAT, no public IPv4). See `PUBLIC_INTERNET.md` for full
 protocol explanations (WireGuard tunnel design, VPS relay, client VPN).
@@ -290,6 +308,11 @@ Copy `~/.config/sops/age/keys.txt` from an existing machine — that's the only 
 - SSH key: ~/.ssh/id_ed25519
 
 ## Network Info
+
+> This describes the current, single-site (Casa) network as it stands today.
+> This whole VLAN plan moves to Bottega unchanged when the lab relocates —
+> `specs/network/topology.md` is authoritative for the two-site addressing
+> plan and for what changes at Casa afterward.
 
 - Proxmox management IP: 10.10.0.2 (VLAN 10)
 - MikroTik default subnet: 192.168.88.0/24 (VLAN 1, untagged)

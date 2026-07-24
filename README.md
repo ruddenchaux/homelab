@@ -1,6 +1,52 @@
 # Homelab
 
-Infrastructure as Code for a single-node Proxmox homelab running Kubernetes (k8s).
+Infrastructure as Code for a Proxmox homelab running Kubernetes (k8s).
+
+## Architecture: two sites, hub-and-spoke
+
+The lab is moving from a single home site to two sites:
+
+- **Bottega** (workspace): static public IP, becomes the **hub** — terminates
+  WireGuard, is the DNS/ingress entry point, the only site reachable from the
+  internet. The server and cluster described below live here.
+- **Casa** (home): Starlink CGNAT, becomes a **spoke** — dials out to Bottega,
+  cannot accept inbound connections directly. Its LAN must be reachable from
+  Bottega and administrable from Bottega.
+- A road-warrior WireGuard peer (phone) administers both sites from outside.
+
+The Hetzner VPS relay that previously worked around Casa's CGNAT is being
+decommissioned now that Bottega has its own static IP — see
+[`MIGRATION.md`](MIGRATION.md) for the obsolete-component list and safe
+removal order, and [`specs/network/topology.md`](specs/network/topology.md)
+for the full rationale and addressing plan.
+
+## Spec-driven workflow
+
+Network and site design decisions live in [`specs/`](specs/README.md) as the
+single source of truth, written **before** the Ansible/Terraform/Kubernetes
+change that implements them:
+
+```
+specs/            ← intent: what should be true, and why (this repo's SoT)
+  network/          topology, wireguard peers, firewall, dns-exposure
+  sites/             bottega.md, casa.md
+  services/          per-service exposure spec template
+        │
+        ▼ implemented by
+ansible/, terraform/, packer/, kubernetes/   ← unchanged by this workflow
+```
+
+Rules that apply to every change — regardless of which site or layer — live in
+[`AGENTS.md`](AGENTS.md) (secrets separation per site, non-overlapping
+subnets, WireGuard peer symmetry, MikroTik safe-mode, router management never
+on WAN). `CLAUDE.md` points to `AGENTS.md` rather than duplicating it.
+
+`.claude/` holds the supporting context-engineering layers:
+- `skills/` — step-by-step procedures an agent loads on demand (adding a
+  road-warrior peer, exposing a service, making a safe MikroTik change).
+- `commands/` — explicitly invoked (`/plan-change`, `/review-net-diff`).
+- `agents/` — scoped personas (`network-planner` is read-only and proposes
+  plans against `specs/`; `implementer` applies an already-approved plan).
 
 ## Hardware
 
