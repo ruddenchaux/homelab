@@ -31,13 +31,20 @@ The entire current lab moves here as a physical unit:
   (`AGENTS.md` rule #5) — the static IP is for the WireGuard/service path
   only.
 
-## Open decisions
+## Connectivity fact
 
-- `TODO(decision):` exact Flynet static-IP terms (fixed lease vs. contractually
-  guaranteed static — affects whether DDNS monitoring is needed).
-- `TODO(decision):` physical move logistics/date, and whether there's a
-  parallel-run period with Casa still hosting the lab (affects `MIGRATION.md`
-  ordering).
+Bottega's public IP is contractually static: `145.11.24.43`. No DDNS or
+mitigation is needed for IP instability; the only ongoing concern is
+reachability monitoring, tracked as `TODO(fact):` in
+`specs/observability/external-checks.md`, not here.
+
+## Move logistics
+
+Decided: a parallel run at both sites, with cutover only after Bottega passes
+its acceptance criteria below. No live migration — power down at Casa, move
+the hardware, power up at Bottega. See `MIGRATION.md` for the full ordering.
+
+- `TODO(fact):` move date — not yet scheduled, non-blocking.
 
 ## Acceptance criteria
 

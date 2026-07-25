@@ -33,14 +33,24 @@ Once the physical move happens: Proxmox, the k8s cluster, and all currently
 home-hosted services move to Bottega. Casa keeps no lab compute after cutover
 (see `MIGRATION.md` for the transition order).
 
-## Open decisions
+## Addressing
 
-- `TODO(decision):` Casa's LAN subnet (must be non-overlapping with Bottega's
-  VLANs — rule #2).
-- `TODO(decision):` whether Casa keeps any VLAN segmentation of its own, or
-  runs a single flat LAN now that it's not hosting the lab.
-- `TODO(decision):` inventory of what stays at Casa long-term (energy
-  monitoring hardware confirmed via `HOME_ASSISTANT.md`; anything else?).
+Casa's LAN is `192.168.90.0/24`, gw `192.168.90.1` — a single flat LAN, no
+VLAN segmentation, now that it no longer hosts the lab. See
+`specs/network/topology.md` for the authoritative addressing table (do not
+duplicate the values here).
+
+## Casa reachability inventory
+
+Devices Home Assistant (running at Bottega) must reach by IP across the
+tunnel — mDNS/SSDP will not cross it (see `specs/network/wireguard.md`), so
+every entry here needs a static IP, not autodiscovery.
+
+- EmonTx4 / EmonBase (energy monitoring hardware) — see `HOME_ASSISTANT.md`.
+- MQTT broker.
+
+`TODO(fact):` anything else that stays at Casa long-term — open for
+additions as devices are confirmed.
 
 ## Acceptance criteria
 
