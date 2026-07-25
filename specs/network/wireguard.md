@@ -19,19 +19,50 @@ Retired once Bottega is verified (see `MIGRATION.md`):
 
 ## AllowedIPs table
 
-`TODO(decision):` fill in once addressing (`specs/network/topology.md`) is
-finalized. Do not invent CIDRs here — this table must match `topology.md`
-exactly once both are filled in.
+Addressing values are taken from the single source of truth in
+`specs/network/topology.md` — do not duplicate/re-derive CIDRs anywhere else.
+
+### Derivation
+
+- **Bottega's entry for Casa** must include Casa's LAN (`192.168.90.0/24`), so
+  that Home Assistant running in the Bottega lab can reach devices at Casa by
+  IP (EmonTx4/EmonBase, MQTT broker — see `sites/casa.md`). It also includes
+  Casa's overlay `/32` so the tunnel itself has a route to Casa's WireGuard
+  interface address.
+- **Casa's entry for Bottega** must include the full overlay
+  `10.99.0.0/24`, not just the hub's `10.99.0.1/32`. If it only had the hub's
+  `/32`, Casa would have no route back to a road-warrior peer's overlay
+  address (e.g. `10.99.0.11/32`) once traffic for it arrives via the hub —
+  the phone could reach Bottega and, transitively, Casa, but Casa's replies to
+  the phone would have no outbound route. It also includes Bottega's three lab
+  VLANs (`10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24`), since Casa needs to
+  reach services in the lab (DNS, admin, etc).
+- **Bottega's entry for the road-warrior** is a single `/32`
+  (`10.99.0.11/32`) — the phone has no LAN behind it, so nothing broader is
+  needed or should be granted.
+- **The phone's entry for Bottega** includes everything the phone is allowed
+  to reach through the hub: Bottega's three lab VLANs and, since the phone
+  also needs Casa, Casa's LAN (`192.168.90.0/24`) — reachable transitively
+  through Bottega's forwarding rule (see `specs/network/firewall.md`).
+
+mDNS/SSDP-based autodiscovery does **not** cross this tunnel — it's an L3
+WireGuard link, and those protocols rely on L2 multicast/broadcast. Any Home
+Assistant integration that depends on autodiscovery (e.g. some IoT devices)
+must be configured with the target device's static IP instead of relying on
+discovery.
 
 | Interface | Endpoint side | Local address | AllowedIPs (what it accepts *from* the peer) | Notes |
 |-----------|----------------|----------------|-----------------------------------------------|-------|
-| Bottega ↔ Casa tunnel | Bottega (hub, listens) | `TODO(decision):` | `TODO(decision):` — must include Casa's LAN subnet | No `Endpoint=` on hub side (Casa initiates) |
-| Bottega ↔ Casa tunnel | Casa (spoke, dials out) | `TODO(decision):` | `TODO(decision):` — must include Bottega's lab subnets it needs to reach | `Endpoint=<Bottega static IP>:<port>`, `PersistentKeepalive` only needed if Casa is behind CGNAT (it is) |
-| Bottega ↔ road-warrior | Bottega (hub, listens) | `TODO(decision):` | `TODO(decision):` — single /32 for the phone | |
-| Bottega ↔ road-warrior | Phone | `TODO(decision):` | `TODO(decision):` — must include both sites' reachable subnets if the phone needs Casa too | `Endpoint=<Bottega static IP>:<port>` |
+| Bottega ↔ Casa tunnel | Bottega (hub, listens) | `10.99.0.1/32` | `10.99.0.2/32`, `192.168.90.0/24` | No `Endpoint=` on hub side (Casa initiates); listens on UDP `61536` |
+| Bottega ↔ Casa tunnel | Casa (spoke, dials out) | `10.99.0.2/32` | `10.99.0.0/24`, `10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24` | `Endpoint=<Bottega static IP>:61536`, `PersistentKeepalive=25` (Casa is behind CGNAT) |
+| Bottega ↔ road-warrior | Bottega (hub, listens) | `10.99.0.1/32` | `10.99.0.11/32` | No `Endpoint=` on hub side; listens on UDP `61536` |
+| Bottega ↔ road-warrior | Phone | `10.99.0.11/32` | `10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24`, `192.168.90.0/24` | `Endpoint=<Bottega static IP>:61536` |
 
 ## Design carried over from the VPS-relay tunnel (still applies)
 
+- Interface MTU is `1412` on all WireGuard interfaces, with MSS clamping
+  applied on the tunnel — see `specs/network/topology.md` "Tunnel parameters"
+  for the reasoning (Bottega's PPPoE WAN + WireGuard overhead).
 - `PersistentKeepalive` is required on whichever side sits behind CGNAT (Casa,
   and any mobile client), so the CGNAT mapping doesn't expire between packets.
   See `PUBLIC_INTERNET.md` "Lessons Learned" for the mechanism.
