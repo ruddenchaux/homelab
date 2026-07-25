@@ -45,6 +45,8 @@ running infrastructure
 - `network/dns-exposure.md` — public records, dst-nat, split-DNS.
 - `sites/bottega.md`, `sites/casa.md` — per-site role and constraints.
 - `services/_template.md` — template for specifying a newly-exposed service.
+- `observability/external-checks.md` — health checks that must run from
+  outside the network.
 
 ## Open decisions
 
