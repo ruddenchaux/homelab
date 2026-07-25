@@ -52,14 +52,48 @@ Casa's LAN needs a **new, non-overlapping range** — it cannot reuse
 it is a different physical LAN from the trusted-LAN VLAN that used to be the
 home network.
 
-- `TODO(decision):` Casa LAN subnet (single flat LAN, or does Casa need its own
-  VLAN segmentation too?).
-- `TODO(decision):` site-to-site WireGuard tunnel subnet (distinct from the old
-  `10.100.0.0/24` VPS-tunnel range, or reused now that the VPS is gone — needs
-  an explicit decision either way).
-- `TODO(decision):` road-warrior WireGuard client address pool.
-- `TODO(decision):` whether Casa keeps any local VLAN trunking (MikroTik at
-  Casa) or runs a single flat LAN, given it no longer hosts the lab.
+Bottega's VLAN 1 (RouterOS default management/untagged network) is unchanged:
+`192.168.88.0/24`, gw `192.168.88.1`.
+
+Casa's LAN is renumbered to `192.168.90.0/24`, gw `192.168.90.1` — a single
+flat LAN, no VLAN segmentation, since Casa no longer hosts the lab and only
+needs to reach a small, fixed set of devices (energy-monitoring hardware, MQTT
+broker — see `sites/casa.md`).
+
+### Site-to-site addressing (authoritative — all other specs reference this table)
+
+| Scope | Value |
+|---|---|
+| Bottega LAN / management (VLAN 1) | `192.168.88.0/24`, gw `192.168.88.1` — unchanged, RouterOS default |
+| Bottega VLAN 10 (management) | `10.10.0.0/24`, gw `10.10.0.1` |
+| Bottega VLAN 20 (trusted) | `10.20.0.0/24`, gw `10.20.0.1` |
+| Bottega VLAN 30 (kubernetes) | `10.30.0.0/24`, gw `10.30.0.1` |
+| Casa LAN | `192.168.90.0/24`, gw `192.168.90.1` — flat, renumbered from its prior range |
+| WireGuard overlay (whole VPN) | `10.99.0.0/24` |
+| — Bottega (hub) | `10.99.0.1/32` |
+| — Casa (spoke) | `10.99.0.2/32` |
+| — Road-warrior peers | `10.99.0.11/32` and upward |
+
+The 10.x VLANs move physically from Casa to Bottega but keep their numbering.
+
+### Reserved / forbidden ranges
+
+- `100.64.0.0/10` must **never** be used anywhere in this design — it is
+  Starlink's CGNAT space at Casa. Assigning it to any VLAN, LAN, or tunnel
+  subnet would silently collide with Casa's own upstream WAN addressing.
+- `192.168.90.0/24` (Casa LAN) and `192.168.88.0/24` (Bottega VLAN 1) must
+  never overlap with each other or be reused for any other purpose.
+
+### Tunnel parameters
+
+- The hub (Bottega) listens on UDP `61536` on its static public IP. Casa and
+  road-warrior peers are dial-out only and expose no listening port.
+- Casa uses `PersistentKeepalive=25` to hold its CGNAT mapping open.
+- WireGuard interface MTU is `1412`, with MSS clamping applied on the tunnel —
+  Bottega's WAN is PPPoE (1492 MTU) and WireGuard's own overhead further
+  reduces the usable payload size.
+
+See `specs/network/wireguard.md` for the derived AllowedIPs table.
 
 ## Acceptance criteria
 
