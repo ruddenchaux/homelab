@@ -27,19 +27,40 @@
   VPS design is preserved, but the target is now Bottega's own IP + a dst-nat
   rule instead of the VPS + nginx.
 
-## Open decisions
+## Public exposure policy
 
-- `TODO(decision):` which services (if any beyond Jellyfin) get a public A
-  record once Bottega is live — this is a decision, not automatic, since more
-  surface = more to secure (rule #5 still applies: this is about *service*
-  ports, router mgmt is never included).
-- `TODO(decision):` whether Bottega's router does TLS-blind dst-nat (mirroring
-  the VPS's SNI-blind nginx passthrough) or whether it should terminate/inspect
-  anything at the router — recommend blind passthrough to keep Traefik as the
-  single TLS termination point, matching the current design, but confirm.
-- `TODO(decision):` DDNS or any monitoring needed in case Bottega's "static" IP
-  is ever reassigned by the ISP (confirm with Flynet whether it's a fixed
-  lease or truly static).
+A public A record requires an explicit stated reason. Default is
+internal-only, resolved via split-DNS and reachable only over the VPN
+(`specs/network/wireguard.md`). Adding a service to raw-internet exposure is a
+deliberate opt-in, not automatic.
+
+Public services (enumerated, extend explicitly as needed):
+
+- `jellyfin.ruddenchaux.xyz` — streaming client compatibility requires direct
+  internet reachability (existing reason, carried over from the VPS design).
+
+## TLS handling
+
+TLS-blind dst-nat passthrough: Bottega's router forwards TCP `443` untouched to
+the k3s ingress LB (Traefik). TLS terminates at the ingress via cert-manager —
+never on RouterOS. This keeps certificate issuance and routing decisions in the
+GitOps layer instead of splitting them across the router, and matches the
+existing TCP-passthrough approach used by the (now-retired) VPS relay.
+
+## IP stability and monitoring
+
+Bottega's public IP is contractually static: `145.11.24.43`. No DDNS is used —
+RouterOS `/ip cloud` is explicitly **not** enabled, since with a confirmed
+static IP it has no DNS-failover role to play, and being router-side it would
+go silent exactly when the router (and therefore the thing it's meant to
+detect failure of) is down.
+
+The concern of "is the IP still reachable" is monitoring, not DNS, and belongs
+outside this spec — tracked as `TODO(fact):` in
+`specs/observability/external-checks.md` (external health check against the
+public `443` endpoint and the WireGuard UDP listener). It is post-cutover and
+non-blocking. Public A records keep a low TTL regardless, as cheap insurance
+against a future IP change.
 
 ## Acceptance criteria
 
@@ -49,5 +70,5 @@
       reaches Traefik and gets a valid Let's Encrypt certificate end-to-end.
 - [ ] A request to any hostname *without* a public A record fails to resolve
       from outside the VPN (split-DNS boundary holds).
-- [ ] No `TODO(decision):` remains in this file before any dst-nat rule is
-      applied to a live router.
+- [ ] Only the enumerated public services above resolve to Bottega's static IP
+      from outside the VPN; every other hostname resolves internal-only.
