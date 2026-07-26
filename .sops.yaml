@@ -1,3 +1,5 @@
 creation_rules:
+  - path_regex: ansible/secrets/bottega\.sops\.ya?ml$
+    age: "age1rxyzhqxykdrx9rt504dxjd0hch3aysxs0dzrsnfadc4ur59q537s7w873e"
   - path_regex: .*\.sops\.ya?ml$
     age: "age18nas3jz5knygax063tjeek855fx69jc3ycn9kzn9qxpdnhe3957s8dz9ky,age1rxyzhqxykdrx9rt504dxjd0hch3aysxs0dzrsnfadc4ur59q537s7w873e"

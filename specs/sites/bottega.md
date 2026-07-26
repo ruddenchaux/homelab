@@ -134,6 +134,9 @@ operator.
 Applied per `.claude/skills/mikrotik-safe-change.md` — safe mode on, since
 every rule here can lock out the session applying it.
 
+Implemented by `ansible/playbooks/bottega-base-lockdown.yml`; implementation
+notes live in `ansible/roles/mikrotik-bottega-base-lockdown/README.md`.
+
 ### Services
 
 `/ip service`:

@@ -1,0 +1,39 @@
+---
+- name: Check Bottega enabled RouterOS services
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name={{ item }}
+  loop: "{{ bottega_mikrotik_enabled_services }}"
+  register: _bottega_enabled_services
+  changed_when: false
+
+- name: Limit Bottega RouterOS services to the default LAN
+  community.routeros.command:
+    commands:
+      - >-
+        /ip service set [find where name="{{ item.item }}"]
+        disabled=no
+        address={{ bottega_mikrotik_lan_management_subnet }}
+  loop: "{{ _bottega_enabled_services.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: >-
+    bottega_mikrotik_lan_management_subnet not in item.stdout[0] or
+    item.stdout[0] is search('(^|\\s)X\\s+name=')
+
+- name: Check Bottega disabled RouterOS services
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name={{ item }}
+  loop: "{{ bottega_mikrotik_disabled_services }}"
+  register: _bottega_disabled_services
+  changed_when: false
+
+- name: Disable unused Bottega RouterOS services
+  community.routeros.command:
+    commands:
+      - /ip service set [find where name="{{ item.item }}"] disabled=yes
+  loop: "{{ _bottega_disabled_services.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: "item.stdout[0] is not search('(^|\\s)X\\s+name=')"

@@ -1,0 +1,21 @@
+---
+- name: Run Bottega base-lockdown preflight checks
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Configure Bottega admin credentials
+  ansible.builtin.include_tasks: credentials.yml
+
+- name: Configure Bottega phase 1 interface lists
+  ansible.builtin.include_tasks: interface-lists.yml
+
+- name: Restrict Bottega RouterOS IP services
+  ansible.builtin.include_tasks: services.yml
+
+- name: Scope Bottega MAC-layer recovery to LAN
+  ansible.builtin.include_tasks: mac-access.yml
+
+- name: Configure Bottega phase 1 input firewall
+  ansible.builtin.include_tasks: firewall.yml
+
+- name: Validate Bottega phase 1 lockdown
+  ansible.builtin.include_tasks: validate.yml

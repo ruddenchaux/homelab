@@ -1,0 +1,141 @@
+---
+- name: Check Bottega WAN interface list
+  community.routeros.command:
+    commands:
+      - /interface list print where name={{ bottega_mikrotik_wan_list }}
+  register: _bottega_wan_list
+  changed_when: false
+
+- name: Create Bottega WAN interface list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list add
+        name={{ bottega_mikrotik_wan_list }}
+        comment="Bottega phase 1 WAN boundary"
+  when: "bottega_mikrotik_wan_list not in _bottega_wan_list.stdout[0]"
+
+- name: Check Bottega LAN interface list
+  community.routeros.command:
+    commands:
+      - /interface list print where name={{ bottega_mikrotik_lan_list }}
+  register: _bottega_lan_list
+  changed_when: false
+
+- name: Create Bottega LAN interface list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list add
+        name={{ bottega_mikrotik_lan_list }}
+        comment="Bottega phase 1 trusted LAN"
+  when: "bottega_mikrotik_lan_list not in _bottega_lan_list.stdout[0]"
+
+- name: Check ether1 is not in the Bottega LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print
+        where list={{ bottega_mikrotik_lan_list }}
+        interface={{ bottega_mikrotik_wan_interface }}
+  register: _bottega_wan_iface_in_lan
+  changed_when: false
+
+- name: Remove ether1 from the Bottega LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list={{ bottega_mikrotik_lan_list }}
+        interface={{ bottega_mikrotik_wan_interface }}]
+  when: "bottega_mikrotik_wan_interface in _bottega_wan_iface_in_lan.stdout[0]"
+
+- name: Check bridge is not in the Bottega WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print
+        where list={{ bottega_mikrotik_wan_list }}
+        interface={{ bottega_mikrotik_lan_interface }}
+  register: _bottega_lan_iface_in_wan
+  changed_when: false
+
+- name: Remove bridge from the Bottega WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list={{ bottega_mikrotik_wan_list }}
+        interface={{ bottega_mikrotik_lan_interface }}]
+  when: "bottega_mikrotik_lan_interface in _bottega_lan_iface_in_wan.stdout[0]"
+
+- name: Check Bottega WAN member ether1
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print
+        where list={{ bottega_mikrotik_wan_list }}
+        interface={{ bottega_mikrotik_wan_interface }}
+  register: _bottega_wan_member
+  changed_when: false
+
+- name: Add ether1 to the Bottega WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member add
+        list={{ bottega_mikrotik_wan_list }}
+        interface={{ bottega_mikrotik_wan_interface }}
+        comment="Bottega phase 1 WAN"
+  when: "bottega_mikrotik_wan_interface not in _bottega_wan_member.stdout[0]"
+
+- name: Check Bottega LAN member bridge
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print
+        where list={{ bottega_mikrotik_lan_list }}
+        interface={{ bottega_mikrotik_lan_interface }}
+  register: _bottega_lan_member
+  changed_when: false
+
+- name: Add bridge to the Bottega LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member add
+        list={{ bottega_mikrotik_lan_list }}
+        interface={{ bottega_mikrotik_lan_interface }}
+        comment="Bottega phase 1 LAN"
+  when: "bottega_mikrotik_lan_interface not in _bottega_lan_member.stdout[0]"
+
+- name: Read Bottega WAN interface-list members
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print terse
+        where list={{ bottega_mikrotik_wan_list }}
+  register: _bottega_wan_members
+  changed_when: false
+
+- name: Read Bottega LAN interface-list members
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print terse
+        where list={{ bottega_mikrotik_lan_list }}
+  register: _bottega_lan_members
+  changed_when: false
+
+- name: Assert no Bottega interface is in both WAN and LAN lists
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_bottega_wan_members.stdout[0] |
+        regex_findall('interface=([^\\s]+)') |
+        intersect(_bottega_lan_members.stdout[0] |
+        regex_findall('interface=([^\\s]+)')) |
+        length) == 0
+    quiet: true
+    fail_msg: >-
+      At least one RouterOS interface is present in both WAN and LAN lists.

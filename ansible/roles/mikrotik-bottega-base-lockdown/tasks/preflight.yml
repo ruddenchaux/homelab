@@ -1,0 +1,66 @@
+---
+- name: Confirm Bottega admin recovery password is provided securely
+  ansible.builtin.assert:
+    that:
+      - _bottega_mikrotik_admin_password is defined
+      - >-
+        _bottega_mikrotik_admin_password | length >=
+        bottega_mikrotik_admin_password_min_length
+      - >-
+        _bottega_mikrotik_admin_password is match('^[A-Za-z0-9._@%+=:,/-]+$')
+    quiet: true
+    fail_msg: >-
+      bottega_mikrotik_admin_password must come from
+      ansible/secrets/bottega.sops.yml, be long, and avoid RouterOS-unsafe
+      shell quoting characters.
+  no_log: true
+
+- name: Check local admin ed25519 public key exists
+  ansible.builtin.stat:
+    path: "{{ bottega_mikrotik_admin_ssh_public_key_path }}"
+  delegate_to: localhost
+  register: _bottega_admin_ssh_public_key_file
+
+- name: Require local admin ed25519 public key
+  ansible.builtin.assert:
+    that:
+      - _bottega_admin_ssh_public_key_file.stat.exists
+      - _bottega_admin_ssh_public_key_file.stat.isreg
+    quiet: true
+    fail_msg: >-
+      Expected an ed25519 public key at
+      {{ bottega_mikrotik_admin_ssh_public_key_path }}. Override
+      bottega_mikrotik_admin_ssh_public_key_path if the admin key lives
+      elsewhere.
+
+- name: Read local admin ed25519 public key
+  ansible.builtin.set_fact:
+    _bottega_admin_ssh_public_key: >-
+      {{ lookup('ansible.builtin.file',
+      bottega_mikrotik_admin_ssh_public_key_path) | trim }}
+
+- name: Confirm local admin SSH key is ed25519
+  ansible.builtin.assert:
+    that:
+      - >-
+        _bottega_admin_ssh_public_key is
+        match('^ssh-ed25519 [A-Za-z0-9+/=]+( .*)?$')
+    quiet: true
+    fail_msg: "Bottega admin SSH key must be an ed25519 public key."
+
+- name: Normalize Bottega admin SSH key for RouterOS import
+  ansible.builtin.set_fact:
+    _bottega_admin_ssh_key_material: >-
+      {{ _bottega_admin_ssh_public_key.split()[0:2] | join(' ') }}
+    _bottega_admin_ssh_key_owner: >-
+      {{ bottega_mikrotik_admin_ssh_key_owner_prefix }}-{{
+      (_bottega_admin_ssh_public_key.split()[0:2] | join(' ') |
+      hash('sha256'))[:16]
+      }}
+
+- name: Set Bottega admin SSH key upload names
+  ansible.builtin.set_fact:
+    _bottega_admin_ssh_public_key_import_line: >-
+      {{ _bottega_admin_ssh_key_material }} {{ _bottega_admin_ssh_key_owner }}
+    _bottega_admin_ssh_public_key_remote_file: >-
+      {{ _bottega_admin_ssh_key_owner }}.pub

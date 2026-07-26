@@ -1,0 +1,218 @@
+---
+- name: Validate Bottega enabled RouterOS services
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name={{ item }}
+  loop: "{{ bottega_mikrotik_enabled_services }}"
+  register: _bottega_enabled_service_validation
+  changed_when: false
+
+- name: Assert Bottega enabled RouterOS services are LAN-limited
+  ansible.builtin.assert:
+    that:
+      - "bottega_mikrotik_lan_management_subnet in item.stdout[0]"
+      - "item.stdout[0] is not search('(^|\\s)X\\s+name=')"
+    quiet: true
+    fail_msg: >-
+      RouterOS service {{ item.item }} is not enabled and limited to the
+      Bottega LAN.
+  loop: "{{ _bottega_enabled_service_validation.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate Bottega disabled RouterOS services
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name={{ item }}
+  loop: "{{ bottega_mikrotik_disabled_services }}"
+  register: _bottega_disabled_service_validation
+  changed_when: false
+
+- name: Assert Bottega unused RouterOS services are disabled
+  ansible.builtin.assert:
+    that:
+      - "item.stdout[0] is search('(^|\\s)X\\s+name=')"
+    quiet: true
+    fail_msg: "RouterOS service {{ item.item }} is not disabled."
+  loop: "{{ _bottega_disabled_service_validation.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Validate Bottega input firewall rule order
+  community.routeros.command:
+    commands:
+      - >-
+        :local rules [/ip firewall filter find where chain=input];
+        :local ok true;
+        :if ([:len $rules] != 4) do={:set ok false};
+        :if ($ok) do={
+          :local r0 [:pick $rules 0];
+          :if ([/ip firewall filter get $r0 disabled] = true)
+          do={:set ok false};
+          :if ([/ip firewall filter get $r0 action] != "accept")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r0 connection-state] !=
+          "established,related") do={:set ok false};
+          :if ([/ip firewall filter get $r0 in-interface-list] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r0 protocol] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r0 src-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r0 dst-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r0 dst-port] != "")
+          do={:set ok false};
+          :local r1 [:pick $rules 1];
+          :if ([/ip firewall filter get $r1 disabled] = true)
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 action] != "drop")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 connection-state] != "invalid")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 in-interface-list] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 protocol] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 src-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 dst-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r1 dst-port] != "")
+          do={:set ok false};
+          :local r2 [:pick $rules 2];
+          :if ([/ip firewall filter get $r2 disabled] = true)
+          do={:set ok false};
+          :if ([/ip firewall filter get $r2 action] != "accept")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r2 connection-state] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r2 in-interface-list] !=
+          "!{{ bottega_mikrotik_wan_list }}") do={:set ok false};
+          :if ([/ip firewall filter get $r2 protocol] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r2 src-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r2 dst-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r2 dst-port] != "")
+          do={:set ok false};
+          :local r3 [:pick $rules 3];
+          :if ([/ip firewall filter get $r3 disabled] = true)
+          do={:set ok false};
+          :if ([/ip firewall filter get $r3 action] != "drop")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r3 connection-state] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r3 in-interface-list] !=
+          "{{ bottega_mikrotik_wan_list }}") do={:set ok false};
+          :if ([/ip firewall filter get $r3 protocol] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r3 src-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r3 dst-address] != "")
+          do={:set ok false};
+          :if ([/ip firewall filter get $r3 dst-port] != "")
+          do={:set ok false};
+        };
+        :if ($ok) do={:put "ok"} else={:put "fail"}
+  register: _bottega_input_firewall_validation
+  changed_when: false
+
+- name: Assert Bottega input firewall has exactly the phase 1 rule order
+  ansible.builtin.assert:
+    that:
+      - "'ok' in _bottega_input_firewall_validation.stdout[0]"
+    quiet: true
+    fail_msg: >-
+      Bottega input firewall does not match the exact phase 1 rule order.
+
+- name: Validate Bottega interface-list membership
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print terse
+        where list={{ bottega_mikrotik_wan_list }}
+      - >-
+        /interface list member print terse
+        where list={{ bottega_mikrotik_lan_list }}
+  register: _bottega_interface_list_validation
+  changed_when: false
+
+- name: Assert Bottega interface lists match phase 1
+  ansible.builtin.assert:
+    that:
+      - >-
+        bottega_mikrotik_wan_interface in
+        _bottega_interface_list_validation.stdout[0]
+      - >-
+        bottega_mikrotik_lan_interface in
+        _bottega_interface_list_validation.stdout[1]
+      - >-
+        (_bottega_interface_list_validation.stdout[0] |
+        regex_findall('interface=([^\\s]+)') |
+        intersect(_bottega_interface_list_validation.stdout[1] |
+        regex_findall('interface=([^\\s]+)')) |
+        length) == 0
+    quiet: true
+    fail_msg: >-
+      Bottega WAN/LAN interface-list membership does not match phase 1.
+
+- name: Validate Bottega MAC-layer access scope
+  community.routeros.command:
+    commands:
+      - /tool mac-server print
+      - /tool mac-server mac-winbox print
+      - /ip neighbor discovery-settings print
+  register: _bottega_mac_access_validation
+  changed_when: false
+
+- name: Assert Bottega MAC-layer access stays LAN-scoped
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('allowed-interface-list: ' ~ bottega_mikrotik_lan_list) in
+        _bottega_mac_access_validation.stdout[0]
+      - >-
+        ('allowed-interface-list: ' ~ bottega_mikrotik_lan_list) in
+        _bottega_mac_access_validation.stdout[1]
+      - >-
+        ('discover-interface-list: ' ~ bottega_mikrotik_lan_list) in
+        _bottega_mac_access_validation.stdout[2]
+    quiet: true
+    fail_msg: "Bottega MAC-layer recovery is not scoped to LAN."
+
+- name: Validate Bottega admin SSH keys
+  community.routeros.command:
+    commands:
+      - /user ssh-keys print detail where user={{ bottega_mikrotik_admin_user }}
+      - /ip ssh print
+  register: _bottega_ssh_validation
+  changed_when: false
+
+- name: Assert Bottega admin SSH key-only auth is configured
+  ansible.builtin.assert:
+    that:
+      - "_bottega_admin_ssh_key_owner in _bottega_ssh_validation.stdout[0]"
+      - >-
+        ('password-authentication: no' in _bottega_ssh_validation.stdout[1])
+        or
+        ('always-allow-password-login: no' in
+        _bottega_ssh_validation.stdout[1])
+    quiet: true
+    fail_msg: >-
+      Bottega admin SSH key or SSH password-login setting is missing.
+
+- name: Validate Bottega SSH reachability from the internal management host
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host | default(inventory_hostname) }}"
+    port: 22
+    timeout: 2
+  delegate_to: localhost
+
+- name: Validate Bottega WinBox reachability from the internal management host
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host | default(inventory_hostname) }}"
+    port: 8291
+    timeout: 2
+  delegate_to: localhost

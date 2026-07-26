@@ -1,0 +1,62 @@
+---
+# Implements specs/sites/bottega.md phase 1 only: base management lockdown for
+# a freshly installed MikroTik hAP be3 Media on the default 192.168.88.0/24 LAN.
+# External WAN checks are intentionally gated on the later PPPoE bring-up task.
+- name: Apply Bottega MikroTik phase 1 base lockdown
+  hosts: mikrotik
+  gather_facts: false
+  pre_tasks:
+    - name: Load Bottega router secrets
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets/bottega.sops.yml"
+        name: bottega_router_secrets
+      no_log: true
+
+    - name: Set Bottega router secret variables
+      ansible.builtin.set_fact:
+        _bottega_mikrotik_admin_password: >-
+          {{ _bottega_router_secrets['bottega_mikrotik_admin_password'] }}
+      vars:
+        _bottega_router_secrets: "{{ ansible_facts['bottega_router_secrets'] }}"
+      no_log: true
+
+    - name: Save Bottega admin SSH private key path
+      ansible.builtin.set_fact:
+        _bottega_mikrotik_runtime_private_key_file: >-
+          {{ ansible_private_key_file |
+          default(ansible_ssh_private_key_file |
+          default('~/.ssh/id_ed25519')) }}
+
+    - name: Prefer key or stored password for RouterOS login
+      ansible.builtin.set_fact:
+        ansible_password: >-
+          {{ bottega_mikrotik_login_password |
+          default(_bottega_mikrotik_admin_password) }}
+      no_log: true
+
+    - name: Establish Bottega RouterOS login method
+      block:
+        - name: Check RouterOS login with key or stored password
+          community.routeros.command:
+            commands:
+              - /system identity print
+          changed_when: false
+      rescue:
+        - name: Fall back to factory blank RouterOS admin password
+          ansible.builtin.set_fact:
+            ansible_password: ""
+            ansible_private_key_file: null
+            ansible_ssh_private_key_file: null
+          no_log: true
+
+        - name: Reset RouterOS connection for factory-password fallback
+          ansible.builtin.meta: reset_connection
+
+        - name: Check RouterOS login with factory blank password
+          community.routeros.command:
+            commands:
+              - /system identity print
+          changed_when: false
+
+  roles:
+    - mikrotik-bottega-base-lockdown

@@ -1,0 +1,24 @@
+---
+bottega_mikrotik_admin_user: admin
+bottega_mikrotik_admin_password_min_length: 24
+bottega_mikrotik_admin_ssh_public_key_path: >-
+  {{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub
+bottega_mikrotik_admin_ssh_key_owner_prefix: bottega-admin-ed25519
+
+bottega_mikrotik_lan_management_subnet: 192.168.88.0/24
+bottega_mikrotik_wan_interface: ether1
+bottega_mikrotik_lan_interface: bridge
+bottega_mikrotik_wan_list: WAN
+bottega_mikrotik_lan_list: LAN
+
+bottega_mikrotik_enabled_services:
+  - www
+  - ssh
+  - winbox
+
+bottega_mikrotik_disabled_services:
+  - telnet
+  - ftp
+  - api
+  - api-ssl
+  - www-ssl

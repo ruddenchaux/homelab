@@ -1,0 +1,51 @@
+---
+- name: Check Bottega MAC server allowed interface list
+  community.routeros.command:
+    commands:
+      - /tool mac-server print
+  register: _bottega_mac_server_allowed_list
+  changed_when: false
+
+- name: Scope Bottega MAC server to LAN
+  community.routeros.command:
+    commands:
+      - >-
+        /tool mac-server set
+        allowed-interface-list={{ bottega_mikrotik_lan_list }}
+  when: >-
+    ('allowed-interface-list: ' ~ bottega_mikrotik_lan_list) not in
+    _bottega_mac_server_allowed_list.stdout[0]
+
+- name: Check Bottega MAC WinBox allowed interface list
+  community.routeros.command:
+    commands:
+      - /tool mac-server mac-winbox print
+  register: _bottega_mac_winbox_allowed_list
+  changed_when: false
+
+- name: Scope Bottega MAC WinBox to LAN
+  community.routeros.command:
+    commands:
+      - >-
+        /tool mac-server mac-winbox set
+        allowed-interface-list={{ bottega_mikrotik_lan_list }}
+  when: >-
+    ('allowed-interface-list: ' ~ bottega_mikrotik_lan_list) not in
+    _bottega_mac_winbox_allowed_list.stdout[0]
+
+- name: Check Bottega neighbor discovery interface list
+  community.routeros.command:
+    commands:
+      - /ip neighbor discovery-settings print
+  register: _bottega_neighbor_discovery_list
+  changed_when: false
+
+- name: Scope Bottega neighbor discovery to LAN
+  community.routeros.command:
+    commands:
+      - >-
+        /ip neighbor discovery-settings set
+        discover-interface-list={{ bottega_mikrotik_lan_list }}
+  when: >-
+    ('discover-interface-list: ' ~ bottega_mikrotik_lan_list) not in
+    _bottega_neighbor_discovery_list.stdout[0]
