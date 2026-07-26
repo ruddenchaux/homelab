@@ -5,6 +5,12 @@ safe-mode-aware, and router management interfaces must never be exposed to WAN.
 
 ## Bottega (hub)
 
+> **Phasing**: the tables below are the **end state**. Bottega's router starts
+> from the base lockdown in `specs/sites/bottega.md`, where WAN answers nothing
+> at all. `61536` opens with the WireGuard task and `443` with the dst-nat
+> task. A port scan showing nothing open before those tasks land is the
+> *correct* result — see the phase table in `sites/bottega.md`.
+
 Input (traffic destined for the router itself):
 
 | Source | Destination port/service | Allow? | Notes |
@@ -15,6 +21,12 @@ Input (traffic destined for the router itself):
 | WAN | Router management (WinBox/WebFig/API/SSH) | **No** | Rule #5 — management only from LAN/VPN |
 | WAN | anything else | **No** | Default-deny from WAN. Exactly two exceptions exist: WireGuard `61536` and TCP `443` — nothing else is ever opened directly |
 | LAN / VPN | Router management | Yes | |
+
+Note on chains: only WireGuard `61536` is a true **input**-chain exception — it
+terminates on the router. TCP `443` is dst-nat'd in prerouting to Traefik and
+is therefore evaluated in the **forward** chain, needing a forward-accept rule,
+not an input-accept rule. The table groups them for readability; the
+implementation must not.
 
 Forward (traffic passing through the router):
 
