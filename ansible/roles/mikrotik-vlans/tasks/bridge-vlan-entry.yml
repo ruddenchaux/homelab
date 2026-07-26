@@ -1,0 +1,85 @@
+---
+- name: "Read bridge VLAN {{ _mikrotik_bridge_vlan_id }}"
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge vlan print count-only
+        where bridge={{ mikrotik_bridge }}
+        vlan-ids={{ _mikrotik_bridge_vlan_id }}
+        dynamic=no
+      - >-
+        /interface bridge vlan print terse
+        where bridge={{ mikrotik_bridge }}
+        vlan-ids={{ _mikrotik_bridge_vlan_id }}
+        dynamic=no
+  register: _mikrotik_bridge_vlan_entry
+  changed_when: false
+
+- name: >-
+    Reject duplicate entries for bridge VLAN
+    {{ _mikrotik_bridge_vlan_id }}
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_mikrotik_bridge_vlan_entry.stdout_lines[0] |
+        last | trim | int) <= 1
+    quiet: true
+    fail_msg: >-
+      Bridge VLAN {{ _mikrotik_bridge_vlan_id }} has multiple entries.
+      Resolve the ambiguity before enabling VLAN filtering.
+
+- name: "Add bridge VLAN {{ _mikrotik_bridge_vlan_id }}"
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge vlan add
+        bridge={{ mikrotik_bridge }}
+        vlan-ids={{ _mikrotik_bridge_vlan_id }}
+        tagged={{ (_mikrotik_bridge_vlan_tagged | join(',')) |
+        default('""', true) }}
+        untagged={{ (_mikrotik_bridge_vlan_untagged | join(',')) |
+        default('""', true) }}
+        comment={{ _mikrotik_bridge_vlan_comment }}
+  when: >-
+    (_mikrotik_bridge_vlan_entry.stdout_lines[0] |
+    last | trim | int) == 0
+
+- name: "Normalize bridge VLAN {{ _mikrotik_bridge_vlan_id }}"
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge vlan set
+        [find where bridge={{ mikrotik_bridge }}
+        vlan-ids={{ _mikrotik_bridge_vlan_id }} dynamic=no]
+        tagged={{ (_mikrotik_bridge_vlan_tagged | join(',')) |
+        default('""', true) }}
+        untagged={{ (_mikrotik_bridge_vlan_untagged | join(',')) |
+        default('""', true) }}
+        comment={{ _mikrotik_bridge_vlan_comment }}
+  vars:
+    _mikrotik_current_tagged: >-
+      {{ _mikrotik_bridge_vlan_entry.stdout[1] |
+      regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)tagged=([^\s]+)') | first | default('') |
+      split(',') | reject('equalto', '') | list }}
+    _mikrotik_current_untagged: >-
+      {{ _mikrotik_bridge_vlan_entry.stdout[1] |
+      regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)untagged=([^\s]+)') | first | default('') |
+      split(',') | reject('equalto', '') | list }}
+  when:
+    - >-
+      (_mikrotik_bridge_vlan_entry.stdout_lines[0] |
+      last | trim | int) == 1
+    - >-
+      _mikrotik_current_tagged | difference(_mikrotik_bridge_vlan_tagged) |
+      length > 0
+      or
+      _mikrotik_bridge_vlan_tagged | difference(_mikrotik_current_tagged) |
+      length > 0
+      or
+      _mikrotik_current_untagged |
+      difference(_mikrotik_bridge_vlan_untagged) | length > 0
+      or
+      _mikrotik_bridge_vlan_untagged |
+      difference(_mikrotik_current_untagged) | length > 0

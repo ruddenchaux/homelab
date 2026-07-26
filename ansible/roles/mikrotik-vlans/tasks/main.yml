@@ -1,9 +1,15 @@
 ---
-- name: Configure bridge VLAN table and filtering
-  ansible.builtin.include_tasks: bridge-vlans.yml
+- name: Run MikroTik VLAN preflight checks
+  ansible.builtin.include_tasks: preflight.yml
 
 - name: Create VLAN interfaces and assign IPs
   ansible.builtin.include_tasks: vlan-interfaces.yml
 
 - name: Add VLAN interfaces to firewall LAN list
   ansible.builtin.include_tasks: firewall.yml
+
+- name: Configure bridge VLAN table and filtering
+  ansible.builtin.include_tasks: bridge-vlans.yml
+
+- name: Validate MikroTik VLAN state
+  ansible.builtin.include_tasks: validate.yml

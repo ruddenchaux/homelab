@@ -1,55 +1,75 @@
 ---
-# Ensure VLAN 1 keeps bridge as untagged member (safety for existing default devices)
-- name: Check if VLAN 1 has bridge as untagged member
+- name: Read trunk bridge-port state
   community.routeros.command:
     commands:
-      - /interface bridge vlan print where vlan-ids=1
-  register: _vlan1_entry
+      - >-
+        /interface bridge port print terse
+        where bridge={{ mikrotik_bridge }}
+        interface={{ mikrotik_trunk_port }}
+  register: _mikrotik_trunk_bridge_port
+  changed_when: false
 
-- name: Ensure VLAN 1 has bridge as untagged member
+- name: Make the trunk tagged-only with ingress filtering
   community.routeros.command:
     commands:
-      - /interface bridge vlan add bridge={{ mikrotik_bridge }} vlan-ids=1 untagged={{ mikrotik_bridge }}
-  when: "'{{ mikrotik_bridge }}' not in _vlan1_entry.stdout[0]"
+      - >-
+        /interface bridge port set
+        [find where bridge={{ mikrotik_bridge }}
+        interface={{ mikrotik_trunk_port }}]
+        frame-types=admit-only-vlan-tagged
+        ingress-filtering=yes
+  when: >-
+    'frame-types=admit-only-vlan-tagged'
+    not in (_mikrotik_trunk_bridge_port.stdout[0] |
+    regex_replace('[\r\n]', ''))
+    or
+    'ingress-filtering=yes'
+    not in (_mikrotik_trunk_bridge_port.stdout[0] |
+    regex_replace('[\r\n]', ''))
 
-# Add VLANs as tagged on trunk port and bridge
-- name: Check existing bridge VLAN table
-  community.routeros.command:
-    commands:
-      - /interface bridge vlan print
-  register: _bridge_vlans
+- name: Configure the untagged management VLAN
+  ansible.builtin.include_tasks: bridge-vlan-entry.yml
+  vars:
+    _mikrotik_bridge_vlan_id: 1
+    _mikrotik_bridge_vlan_tagged: []
+    _mikrotik_bridge_vlan_untagged: >-
+      {{ [_mikrotik_bridge_vlan_cpu_port] +
+      _mikrotik_untagged_management_ports }}
+    _mikrotik_bridge_vlan_comment: Ansible_VLAN1_management
 
-- name: Add VLANs to bridge VLAN table (tagged on trunk + bridge)
-  community.routeros.command:
-    commands:
-      - /interface bridge vlan add bridge={{ mikrotik_bridge }} vlan-ids={{ item.id }} tagged={{ mikrotik_trunk_port }},{{ mikrotik_bridge }} comment={{ item.comment | regex_replace(' ', '_') }}
+- name: Configure tagged VLANs on the server trunk
+  ansible.builtin.include_tasks: bridge-vlan-entry.yml
   loop: "{{ vlans }}"
   loop_control:
-    label: "VLAN {{ item.id }} ({{ item.name }})"
-  when: "('vlan-ids=' ~ item.id | string) not in _bridge_vlans.stdout[0]"
+    loop_var: _mikrotik_vlan
+    label: "VLAN {{ _mikrotik_vlan.id }}"
+  vars:
+    _mikrotik_bridge_vlan_id: "{{ _mikrotik_vlan.id }}"
+    _mikrotik_bridge_vlan_tagged:
+      - "{{ _mikrotik_bridge_vlan_cpu_port }}"
+      - "{{ mikrotik_trunk_port }}"
+    _mikrotik_bridge_vlan_untagged: []
+    _mikrotik_bridge_vlan_comment: >-
+      {{ _mikrotik_vlan.comment | regex_replace(' ', '_') }}
 
-# Set trunk port to only accept tagged frames
-- name: Get trunk port frame-types setting
+- name: Validate the complete bridge VLAN table before enabling filtering
+  ansible.builtin.include_tasks: validate-bridge-table.yml
+
+- name: Read bridge VLAN-filtering state
   community.routeros.command:
     commands:
-      - /interface bridge port print where interface={{ mikrotik_trunk_port }}
-  register: _trunk_port
+      - /interface bridge print terse where name={{ mikrotik_bridge }}
+  register: _mikrotik_bridge_filtering
+  changed_when: false
 
-- name: Set trunk port to admit only VLAN-tagged frames
+- name: Enable bridge VLAN filtering after table validation
   community.routeros.command:
     commands:
-      - /interface bridge port set [find interface={{ mikrotik_trunk_port }}] frame-types=admit-only-vlan-tagged
-  when: "'admit-only-vlan-tagged' not in _trunk_port.stdout[0]"
-
-# Enable VLAN filtering LAST to avoid lockout
-- name: Check if bridge VLAN filtering is enabled
-  community.routeros.command:
-    commands:
-      - /interface bridge print where name={{ mikrotik_bridge }} vlan-filtering=yes
-  register: _vlan_filtering
-
-- name: Enable bridge VLAN filtering
-  community.routeros.command:
-    commands:
-      - /interface bridge set [find name={{ mikrotik_bridge }}] vlan-filtering=yes
-  when: "'vlan-filtering=yes' not in _vlan_filtering.stdout[0]"
+      - >-
+        /interface bridge set
+        [find where name={{ mikrotik_bridge }}]
+        vlan-filtering=yes
+  when: >-
+    'vlan-filtering=yes'
+    not in (_mikrotik_bridge_filtering.stdout[0] |
+    regex_replace('[\r\n]', ''))

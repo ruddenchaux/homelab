@@ -1,0 +1,116 @@
+---
+- name: Read bridge VLAN state
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge port print terse
+        where bridge={{ mikrotik_bridge }}
+        interface={{ mikrotik_trunk_port }}
+      - >-
+        /interface bridge vlan print count-only
+        where bridge={{ mikrotik_bridge }} vlan-ids=1 dynamic=no
+      - >-
+        /interface bridge vlan print terse
+        where bridge={{ mikrotik_bridge }} vlan-ids=1
+        dynamic=no
+  register: _mikrotik_bridge_vlan_base_validation
+  changed_when: false
+
+- name: Read tagged bridge VLAN state
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge vlan print count-only
+        where bridge={{ mikrotik_bridge }}
+        vlan-ids={{ item.id }} dynamic=no
+      - >-
+        /interface bridge vlan print terse
+        where bridge={{ mikrotik_bridge }} vlan-ids={{ item.id }}
+        dynamic=no
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  register: _mikrotik_bridge_vlan_tagged_validation
+  changed_when: false
+
+- name: Normalize management VLAN readback
+  ansible.builtin.set_fact:
+    _mikrotik_trunk_bridge_port_readback: >-
+      {{ _mikrotik_bridge_vlan_base_validation.stdout[0] |
+      regex_replace('[\r\n]', '') }}
+    _mikrotik_management_vlan_readback: >-
+      {{ _mikrotik_bridge_vlan_base_validation.stdout[2] |
+      regex_replace('[\r\n]', '') }}
+    _mikrotik_expected_management_untagged: >-
+      {{ [_mikrotik_bridge_vlan_cpu_port] +
+      _mikrotik_untagged_management_ports }}
+    _mikrotik_actual_management_tagged: >-
+      {{ _mikrotik_bridge_vlan_base_validation.stdout[2] |
+      regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)tagged=([^\s]+)') | first | default('') |
+      split(',') | reject('equalto', '') | list }}
+    _mikrotik_actual_management_untagged: >-
+      {{ _mikrotik_bridge_vlan_base_validation.stdout[2] |
+      regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)untagged=([^\s]+)') | first | default('') |
+      split(',') | reject('equalto', '') | list }}
+
+- name: Assert tagged-only trunk and exact management VLAN membership
+  ansible.builtin.assert:
+    that:
+      - >-
+        'frame-types=admit-only-vlan-tagged' in
+        _mikrotik_trunk_bridge_port_readback
+      - >-
+        'ingress-filtering=yes' in
+        _mikrotik_trunk_bridge_port_readback
+      - >-
+        (_mikrotik_bridge_vlan_base_validation.stdout_lines[1] |
+        last | trim | int) == 1
+      - >-
+        'vlan-ids=1' in
+        _mikrotik_management_vlan_readback
+      - _mikrotik_actual_management_tagged | length == 0
+      - >-
+        _mikrotik_actual_management_untagged |
+        difference(_mikrotik_expected_management_untagged) | length == 0
+      - >-
+        _mikrotik_expected_management_untagged |
+        difference(_mikrotik_actual_management_untagged) | length == 0
+      - mikrotik_trunk_port not in _mikrotik_actual_management_untagged
+    quiet: true
+    fail_msg: >-
+      The trunk or VLAN 1 management membership failed strict readback.
+      VLAN filtering was not enabled.
+
+- name: Assert exact tagged bridge VLAN membership
+  ansible.builtin.assert:
+    that:
+      - "(item.stdout_lines[0] | last | trim | int) == 1"
+      - >-
+        ('vlan-ids=' ~ (item.item.id | string))
+        in (item.stdout[1] | regex_replace('[\r\n]', ''))
+      - >-
+        _mikrotik_actual_tagged |
+        difference([_mikrotik_bridge_vlan_cpu_port, mikrotik_trunk_port]) |
+        length == 0
+      - >-
+        [_mikrotik_bridge_vlan_cpu_port, mikrotik_trunk_port] |
+        difference(_mikrotik_actual_tagged) | length == 0
+      - _mikrotik_actual_untagged | length == 0
+    quiet: true
+    fail_msg: >-
+      VLAN {{ item.item.id }} is not tagged exactly on the bridge CPU port and
+      {{ mikrotik_trunk_port }}.
+  vars:
+    _mikrotik_actual_tagged: >-
+      {{ item.stdout[1] | regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)tagged=([^\s]+)') | first | default('') |
+      split(',') | reject('equalto', '') | list }}
+    _mikrotik_actual_untagged: >-
+      {{ item.stdout[1] | regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)untagged=([^\s]+)') | first | default('') |
+      split(',') | reject('equalto', '') | list }}
+  loop: "{{ _mikrotik_bridge_vlan_tagged_validation.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"

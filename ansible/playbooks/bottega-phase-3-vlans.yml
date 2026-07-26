@@ -1,0 +1,107 @@
+---
+# Implements specs/sites/bottega-phase-3-vlans.md. Run only from a laptop
+# cabled to ether2, ether3, or ether4 with RouterOS safe-mode/rollback ready.
+- name: Apply Bottega phase 3 VLANs and R740xd uplink
+  hosts: mikrotik
+  gather_facts: false
+  vars:
+    bottega_phase3_management_port: ""
+    bottega_phase3_mac_winbox_recovery_confirmed: false
+    bottega_phase3_rollback_confirmed: false
+    bottega_phase3_wan_closed_confirmed: false
+    bottega_phase3_server_off_and_disconnected_confirmed: false
+
+  pre_tasks:
+    - name: Require operator safety confirmations
+      ansible.builtin.assert:
+        that:
+          - >-
+            bottega_phase3_management_port in
+            ['ether2', 'ether3', 'ether4']
+          - bottega_phase3_mac_winbox_recovery_confirmed | bool
+          - bottega_phase3_rollback_confirmed | bool
+          - bottega_phase3_wan_closed_confirmed | bool
+          - bottega_phase3_server_off_and_disconnected_confirmed | bool
+        quiet: true
+        fail_msg: >-
+          Phase 3 requires local management through ether2, ether3, or ether4;
+          tested MAC-WinBox recovery; a RouterOS safe-mode, export, or timed
+          rollback; a clean external WAN scan; and the R740xd powered off and
+          disconnected. Pass each confirmation explicitly as an extra var.
+
+    - name: Read Bottega phase 2 prerequisite state
+      community.routeros.command:
+        commands:
+          - /interface print count-only where name=pppoe-out1
+          - >-
+            /interface list member print count-only
+            where list=WAN interface=pppoe-out1
+          - >-
+            /interface list member print count-only
+            where list=LAN interface=bridge
+          - >-
+            /interface list member print terse
+            where list=WAN
+          - >-
+            /interface list member print terse
+            where list=LAN
+      register: _bottega_phase3_prerequisites
+      changed_when: false
+
+    - name: Require Bottega phase 2 and disjoint interface lists
+      ansible.builtin.assert:
+        that:
+          - >-
+            (_bottega_phase3_prerequisites.stdout_lines[0] |
+            last | trim | int) == 1
+          - >-
+            (_bottega_phase3_prerequisites.stdout_lines[1] |
+            last | trim | int) == 1
+          - >-
+            (_bottega_phase3_prerequisites.stdout_lines[2] |
+            last | trim | int) == 1
+          - >-
+            (_bottega_phase3_prerequisites.stdout[3] |
+            regex_findall('interface=([^\s]+)') |
+            intersect(_bottega_phase3_prerequisites.stdout[4] |
+            regex_findall('interface=([^\s]+)')) | length) == 0
+        quiet: true
+        fail_msg: >-
+          Phase 2 is not live: pppoe-out1 must exist in WAN, bridge must be in
+          LAN, and no interface may belong to both lists. No VLAN changes were
+          made.
+
+    - name: Read Bottega PPPoE link state
+      community.routeros.command:
+        commands:
+          - /interface pppoe-client monitor pppoe-out1 once
+      register: _bottega_phase3_pppoe_state
+      changed_when: false
+
+    - name: Require the Bottega PPPoE link to be connected
+      ansible.builtin.assert:
+        that:
+          - "'status: connected' in _bottega_phase3_pppoe_state.stdout[0]"
+        quiet: true
+        fail_msg: >-
+          pppoe-out1 exists but is not connected. Phase 2 must be live before
+          Phase 3 is applied.
+
+    - name: Confirm Bottega management services remain reachable
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: "{{ item }}"
+        timeout: 2
+      loop:
+        - 22
+        - 8291
+      delegate_to: localhost
+
+  roles:
+    - role: mikrotik-vlans
+      vars:
+        mikrotik_trunk_port: ether5
+        mikrotik_required_untagged_management_ports:
+          - ether2
+          - ether3
+          - ether4

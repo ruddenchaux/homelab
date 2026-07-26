@@ -1,32 +1,108 @@
 ---
-# Create VLAN interfaces on bridge
-- name: Check existing VLAN interfaces
+- name: Read VLAN interfaces on the bridge
   community.routeros.command:
     commands:
-      - /interface vlan print
-  register: _vlan_interfaces
-
-- name: Create VLAN interfaces on bridge
-  community.routeros.command:
-    commands:
-      - /interface vlan add interface={{ mikrotik_bridge }} vlan-id={{ item.id }} name=vlan{{ item.id }}-{{ item.name }} comment="{{ item.comment }}"
+      - >-
+        /interface vlan print terse
+        where interface={{ mikrotik_bridge }} vlan-id={{ item.id }}
   loop: "{{ vlans }}"
   loop_control:
-    label: "vlan{{ item.id }}-{{ item.name }}"
-  when: "('vlan' ~ item.id | string ~ '-' ~ item.name) not in _vlan_interfaces.stdout[0]"
+    label: "VLAN {{ item.id }}"
+  register: _mikrotik_vlan_interfaces
+  changed_when: false
 
-# Assign gateway IPs to VLAN interfaces
-- name: Check existing IP addresses
+- name: Create missing VLAN interfaces on the bridge
   community.routeros.command:
     commands:
-      - /ip address print
-  register: _ip_addresses
+      - >-
+        /interface vlan add
+        interface={{ mikrotik_bridge }}
+        vlan-id={{ item.item.id }}
+        name=vlan{{ item.item.id }}-{{ item.item.name }}
+        comment="{{ item.item.comment }}"
+  loop: "{{ _mikrotik_vlan_interfaces.results }}"
+  loop_control:
+    label: "vlan{{ item.item.id }}-{{ item.item.name }}"
+  when: >-
+    ('vlan-id=' ~ (item.item.id | string))
+    not in (item.stdout[0] | regex_replace('[\r\n]', ''))
 
-- name: Assign gateway IPs to VLAN interfaces
+- name: Re-read VLAN interfaces on the bridge
   community.routeros.command:
     commands:
-      - /ip address add address={{ item.gateway }} interface=vlan{{ item.id }}-{{ item.name }} comment="{{ item.comment }}"
+      - >-
+        /interface vlan print terse
+        where interface={{ mikrotik_bridge }} vlan-id={{ item.id }}
   loop: "{{ vlans }}"
   loop_control:
-    label: "{{ item.gateway }} on vlan{{ item.id }}-{{ item.name }}"
-  when: "item.gateway not in _ip_addresses.stdout[0]"
+    label: "VLAN {{ item.id }}"
+  register: _mikrotik_vlan_interfaces_after_create
+  changed_when: false
+
+- name: Normalize existing VLAN interface names and comments
+  community.routeros.command:
+    commands:
+      - >-
+        /interface vlan set
+        [find where interface={{ mikrotik_bridge }} vlan-id={{ item.item.id }}]
+        name=vlan{{ item.item.id }}-{{ item.item.name }}
+        comment="{{ item.item.comment }}"
+  loop: "{{ _mikrotik_vlan_interfaces_after_create.results }}"
+  loop_control:
+    label: "vlan{{ item.item.id }}-{{ item.item.name }}"
+  when: >-
+    ('name=vlan' ~ (item.item.id | string) ~ '-' ~ item.item.name)
+    not in (item.stdout[0] | regex_replace('[\r\n]', ''))
+
+- name: Read configured VLAN gateway addresses
+  community.routeros.command:
+    commands:
+      - /ip address print terse
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "{{ item.gateway }}"
+  register: _mikrotik_vlan_gateway_addresses
+  changed_when: false
+
+- name: Assign missing VLAN gateway addresses
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address add
+        address={{ item.item.gateway }}
+        interface=vlan{{ item.item.id }}-{{ item.item.name }}
+        comment="{{ item.item.comment }}"
+  loop: "{{ _mikrotik_vlan_gateway_addresses.results }}"
+  loop_control:
+    label: >-
+      {{ item.item.gateway }} on
+      vlan{{ item.item.id }}-{{ item.item.name }}
+  when: >-
+    (item.stdout[0] | regex_replace('[\r\n]', '') |
+    regex_findall('(?:^|\s)address=' ~
+    (item.item.gateway | regex_escape) ~ '(?:\s|$)') |
+    length) == 0
+
+- name: Correct VLAN gateway interface assignments
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address set
+        [find where
+        address~"^{{ item.item.gateway }}$"]
+        interface=vlan{{ item.item.id }}-{{ item.item.name }}
+        comment="{{ item.item.comment }}"
+  loop: "{{ _mikrotik_vlan_gateway_addresses.results }}"
+  loop_control:
+    label: >-
+      {{ item.item.gateway }} on
+      vlan{{ item.item.id }}-{{ item.item.name }}
+  when:
+    - >-
+      (item.stdout[0] | regex_replace('[\r\n]', '') |
+      regex_findall('(?:^|\s)address=' ~
+      (item.item.gateway | regex_escape) ~ '(?:\s|$)') |
+      length) == 1
+    - >-
+      ('interface=vlan' ~ (item.item.id | string) ~ '-' ~ item.item.name)
+      not in (item.stdout[0] | regex_replace('[\r\n]', ''))

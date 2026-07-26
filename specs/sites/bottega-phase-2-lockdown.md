@@ -51,14 +51,21 @@ Interface lists:
 
 Phase 1 and Phase 2 expose nothing on WAN.
 
-Phase 3 is dst-nat / public exposure:
+Phase 3 is VLANs and the R740xd uplink:
+
+- VLANs 10, 20, and 30 become available locally through a tagged `ether5`
+  server trunk.
+- WAN still answers nothing.
+- See `specs/sites/bottega-phase-3-vlans.md`.
+
+Phase 4 is dst-nat / public exposure:
 
 - TCP `443` becomes reachable from WAN.
 - This is a prerouting dst-nat plus forward-chain path to Traefik.
 - It is not an input-chain exception and must not bind a RouterOS local HTTPS
   service.
 
-Phase 4 is WireGuard:
+Phase 5 is WireGuard:
 
 - UDP `61536` becomes reachable from WAN.
 - This is the only router-local WAN input exception.
@@ -96,5 +103,6 @@ External, from outside the LAN/VPN:
 
 Phase-aware later checks:
 
-- [ ] After Phase 3, only TCP `443` is open from WAN.
-- [ ] After Phase 4, only TCP `443` and UDP `61536` are open from WAN.
+- [ ] After Phase 3, TCP `443` and UDP `61536` remain closed/filtered.
+- [ ] After Phase 4, only TCP `443` is open from WAN.
+- [ ] After Phase 5, only TCP `443` and UDP `61536` are open from WAN.

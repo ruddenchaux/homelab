@@ -1,0 +1,77 @@
+---
+- name: Revalidate the bridge VLAN table
+  ansible.builtin.include_tasks: validate-bridge-table.yml
+
+- name: Read final bridge and VLAN-interface state
+  community.routeros.command:
+    commands:
+      - /interface bridge print terse where name={{ mikrotik_bridge }}
+      - >-
+        /interface list member print terse
+        where list={{ mikrotik_lan_list }}
+      - >-
+        /interface list member print terse
+        where list={{ mikrotik_wan_list }}
+  register: _mikrotik_vlan_final_base_validation
+  changed_when: false
+
+- name: Read final VLAN interface and gateway state
+  community.routeros.command:
+    commands:
+      - >-
+        /interface vlan print terse
+        where name=vlan{{ item.id }}-{{ item.name }}
+      - /ip address print terse
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  register: _mikrotik_vlan_final_item_validation
+  changed_when: false
+
+- name: Assert bridge filtering and VLAN interface state
+  ansible.builtin.assert:
+    that:
+      - >-
+        'vlan-filtering=yes' in
+        (_mikrotik_vlan_final_base_validation.stdout[0] |
+        regex_replace('[\r\n]', ''))
+      - >-
+        ('interface=vlan' ~ (item.item.id | string) ~ '-' ~ item.item.name)
+        in (item.stdout[1] | regex_replace('[\r\n]', ''))
+      - >-
+        (item.stdout[1] | regex_replace('[\r\n]', '') |
+        regex_findall('(?:^|\s)address=' ~
+        (item.item.gateway | regex_escape) ~ '(?:\s|$)') |
+        length) == 1
+      - >-
+        _mikrotik_vlan_final_base_validation.stdout[1]
+        is search('(?:^|\s)interface=vlan' ~
+        (item.item.id | string) ~ '-' ~ item.item.name ~ '(?:\s|$)')
+      - >-
+        _mikrotik_vlan_final_base_validation.stdout[2]
+        is not search('(?:^|\s)interface=vlan' ~
+        (item.item.id | string) ~ '-' ~ item.item.name ~ '(?:\s|$)')
+      - >-
+        ('interface=' ~ mikrotik_bridge)
+        in (item.stdout[0] | regex_replace('[\r\n]', ''))
+      - >-
+        ('vlan-id=' ~ (item.item.id | string))
+        in (item.stdout[0] | regex_replace('[\r\n]', ''))
+    quiet: true
+    fail_msg: >-
+      VLAN {{ item.item.id }} interface, gateway, or interface-list membership
+      failed strict readback.
+  loop: "{{ _mikrotik_vlan_final_item_validation.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+- name: Assert no interface belongs to both LAN and WAN
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_mikrotik_vlan_final_base_validation.stdout[1] |
+        regex_findall('interface=([^\s]+)') |
+        intersect(_mikrotik_vlan_final_base_validation.stdout[2] |
+        regex_findall('interface=([^\s]+)')) | length) == 0
+    quiet: true
+    fail_msg: "At least one RouterOS interface belongs to both LAN and WAN."

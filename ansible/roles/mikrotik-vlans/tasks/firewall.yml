@@ -1,17 +1,42 @@
 ---
-# Add VLAN interfaces to LAN interface list so default firewall rules apply
-
-- name: Check current LAN interface list members
+- name: Read VLAN interface-list membership
   community.routeros.command:
     commands:
-      - /interface list member print where list=LAN
-  register: _lan_members
-
-- name: Add VLAN interfaces to LAN interface list
-  community.routeros.command:
-    commands:
-      - /interface list member add interface=vlan{{ item.id }}-{{ item.name }} list=LAN comment="{{ item.comment }}"
+      - >-
+        /interface list member print count-only
+        where list={{ mikrotik_lan_list }}
+        interface=vlan{{ item.id }}-{{ item.name }}
+      - >-
+        /interface list member print count-only
+        where list={{ mikrotik_wan_list }}
+        interface=vlan{{ item.id }}-{{ item.name }}
   loop: "{{ vlans }}"
   loop_control:
-    label: "vlan{{ item.id }}-{{ item.name }} -> LAN list"
-  when: "('vlan' ~ item.id | string ~ '-' ~ item.name) not in _lan_members.stdout[0]"
+    label: "vlan{{ item.id }}-{{ item.name }}"
+  register: _mikrotik_vlan_list_membership
+  changed_when: false
+
+- name: Remove VLAN interfaces from the WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list={{ mikrotik_wan_list }}
+        interface=vlan{{ item.item.id }}-{{ item.item.name }}]
+  loop: "{{ _mikrotik_vlan_list_membership.results }}"
+  loop_control:
+    label: "vlan{{ item.item.id }}-{{ item.item.name }} from WAN"
+  when: "(item.stdout_lines[1] | last | trim | int) > 0"
+
+- name: Add VLAN interfaces to the LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member add
+        list={{ mikrotik_lan_list }}
+        interface=vlan{{ item.item.id }}-{{ item.item.name }}
+        comment="{{ item.item.comment }}"
+  loop: "{{ _mikrotik_vlan_list_membership.results }}"
+  loop_control:
+    label: "vlan{{ item.item.id }}-{{ item.item.name }} to LAN"
+  when: "(item.stdout_lines[0] | last | trim | int) == 0"

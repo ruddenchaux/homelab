@@ -1,0 +1,150 @@
+---
+- name: Validate MikroTik VLAN variables
+  ansible.builtin.assert:
+    that:
+      - mikrotik_bridge | length > 0
+      - mikrotik_trunk_port | length > 0
+      - mikrotik_trunk_port != mikrotik_bridge
+      - vlans | length > 0
+      - vlans | map(attribute='id') | list | unique | length == vlans | length
+      - 1 not in (vlans | map(attribute='id') | list)
+      - >-
+        vlans | map(attribute='name') | list | unique | length ==
+        vlans | length
+      - >-
+        mikrotik_required_untagged_management_ports |
+        difference([mikrotik_trunk_port]) | length ==
+        mikrotik_required_untagged_management_ports | length
+    quiet: true
+    fail_msg: >-
+      VLAN IDs and names must be unique, VLAN 1 is reserved for untagged
+      management, and the trunk cannot also be an untagged management port.
+
+- name: Read required RouterOS objects
+  community.routeros.command:
+    commands:
+      - /interface bridge print count-only where name={{ mikrotik_bridge }}
+      - /interface print count-only where name={{ mikrotik_trunk_port }}
+      - >-
+        /interface bridge port print terse
+        where bridge={{ mikrotik_bridge }}
+      - /interface list print count-only where name={{ mikrotik_lan_list }}
+      - /interface list print count-only where name={{ mikrotik_wan_list }}
+      - >-
+        /interface list member print terse
+        where list={{ mikrotik_wan_list }}
+  register: _mikrotik_vlan_preflight
+  changed_when: false
+
+- name: Derive existing untagged management ports
+  ansible.builtin.set_fact:
+    _mikrotik_bridge_vlan_cpu_port: "{{ mikrotik_bridge }}"
+    _mikrotik_bridge_ports: >-
+      {{ _mikrotik_vlan_preflight.stdout[2] |
+      regex_findall('interface=([^\s]+)') | unique | list }}
+    _mikrotik_untagged_management_ports: >-
+      {{ _mikrotik_vlan_preflight.stdout[2] |
+      regex_findall('interface=([^\s]+)') | unique | list |
+      difference([mikrotik_trunk_port]) }}
+    _mikrotik_wan_interfaces: >-
+      {{ _mikrotik_vlan_preflight.stdout[5] |
+      regex_findall('interface=([^\s]+)') | unique | list }}
+
+- name: Require the bridge, lists, trunk, and recovery ports
+  ansible.builtin.assert:
+    that:
+      - "(_mikrotik_vlan_preflight.stdout_lines[0] | last | trim | int) == 1"
+      - "(_mikrotik_vlan_preflight.stdout_lines[1] | last | trim | int) == 1"
+      - "(_mikrotik_vlan_preflight.stdout_lines[3] | last | trim | int) == 1"
+      - "(_mikrotik_vlan_preflight.stdout_lines[4] | last | trim | int) == 1"
+      - mikrotik_trunk_port in _mikrotik_bridge_ports
+      - >-
+        _mikrotik_bridge_ports |
+        intersect(_mikrotik_wan_interfaces) | length == 0
+      - >-
+        mikrotik_required_untagged_management_ports |
+        difference(_mikrotik_untagged_management_ports) | length == 0
+    quiet: true
+    fail_msg: >-
+      The expected bridge, interface lists, trunk bridge port, or untagged
+      management recovery ports are missing, or a bridge port belongs to WAN.
+      No VLAN changes were made.
+
+- name: Read untagged management bridge-port state
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge port print terse
+        where bridge={{ mikrotik_bridge }} interface={{ item }}
+  loop: "{{ _mikrotik_untagged_management_ports }}"
+  loop_control:
+    label: "{{ item }}"
+  register: _mikrotik_management_bridge_ports
+  changed_when: false
+
+- name: Require VLAN 1 PVID on untagged management ports
+  ansible.builtin.assert:
+    that:
+      - >-
+        'pvid=1' in
+        (item.stdout[0] | regex_replace('[\r\n]', ''))
+      - >-
+        'frame-types=admit-only-vlan-tagged'
+        not in (item.stdout[0] | regex_replace('[\r\n]', ''))
+    quiet: true
+    fail_msg: >-
+      Bridge port {{ item.item }} is not an untagged VLAN 1 management port.
+      Correct its PVID/frame policy before applying this role.
+  loop: "{{ _mikrotik_management_bridge_ports.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check for ambiguous VLAN interfaces
+  community.routeros.command:
+    commands:
+      - >-
+        /interface vlan print count-only
+        where interface={{ mikrotik_bridge }} vlan-id={{ item.id }}
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  register: _mikrotik_vlan_interface_counts
+  changed_when: false
+
+- name: Reject duplicate VLAN interfaces
+  ansible.builtin.assert:
+    that:
+      - "(item.stdout_lines[0] | last | trim | int) <= 1"
+    quiet: true
+    fail_msg: >-
+      VLAN {{ item.item.id }} has multiple interfaces on
+      {{ mikrotik_bridge }}. Resolve the ambiguity before applying this role.
+  loop: "{{ _mikrotik_vlan_interface_counts.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+- name: Check for ambiguous VLAN gateway addresses
+  community.routeros.command:
+    commands:
+      - /ip address print terse
+  loop: "{{ vlans }}"
+  loop_control:
+    label: "{{ item.gateway }}"
+  register: _mikrotik_vlan_gateway_counts
+  changed_when: false
+
+- name: Reject duplicate VLAN gateway addresses
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item.stdout[0] | regex_replace('[\r\n]', '') |
+        regex_findall('(?:^|\s)address=' ~
+        (item.item.gateway | regex_escape) ~ '(?:\s|$)') |
+        length) <= 1
+    quiet: true
+    fail_msg: >-
+      Gateway {{ item.item.gateway }} exists more than once. Resolve the
+      ambiguity before applying this role.
+  loop: "{{ _mikrotik_vlan_gateway_counts.results }}"
+  loop_control:
+    label: "{{ item.item.gateway }}"

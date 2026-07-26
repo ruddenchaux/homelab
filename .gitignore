@@ -30,3 +30,4 @@ downloaded_iso_path/
 # OS files
 .DS_Store
 Thumbs.db
+.tokensave

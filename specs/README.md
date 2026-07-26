@@ -46,6 +46,8 @@ running infrastructure
 - `sites/bottega.md`, `sites/casa.md` — per-site role and constraints.
 - `sites/bottega-phase-2-lockdown.md` — phase-specific WAN-up/no-WAN-answer
   guardrails for Bottega.
+- `sites/bottega-phase-3-vlans.md` — Bottega VLAN provisioning, tagged R740xd
+  uplink, safe application, and power-on checkpoint.
 - `services/_template.md` — template for specifying a newly-exposed service.
 - `observability/external-checks.md` — health checks that must run from
   outside the network.

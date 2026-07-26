@@ -1,6 +1,12 @@
 ---
 mikrotik_bridge: bridge
 mikrotik_trunk_port: ether6
+mikrotik_lan_list: LAN
+mikrotik_wan_list: WAN
+
+# All existing bridge ports except the trunk remain untagged members of VLAN 1.
+# Site-specific playbooks can require a known-safe subset before any mutation.
+mikrotik_required_untagged_management_ports: []
 
 vlans:
   - id: 10

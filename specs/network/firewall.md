@@ -7,9 +7,10 @@ safe-mode-aware, and router management interfaces must never be exposed to WAN.
 
 > **Phasing**: the tables below are the **end state**. Bottega's router starts
 > from the base lockdown in `specs/sites/bottega.md`, where WAN answers nothing
-> at all. TCP `443` opens with the dst-nat task, and UDP `61536` opens later
-> with the WireGuard task. A port scan showing nothing open before those tasks
-> land is the *correct* result — see the phase table in `sites/bottega.md`.
+> at all. Phase 3 adds only local VLANs and keeps WAN closed. TCP `443` opens
+> with the Phase 4 dst-nat task, and UDP `61536` opens with the Phase 5
+> WireGuard task. A port scan showing nothing open through Phase 3 is the
+> *correct* result — see the phase table in `sites/bottega.md`.
 
 Input (traffic destined for the router itself):
 

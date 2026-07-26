@@ -58,19 +58,20 @@ interfaces join the LAN bridge at `192.168.88.1/24`.
 | Port | Role | Notes |
 |---|---|---|
 | Ethernet1 | **WAN** | PPPoE to Flynet, static public IP. Keeps the factory WAN role — no re-cabling of the default. Bring-up is a separate task |
-| Ethernet5 | **R740xd uplink** | Kubernetes VLAN 30 — see `specs/network/topology.md` for addressing. 2.5G copper |
-| Ethernet2–4 | **LAN / trunk + management** | VLAN trunk and management access. VLAN design is a separate task |
+| Ethernet5 | **R740xd tagged trunk** | Tagged VLANs 10, 20, and 30 to BCM5720 `nic0`/port 3. Initial production link is 1 Gbps; see `bottega-phase-3-vlans.md` |
+| Ethernet2–4 | **Untagged LAN / management** | Preserve VLAN 1 at `192.168.88.0/24` for local management and recovery |
 
-`ether5` for the server is a labelling convention only — farthest port from
-WAN, so a mis-cabled uplink is visibly wrong. Free to change before the build;
-once chosen, cabling, labels, and Ansible must agree.
+`ether5` for the server is decided and implemented by
+`ansible/playbooks/bottega-phase-3-vlans.yml`. It is the farthest port from WAN,
+so a mis-cabled uplink is visibly wrong. Cabling, labels, and Ansible must
+continue to agree.
 
 - `TODO(fact):` confirm the literal RouterOS interface names with
   `/interface ethernet print` on first boot. The manual says "Ethernet1" in
   prose but never prints the interface-name strings; `ether1`…`ether5` is
-  MikroTik convention, not a documented fact for this model. Everything below
-  is written against `ether1`…`ether5` and must be re-checked before it
-  becomes Ansible.
+  MikroTik convention, not a documented fact for this model. The Phase 3
+  preflight requires `ether5` to exist as a bridge port, but the operator must
+  still confirm the literal names on the router before applying it.
 - `TODO(fact):` confirm which physical port is PoE-in. Retail spec sheets say
   Port 1; the official manual gives only "PoE-in 24–57 V, 802.3af/at" without
   naming the port. Non-blocking — the router is powered from the DC jack.
@@ -199,13 +200,14 @@ phases of the same router.
 |---|---|---|
 | 1 | Base lockdown (this spec) | nothing |
 | 2 | PPPoE / WAN bring-up | nothing — link comes up, lockdown holds; PPPoE interface joins the `WAN` list |
-| 3 | dst-nat / public exposure | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
-| 4 | WireGuard | + UDP `61536`, an input-chain accept inserted before the final drop |
+| 3 | VLANs and R740xd uplink | nothing — VLANs 10/20/30 are local; no WAN rule changes |
+| 4 | dst-nat / public TCP `443` | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
+| 5 | WireGuard UDP `61536` | + UDP `61536`, an input-chain accept inserted before the final drop |
 
 The acceptance script must be phase-aware: "nothing answers on WAN" is the
-correct result at phases 1–2, relaxing to "only TCP `443`" at phase 3 and
-"only TCP `443` + UDP `61536`" at phase 4. A scan showing nothing open before
-phase 3 is a pass, not a regression.
+correct result at phases 1–3, relaxing to "only TCP `443`" at phase 4 and
+"only TCP `443` + UDP `61536`" at phase 5. A scan showing nothing open before
+phase 4 is a pass, not a regression.
 
 ## Deferred (noted, not decided here)
 
@@ -213,12 +215,7 @@ phase 3 is a pass, not a regression.
   `10.10.0.0/24`** — belongs to the VLAN task, once VLAN 10 exists at Bottega.
   Until then `192.168.88.0/24` is the only LAN that exists.
 - **Wi-Fi** — SSIDs, bands, VLAN mapping, guest isolation. Nothing designed.
-- **Proxmox management over the server link** — `ether5` is spec'd as the
-  kubernetes-VLAN uplink, but Proxmox's own management lives on VLAN 10.
-  Whether that single physical link is an access port or a tagged trunk
-  carrying 10/20/30 (as `ether6` does on the L009 today) is a VLAN-task
-  decision.
-- PPPoE/WAN bring-up, VLANs, dst-nat, WireGuard — separate tasks.
+- dst-nat and WireGuard — Phases 4 and 5, separate tasks.
 
 ## Move logistics
 
@@ -253,7 +250,7 @@ and proves nothing about what the internet sees.
       is refused, while `ssh admin@192.168.88.1` with the key succeeds.
 - [ ] `nc -z -w2 192.168.88.1 22` and `nc -z -w2 192.168.88.1 8291` both
       succeed — the operator is not locked out.
-- [ ] From a laptop cabled to `ether2`–`ether5` with **no IP configured**,
+- [ ] From a laptop cabled to `ether2`–`ether4` with **no IP configured**,
       WinBox in MAC mode discovers and connects — the layer-2 escape hatch
       works.
 
@@ -265,8 +262,9 @@ being up, i.e. runnable after the PPPoE task, not at the end of this one.
 
 - [ ] `nmap -Pn -p 22,80,443,8291 145.11.24.43` — none open.
 - [ ] `nmap -Pn -p 8728,8729 145.11.24.43` — neither open.
-- [ ] Phase-aware re-runs: after phase 3, only TCP `443` is open and UDP
-      `61536` is still closed/filtered; after phase 4, only TCP `443` + UDP
+- [ ] Phase-aware re-runs: after phase 3, TCP `443` and UDP `61536` remain
+      closed/filtered; after phase 4, only TCP `443` is open; after phase 5,
+      only TCP `443` + UDP
       `61536` are open.
 
 ### Move / hub
