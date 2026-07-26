@@ -10,6 +10,8 @@ bottega_mikrotik_wan_interface: ether1
 bottega_mikrotik_lan_interface: bridge
 bottega_mikrotik_wan_list: WAN
 bottega_mikrotik_lan_list: LAN
+bottega_mikrotik_phase2_wan_interfaces:
+  - pppoe-out1
 
 bottega_mikrotik_enabled_services:
   - www
@@ -22,3 +24,6 @@ bottega_mikrotik_disabled_services:
   - api
   - api-ssl
   - www-ssl
+
+bottega_mikrotik_optional_disabled_services:
+  - reverse-proxy

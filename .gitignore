@@ -25,6 +25,7 @@ downloaded_iso_path/
 *~
 .vscode/
 .idea/
+.claude/settings.local.json
 
 # OS files
 .DS_Store

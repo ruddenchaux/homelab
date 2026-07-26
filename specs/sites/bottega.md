@@ -143,9 +143,11 @@ notes live in `ansible/roles/mikrotik-bottega-base-lockdown/README.md`.
 
 - `www`, `ssh`, `winbox` → `address=192.168.88.0/24`
 - `telnet`, `ftp`, `api`, `api-ssl`, `www-ssl` → disabled
+- RouterOS `reverse-proxy`, if present → disabled
 
-Disabling `www-ssl` also leaves the router's own TCP `443` unbound, so the
-later dst-nat task never has to reason about a local service on that port.
+Disabling `www-ssl` and `reverse-proxy` also leaves the router's own TCP `443`
+unbound, so the later dst-nat task never has to reason about a local service on
+that port.
 
 ### Input chain
 
@@ -197,13 +199,13 @@ phases of the same router.
 |---|---|---|
 | 1 | Base lockdown (this spec) | nothing |
 | 2 | PPPoE / WAN bring-up | nothing — link comes up, lockdown holds; PPPoE interface joins the `WAN` list |
-| 3 | WireGuard | + UDP `61536`, an input-chain accept inserted before the final drop |
-| 4 | dst-nat / public exposure | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
+| 3 | dst-nat / public exposure | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
+| 4 | WireGuard | + UDP `61536`, an input-chain accept inserted before the final drop |
 
 The acceptance script must be phase-aware: "nothing answers on WAN" is the
-correct result at phases 1–2, relaxing to "only `61536`" at phase 3 and
-"only `61536` + `443`" at phase 4. A scan showing nothing open before phase 3
-is a pass, not a regression.
+correct result at phases 1–2, relaxing to "only TCP `443`" at phase 3 and
+"only TCP `443` + UDP `61536`" at phase 4. A scan showing nothing open before
+phase 3 is a pass, not a regression.
 
 ## Deferred (noted, not decided here)
 
@@ -216,7 +218,7 @@ is a pass, not a regression.
   Whether that single physical link is an access port or a tagged trunk
   carrying 10/20/30 (as `ether6` does on the L009 today) is a VLAN-task
   decision.
-- PPPoE/WAN bring-up, VLANs, WireGuard, dst-nat — separate tasks.
+- PPPoE/WAN bring-up, VLANs, dst-nat, WireGuard — separate tasks.
 
 ## Move logistics
 
@@ -236,7 +238,8 @@ and proves nothing about what the internet sees.
 
 - [ ] `/ip service print` shows `www`, `ssh`, `winbox` with
       `address=192.168.88.0/24`, and `telnet`, `ftp`, `api`, `api-ssl`,
-      `www-ssl` all flagged `X` (disabled).
+      `www-ssl`, plus `reverse-proxy` if present, all flagged `X`
+      (disabled).
 - [ ] `/ip firewall filter print chain=input` returns exactly the four rules
       above, in that order, with `drop in-interface-list=WAN` last.
 - [ ] `/interface list member print` shows `ether1` in `WAN`, `bridge` in
@@ -262,8 +265,9 @@ being up, i.e. runnable after the PPPoE task, not at the end of this one.
 
 - [ ] `nmap -Pn -p 22,80,443,8291 145.11.24.43` — none open.
 - [ ] `nmap -Pn -p 8728,8729 145.11.24.43` — neither open.
-- [ ] Phase-aware re-runs: after phase 3, only UDP `61536` open
-      (`nmap -Pn -sU -p 61536`); after phase 4, only `61536` + TCP `443`.
+- [ ] Phase-aware re-runs: after phase 3, only TCP `443` is open and UDP
+      `61536` is still closed/filtered; after phase 4, only TCP `443` + UDP
+      `61536` are open.
 
 ### Move / hub
 

@@ -1,7 +1,8 @@
 ---
-# Implements specs/sites/bottega.md phase 1 only: base management lockdown for
-# a freshly installed MikroTik hAP be3 Media on the default 192.168.88.0/24 LAN.
-# External WAN checks are intentionally gated on the later PPPoE bring-up task.
+# Implements specs/sites/bottega.md phase 1 base management lockdown for a
+# freshly installed MikroTik hAP be3 Media on the default 192.168.88.0/24 LAN.
+# On reruns after phase 2 PPPoE bring-up, it also keeps the PPPoE interface in
+# the WAN list so the base lockdown remains effective on the live WAN.
 - name: Apply Bottega MikroTik phase 1 base lockdown
   hosts: mikrotik
   gather_facts: false

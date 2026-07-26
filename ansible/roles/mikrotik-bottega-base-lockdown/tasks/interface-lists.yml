@@ -89,6 +89,71 @@
         comment="Bottega phase 1 WAN"
   when: "bottega_mikrotik_wan_interface not in _bottega_wan_member.stdout[0]"
 
+- name: Check Bottega phase 2 WAN interfaces
+  community.routeros.command:
+    commands:
+      - /interface print count-only where name={{ item }}
+  loop: "{{ bottega_mikrotik_phase2_wan_interfaces }}"
+  register: _bottega_phase2_wan_interface_checks
+  changed_when: false
+
+- name: Check Bottega phase 2 WAN interfaces are not in the LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_mikrotik_lan_list }}
+        interface={{ item.item }}
+  loop: "{{ _bottega_phase2_wan_interface_checks.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: _bottega_phase2_wan_interfaces_in_lan
+  changed_when: false
+  when: "(item.stdout_lines[0] | last | trim | int) > 0"
+
+- name: Remove Bottega phase 2 WAN interfaces from the LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list={{ bottega_mikrotik_lan_list }}
+        interface={{ item.item.item }}]
+  loop: "{{ _bottega_phase2_wan_interfaces_in_lan.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item | default(item.item) }}"
+  when:
+    - not item.skipped | default(false)
+    - "(item.stdout_lines[0] | last | trim | int) > 0"
+
+- name: Check Bottega phase 2 WAN list members
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_mikrotik_wan_list }}
+        interface={{ item.item }}
+  loop: "{{ _bottega_phase2_wan_interface_checks.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: _bottega_phase2_wan_members
+  changed_when: false
+  when: "(item.stdout_lines[0] | last | trim | int) > 0"
+
+- name: Add Bottega phase 2 WAN interfaces to the WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member add
+        list={{ bottega_mikrotik_wan_list }}
+        interface={{ item.item.item }}
+        comment="Bottega phase 2 WAN"
+  loop: "{{ _bottega_phase2_wan_members.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item | default(item.item) }}"
+  when:
+    - not item.skipped | default(false)
+    - "(item.stdout_lines[0] | last | trim | int) == 0"
+
 - name: Check Bottega LAN member bridge
   community.routeros.command:
     commands:

@@ -7,9 +7,9 @@ safe-mode-aware, and router management interfaces must never be exposed to WAN.
 
 > **Phasing**: the tables below are the **end state**. Bottega's router starts
 > from the base lockdown in `specs/sites/bottega.md`, where WAN answers nothing
-> at all. `61536` opens with the WireGuard task and `443` with the dst-nat
-> task. A port scan showing nothing open before those tasks land is the
-> *correct* result — see the phase table in `sites/bottega.md`.
+> at all. TCP `443` opens with the dst-nat task, and UDP `61536` opens later
+> with the WireGuard task. A port scan showing nothing open before those tasks
+> land is the *correct* result — see the phase table in `sites/bottega.md`.
 
 Input (traffic destined for the router itself):
 
@@ -51,8 +51,9 @@ Forward (traffic passing through the router):
 - [ ] Neither router's management service (WinBox/WebFig/API/SSH) answers on
       its WAN-facing interface — verified by a connection attempt from outside
       the LAN/VPN (e.g. `nmap` from a host that is not on LAN/VPN).
-- [ ] Bottega's only WAN-inbound accepted services are WireGuard UDP `61536`
-      and TCP `443` — an external port scan against Bottega's static IP shows
+- [ ] Bottega's only WAN-inbound accepted services are TCP `443` and
+      WireGuard UDP `61536` — an external port scan against Bottega's static
+      IP shows
       nothing else answering, notably not TCP `80`.
 - [ ] Traffic from Casa's WireGuard peer can reach exactly the Bottega subnets
       listed in its `AllowedIPs` row in `wireguard.md`, and nothing else.

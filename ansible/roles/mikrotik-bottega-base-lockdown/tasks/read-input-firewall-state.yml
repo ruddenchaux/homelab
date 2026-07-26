@@ -1,0 +1,120 @@
+---
+- name: Check Bottega phase 1 input firewall rule count
+  community.routeros.command:
+    commands:
+      - /ip firewall filter print count-only where chain=input
+  register: _bottega_input_firewall_count
+  changed_when: false
+
+- name: Read Bottega phase 1 input firewall rule properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        disabled])
+      - >-
+        :put ("comment=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        comment])
+      - >-
+        :put ("action=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        action])
+      - >-
+        :put ("connection-state=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        connection-state])
+      - >-
+        :put ("in-interface-list=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        in-interface-list])
+      - >-
+        :put ("protocol=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        protocol])
+      - >-
+        :put ("src-address=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        src-address])
+      - >-
+        :put ("dst-address=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        dst-address])
+      - >-
+        :put ("dst-port=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=input] {{ item }}]
+        dst-port])
+  loop: "{{ range(0, 4) | list }}"
+  register: _bottega_input_firewall_properties
+  changed_when: false
+  when: >-
+    (_bottega_input_firewall_count.stdout_lines[0] | last | trim | int) == 4
+
+- name: Record Bottega phase 1 input firewall rule readback
+  ansible.builtin.set_fact:
+    _bottega_input_rule_0: >-
+      {{ (_props[0].stdout_lines | map('last') | map('trim') | list)
+      if (_props | length) > 0 else [] }}
+    _bottega_input_rule_1: >-
+      {{ (_props[1].stdout_lines | map('last') | map('trim') | list)
+      if (_props | length) > 1 else [] }}
+    _bottega_input_rule_2: >-
+      {{ (_props[2].stdout_lines | map('last') | map('trim') | list)
+      if (_props | length) > 2 else [] }}
+    _bottega_input_rule_3: >-
+      {{ (_props[3].stdout_lines | map('last') | map('trim') | list)
+      if (_props | length) > 3 else [] }}
+  vars:
+    _props: "{{ _bottega_input_firewall_properties.results | default([]) }}"
+
+- name: Record Bottega phase 1 input firewall compliance
+  ansible.builtin.set_fact:
+    _bottega_input_firewall_ok: >-
+      {{ ((_bottega_input_firewall_count.stdout_lines[0] |
+      last | trim | int) == 4)
+      and (_bottega_input_rule_0 == _expected_rule_0)
+      and (_bottega_input_rule_1 == _expected_rule_1)
+      and (_bottega_input_rule_2 == _expected_rule_2)
+      and (_bottega_input_rule_3 == _expected_rule_3) }}
+  vars:
+    _expected_rule_0:
+      - disabled=false
+      - comment=Bottega phase 1 input 01 established-related
+      - action=accept
+      - connection-state=established,related
+      - in-interface-list=
+      - protocol=
+      - src-address=
+      - dst-address=
+      - dst-port=
+    _expected_rule_1:
+      - disabled=false
+      - comment=Bottega phase 1 input 02 drop-invalid
+      - action=drop
+      - connection-state=invalid
+      - in-interface-list=
+      - protocol=
+      - src-address=
+      - dst-address=
+      - dst-port=
+    _expected_rule_2:
+      - disabled=false
+      - comment=Bottega phase 1 input 03 accept-not-WAN
+      - action=accept
+      - connection-state=
+      - "in-interface-list=!{{ bottega_mikrotik_wan_list }}"
+      - protocol=
+      - src-address=
+      - dst-address=
+      - dst-port=
+    _expected_rule_3:
+      - disabled=false
+      - comment=Bottega phase 1 input 04 drop-WAN
+      - action=drop
+      - connection-state=
+      - "in-interface-list={{ bottega_mikrotik_wan_list }}"
+      - protocol=
+      - src-address=
+      - dst-address=
+      - dst-port=

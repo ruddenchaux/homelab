@@ -11,17 +11,22 @@ ansible-playbook playbooks/bottega-base-lockdown.yml
 
 ## Scope
 
-This role implements only Bottega phase 1:
+This role implements Bottega phase 1 and preserves the phase 2 WAN boundary on
+reruns after PPPoE exists:
 
 - RouterOS management services limited to the factory LAN.
+- RouterOS HTTPS listeners disabled until the later public-exposure phase.
 - WAN/LAN interface-list baseline.
+- Existing phase 2 PPPoE WAN interfaces kept in `WAN`, not `LAN`.
 - Four-rule input firewall baseline.
 - LAN-scoped MAC recovery.
 - Admin SSH key import and SSH password-auth disablement.
 - Bottega-specific SOPS recovery password for WinBox/console recovery.
 
 It intentionally does not configure PPPoE, VLANs, WireGuard, dst-nat, Wi-Fi,
-service exposure, or topology/addressing changes.
+service exposure, or topology/addressing changes. The PPPoE task still owns
+creating and enabling `pppoe-out1`; this role only treats that interface as
+WAN when it already exists.
 
 ## Spec Link
 
@@ -76,8 +81,10 @@ Router validation is built into `tasks/validate.yml` and checks:
 
 - `www`, `ssh`, and `winbox` are limited to `192.168.88.0/24`.
 - `telnet`, `ftp`, `api`, `api-ssl`, and `www-ssl` are disabled.
+- If RouterOS exposes `reverse-proxy`, it is disabled.
 - Input firewall has exactly the four phase-1 rules in spec order.
 - `WAN` contains `ether1`, `LAN` contains `bridge`, with no overlap.
+- If `pppoe-out1` exists, it is a member of `WAN` and not `LAN`.
 - MAC server, MAC WinBox, and neighbor discovery are LAN-scoped.
 - Admin SSH key exists and SSH password auth is disabled.
 - SSH port `22` and WinBox port `8291` are reachable from the internal

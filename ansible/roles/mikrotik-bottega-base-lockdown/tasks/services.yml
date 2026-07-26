@@ -37,3 +37,22 @@
   loop_control:
     label: "{{ item.item }}"
   when: "item.stdout[0] is not search('(^|\\s)X\\s+name=')"
+
+- name: Check optional Bottega disabled RouterOS services
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name={{ item }}
+  loop: "{{ bottega_mikrotik_optional_disabled_services }}"
+  register: _bottega_optional_disabled_services
+  changed_when: false
+
+- name: Disable optional Bottega RouterOS services when present
+  community.routeros.command:
+    commands:
+      - /ip service set [find where name="{{ item.item }}"] disabled=yes
+  loop: "{{ _bottega_optional_disabled_services.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - "'name=' ~ item.item in item.stdout[0]"
+    - "item.stdout[0] is not search('(^|\\s)X\\s+name=')"
