@@ -1,0 +1,93 @@
+---
+- name: Add the restricted Bottega phase 4 forward rule
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter add
+        chain=forward
+        action=accept
+        connection-nat-state=dstnat
+        in-interface-list={{ bottega_phase4_wan_list }}
+        protocol=tcp
+        dst-address={{ bottega_phase4_traefik_address }}
+        dst-port={{ bottega_phase4_public_port }}
+        comment="{{ bottega_phase4_forward_comment }}"
+  when: >-
+    (bottega_phase4_owned_rule_counts.stdout_lines[0] |
+    last | trim | int) == 0
+
+- name: Read Bottega phase 4 forward-rule order
+  ansible.builtin.include_tasks: read-forward-order.yml
+
+- name: Place the owned HTTPS forward rule before the WAN drop
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter move
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        {{ bottega_phase4_first_wan_forward_drop_id }}
+  when:
+    - (bottega_phase4_wan_forward_drop_count | int) > 0
+    - not (bottega_phase4_forward_before_first_wan_drop | bool)
+
+- name: Add Bottega phase 4 HTTPS dst-nat after the forward rule
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall nat add
+        chain=dstnat
+        action=dst-nat
+        in-interface-list={{ bottega_phase4_wan_list }}
+        protocol=tcp
+        dst-port={{ bottega_phase4_public_port }}
+        to-addresses={{ bottega_phase4_traefik_address }}
+        to-ports={{ bottega_phase4_traefik_port }}
+        comment="{{ bottega_phase4_nat_comment }}"
+  when: >-
+    (bottega_phase4_owned_rule_counts.stdout_lines[1] |
+    last | trim | int) == 0
+
+- name: Read Bottega phase 4 split DNS state
+  ansible.builtin.include_tasks: read-split-dns.yml
+
+- name: Enable RouterOS DNS access for LAN split DNS
+  community.routeros.command:
+    commands:
+      - /ip dns set allow-remote-requests=yes
+  changed_when: false
+
+- name: Add the Bottega split-DNS static record
+  community.routeros.command:
+    commands:
+      - >-
+        /ip dns static add
+        name={{ bottega_phase4_split_dns_domain }}
+        type=A
+        address={{ bottega_phase4_split_dns_address }}
+        ttl={{ bottega_phase4_split_dns_ttl }}
+        match-subdomain=yes
+        comment="{{ bottega_phase4_split_dns_comment }}"
+  when: >-
+    (bottega_phase4_split_dns_rule_count | int) == 0
+
+- name: Normalize the Bottega split-DNS static record
+  community.routeros.command:
+    commands:
+      - >-
+        /ip dns static set
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        name={{ bottega_phase4_split_dns_domain }}
+        type=A
+        address={{ bottega_phase4_split_dns_address }}
+        ttl={{ bottega_phase4_split_dns_ttl }}
+        match-subdomain=yes
+  when:
+    - (bottega_phase4_split_dns_rule_count | int) == 1
+    - not (bottega_phase4_split_dns_rule_ok | bool)
+
+- name: Remove the legacy temporary Jellyfin split-DNS rule
+  community.routeros.command:
+    commands:
+      - /ip dns static remove [find where comment="temporary-phase4-split-dns"]
+  when: >-
+    (bottega_phase4_legacy_split_dns_rule_count | int) > 0

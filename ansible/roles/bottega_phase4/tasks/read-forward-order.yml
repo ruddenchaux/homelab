@@ -1,0 +1,72 @@
+---
+- name: Count Bottega forward-chain rules
+  community.routeros.command:
+    commands:
+      - /ip firewall filter print count-only where chain=forward
+  register: bottega_phase4_forward_rule_count
+  changed_when: false
+
+- name: Read Bottega forward-chain ordering properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("id=" .
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}])
+      - >-
+        :put ("disabled=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        disabled])
+      - >-
+        :put ("comment=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        comment])
+      - >-
+        :put ("action=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        action])
+      - >-
+        :put ("in-interface-list=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        in-interface-list])
+  loop: >-
+    {{ range(0, bottega_phase4_forward_rule_count.stdout_lines[0] |
+    last | trim | int) | list }}
+  loop_control:
+    label: "forward rule {{ item }}"
+  register: bottega_phase4_forward_rule_properties
+  changed_when: false
+
+- name: Initialize Bottega forward-chain order readback
+  ansible.builtin.set_fact:
+    bottega_phase4_seen_owned_forward: false
+    bottega_phase4_forward_before_first_wan_drop: false
+    bottega_phase4_wan_forward_drop_count: 0
+    bottega_phase4_first_wan_forward_drop_id: ""
+
+- name: Derive Bottega forward-rule placement
+  ansible.builtin.set_fact:
+    bottega_phase4_forward_before_first_wan_drop: >-
+      {{ bottega_phase4_forward_before_first_wan_drop or
+      (_is_wan_drop and bottega_phase4_seen_owned_forward) }}
+    bottega_phase4_wan_forward_drop_count: >-
+      {{ (bottega_phase4_wan_forward_drop_count | int) +
+      (1 if _is_wan_drop else 0) }}
+    bottega_phase4_seen_owned_forward: >-
+      {{ bottega_phase4_seen_owned_forward or _is_owned }}
+    bottega_phase4_first_wan_forward_drop_id: >-
+      {{ (_properties[0] | regex_replace('^id=', ''))
+      if (_is_wan_drop and
+      bottega_phase4_first_wan_forward_drop_id | length == 0)
+      else bottega_phase4_first_wan_forward_drop_id }}
+  vars:
+    _properties: >-
+      {{ item.stdout_lines | map('last') | map('trim') | list }}
+    _is_owned: >-
+      {{ ('comment=' ~ bottega_phase4_forward_comment) in _properties }}
+    _is_wan_drop: >-
+      {{ 'disabled=false' in _properties and
+      'action=drop' in _properties and
+      ('in-interface-list=' ~ bottega_phase4_wan_list) in _properties }}
+  loop: "{{ bottega_phase4_forward_rule_properties.results }}"
+  loop_control:
+    label: "forward rule {{ item.item }}"

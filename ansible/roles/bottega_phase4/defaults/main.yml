@@ -1,0 +1,15 @@
+---
+bottega_phase4_wan_list: WAN
+bottega_phase4_public_port: 443
+bottega_phase4_traefik_address: 10.30.0.200
+bottega_phase4_traefik_port: 443
+bottega_phase4_public_ipv4: 145.11.24.43
+bottega_phase4_jellyfin_hostname: jellyfin.ruddenchaux.xyz
+bottega_phase4_public_hostnames:
+  - jellyfin.ruddenchaux.xyz
+  - ha.ruddenchaux.xyz
+  - immich.ruddenchaux.xyz
+bottega_phase4_split_dns_domain: ruddenchaux.xyz
+bottega_phase4_split_dns_address: 10.30.0.200
+bottega_phase4_split_dns_comment: bottega-phase4-split-dns
+bottega_phase4_split_dns_ttl: 1m

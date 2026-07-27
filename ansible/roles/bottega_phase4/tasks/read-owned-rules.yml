@@ -1,0 +1,190 @@
+---
+- name: Count owned Bottega phase 4 rules
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter print count-only
+        where comment="{{ bottega_phase4_forward_comment }}"
+      - >-
+        /ip firewall nat print count-only
+        where comment="{{ bottega_phase4_nat_comment }}"
+  register: bottega_phase4_owned_rule_counts
+  changed_when: false
+
+- name: Read owned Bottega phase 4 forward-rule properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        disabled])
+      - >-
+        :put ("comment=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        comment])
+      - >-
+        :put ("chain=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        chain])
+      - >-
+        :put ("action=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        action])
+      - >-
+        :put ("connection-state=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        connection-state])
+      - >-
+        :put ("connection-nat-state=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        connection-nat-state])
+      - >-
+        :put ("in-interface=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        in-interface])
+      - >-
+        :put ("in-interface-list=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        in-interface-list])
+      - >-
+        :put ("out-interface=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        out-interface])
+      - >-
+        :put ("out-interface-list=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        out-interface-list])
+      - >-
+        :put ("protocol=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        protocol])
+      - >-
+        :put ("src-address=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        src-address])
+      - >-
+        :put ("dst-address=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        dst-address])
+      - >-
+        :put ("src-port=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        src-port])
+      - >-
+        :put ("dst-port=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase4_forward_comment }}"]
+        dst-port])
+  register: bottega_phase4_forward_properties
+  changed_when: false
+  when: >-
+    (bottega_phase4_owned_rule_counts.stdout_lines[0] |
+    last | trim | int) == 1
+
+- name: Read owned Bottega phase 4 dst-nat properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        disabled])
+      - >-
+        :put ("comment=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        comment])
+      - >-
+        :put ("chain=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        chain])
+      - >-
+        :put ("action=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        action])
+      - >-
+        :put ("in-interface=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        in-interface])
+      - >-
+        :put ("in-interface-list=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        in-interface-list])
+      - >-
+        :put ("protocol=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        protocol])
+      - >-
+        :put ("src-address=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        src-address])
+      - >-
+        :put ("dst-address=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        dst-address])
+      - >-
+        :put ("src-port=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        src-port])
+      - >-
+        :put ("dst-port=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        dst-port])
+      - >-
+        :put ("to-addresses=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        to-addresses])
+      - >-
+        :put ("to-ports=" . [/ip firewall nat get
+        [find where comment="{{ bottega_phase4_nat_comment }}"]
+        to-ports])
+  register: bottega_phase4_nat_properties
+  changed_when: false
+  when: >-
+    (bottega_phase4_owned_rule_counts.stdout_lines[1] |
+    last | trim | int) == 1
+
+- name: Record exact owned Bottega phase 4 rule state
+  ansible.builtin.set_fact:
+    bottega_phase4_forward_rule_ok: >-
+      {{ (_forward_count == 1) and
+      ((bottega_phase4_forward_properties.stdout_lines |
+      map('last') | map('trim') | list) == _expected_forward) }}
+    bottega_phase4_nat_rule_ok: >-
+      {{ (_nat_count == 1) and
+      ((bottega_phase4_nat_properties.stdout_lines |
+      map('last') | map('trim') | list) == _expected_nat) }}
+  vars:
+    _forward_count: >-
+      {{ bottega_phase4_owned_rule_counts.stdout_lines[0] |
+      last | trim | int }}
+    _nat_count: >-
+      {{ bottega_phase4_owned_rule_counts.stdout_lines[1] |
+      last | trim | int }}
+    _expected_forward:
+      - disabled=false
+      - "comment={{ bottega_phase4_forward_comment }}"
+      - chain=forward
+      - action=accept
+      - connection-state=
+      - connection-nat-state=dstnat
+      - in-interface=
+      - "in-interface-list={{ bottega_phase4_wan_list }}"
+      - out-interface=
+      - out-interface-list=
+      - protocol=tcp
+      - src-address=
+      - "dst-address={{ bottega_phase4_traefik_address }}"
+      - src-port=
+      - "dst-port={{ bottega_phase4_public_port }}"
+    _expected_nat:
+      - disabled=false
+      - "comment={{ bottega_phase4_nat_comment }}"
+      - chain=dstnat
+      - action=dst-nat
+      - in-interface=
+      - "in-interface-list={{ bottega_phase4_wan_list }}"
+      - protocol=tcp
+      - src-address=
+      - dst-address=
+      - src-port=
+      - "dst-port={{ bottega_phase4_public_port }}"
+      - "to-addresses={{ bottega_phase4_traefik_address }}"
+      - "to-ports={{ bottega_phase4_traefik_port }}"

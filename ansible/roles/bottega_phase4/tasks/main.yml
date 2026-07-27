@@ -1,0 +1,9 @@
+---
+- name: Run Bottega phase 4 preflight checks
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Converge Bottega phase 4 HTTPS forwarding
+  ansible.builtin.include_tasks: converge.yml
+
+- name: Validate Bottega phase 4 HTTPS forwarding
+  ansible.builtin.include_tasks: validate.yml

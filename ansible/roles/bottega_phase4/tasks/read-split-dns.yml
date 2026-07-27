@@ -1,0 +1,78 @@
+---
+- name: Read Bottega DNS service and split-DNS static state
+  community.routeros.command:
+    commands:
+      - /ip dns print
+      - >-
+        /ip dns static print count-only
+        where comment="{{ bottega_phase4_split_dns_comment }}"
+      - >-
+        /ip dns static print count-only
+        where comment="temporary-phase4-split-dns"
+  register: bottega_phase4_split_dns_state
+  changed_when: false
+
+- name: Read Bottega split-DNS static record properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        disabled])
+      - >-
+        :put ("comment=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        comment])
+      - >-
+        :put ("name=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        name])
+      - >-
+        :put ("type=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        type])
+      - >-
+        :put ("address=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        address])
+      - >-
+        :put ("ttl=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        ttl])
+      - >-
+        :put ("match-subdomain=" . [/ip dns static get
+        [find where comment="{{ bottega_phase4_split_dns_comment }}"]
+        match-subdomain])
+  register: bottega_phase4_split_dns_properties
+  changed_when: false
+  when: >-
+    (bottega_phase4_split_dns_state.stdout_lines[1] | last | trim | int) == 1
+
+- name: Record exact Bottega split-DNS state
+  ansible.builtin.set_fact:
+    bottega_phase4_split_dns_rule_count: >-
+      {{ bottega_phase4_split_dns_state.stdout_lines[1] | last | trim | int }}
+    bottega_phase4_legacy_split_dns_rule_count: >-
+      {{ bottega_phase4_split_dns_state.stdout_lines[2] | last | trim | int }}
+    bottega_phase4_dns_allow_remote_requests_ok: >-
+      {{ (_normalized_dns_state is search('allow-remote-requests:\\s+yes')) }}
+    bottega_phase4_split_dns_rule_ok: >-
+      {{ _dns_rule_ok }}
+  vars:
+    _normalized_dns_state: >-
+      {{ bottega_phase4_split_dns_state.stdout | join(' ') |
+      regex_replace('[\\r\\n]+\\s*', '') }}
+    _normalized_split_dns_record: >-
+      {{ bottega_phase4_split_dns_properties.stdout_lines | map('last') |
+      map('trim') | list | join(' ') }}
+    _dns_rule_ok: >-
+      {{
+        ((bottega_phase4_split_dns_state.stdout_lines[1] | last | trim | int)
+        == 1) and
+        (_normalized_split_dns_record == (
+          'disabled=false comment=' ~ bottega_phase4_split_dns_comment ~
+          ' name=' ~ bottega_phase4_split_dns_domain ~
+          ' type=A address=' ~ bottega_phase4_split_dns_address ~
+          ' ttl=00:01:00 match-subdomain=true'
+        ))
+      }}

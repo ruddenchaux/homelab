@@ -1,0 +1,146 @@
+---
+- name: Read final Bottega phase 4 owned rules
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Assert exactly one enabled, exact Phase 4 rule of each kind
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase4_owned_rule_counts.stdout_lines[0] |
+        last | trim | int) == 1
+      - >-
+        (bottega_phase4_owned_rule_counts.stdout_lines[1] |
+        last | trim | int) == 1
+      - bottega_phase4_forward_rule_ok
+      - bottega_phase4_nat_rule_ok
+    quiet: true
+    fail_msg: >-
+      Strict readback of the owned Bottega phase 4 rules failed.
+
+- name: Read final Bottega phase 4 forward-rule order
+  ansible.builtin.include_tasks: read-forward-order.yml
+
+- name: Assert the HTTPS forward rule precedes an applicable WAN drop
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase4_wan_forward_drop_count | int) == 0
+        or (bottega_phase4_forward_before_first_wan_drop | bool)
+    quiet: true
+    fail_msg: >-
+      The owned Phase 4 forward rule is not before the first WAN forward drop.
+
+- name: Re-read exact Bottega phase 2 input-chain state
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: read-input-firewall-state
+  vars:
+    bottega_mikrotik_wan_list: "{{ bottega_phase4_wan_list }}"
+
+- name: Read final RouterOS service and interface-list state
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name=www-ssl
+      - /ip service print terse where name=reverse-proxy
+      - /ip proxy print
+      - >-
+        /interface list member print terse
+        where list={{ bottega_phase4_wan_list }}
+      - /interface list member print terse where list=LAN
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase4_wan_list }}
+        interface=pppoe-out1
+      - >-
+        /interface list member print count-only
+        where list=LAN interface=pppoe-out1
+  register: bottega_phase4_final_safety_state
+  changed_when: false
+
+- name: Assert input chain, services, and LAN/WAN separation are unchanged
+  ansible.builtin.assert:
+    that:
+      - _bottega_input_firewall_ok
+      - >-
+        bottega_phase4_final_safety_state.stdout[0]
+        is search('(^|\\s)X\\s+name=www-ssl')
+      - >-
+        ('name=reverse-proxy' not in
+        bottega_phase4_final_safety_state.stdout[1])
+        or
+        (bottega_phase4_final_safety_state.stdout[1]
+        is search('(^|\\s)X\\s+name=reverse-proxy'))
+      - >-
+        'enabled: no' in
+        bottega_phase4_final_safety_state.stdout[2]
+      - >-
+        (bottega_phase4_final_safety_state.stdout[3] |
+        regex_findall('interface=([^\\s]+)') |
+        intersect(bottega_phase4_final_safety_state.stdout[4] |
+        regex_findall('interface=([^\\s]+)')) | length) == 0
+      - >-
+        (bottega_phase4_final_safety_state.stdout_lines[5] |
+        last | trim | int) == 1
+      - >-
+        (bottega_phase4_final_safety_state.stdout_lines[6] |
+        last | trim | int) == 0
+    quiet: true
+    fail_msg: >-
+      Phase 4 changed or exposed router-local state: the Phase 2 input chain,
+      disabled HTTPS/proxy services, or WAN/LAN separation failed readback.
+
+- name: Read final Bottega split DNS state
+  ansible.builtin.include_tasks: read-split-dns.yml
+
+- name: Assert split DNS is active and exact
+  ansible.builtin.assert:
+    that:
+      - bottega_phase4_split_dns_rule_count | int == 1
+      - bottega_phase4_split_dns_rule_ok | bool
+      - bottega_phase4_legacy_split_dns_rule_count | int == 0
+    quiet: true
+    fail_msg: >-
+      RouterOS split DNS did not converge exactly to the expected LAN-facing
+      wildcard for ruddenchaux.xyz.
+
+- name: Verify LAN DNS resolves each public hostname to Traefik
+  ansible.builtin.command:
+    argv:
+      - dig
+      - +short
+      - A
+      - "{{ item }}"
+      - "@10.30.0.1"
+  delegate_to: localhost
+  loop: "{{ bottega_phase4_public_hostnames }}"
+  register: bottega_phase4_lan_dns
+  changed_when: false
+
+- name: Require LAN DNS to return the Traefik address
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim == bottega_phase4_traefik_address
+    quiet: true
+    fail_msg: >-
+      LAN DNS did not return Traefik for one of the public hostnames.
+  loop: "{{ bottega_phase4_lan_dns.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Verify LAN service reachability for each public hostname
+  ansible.builtin.command:
+    argv:
+      - curl
+      - --silent
+      - --show-error
+      - --fail
+      - --output
+      - /dev/null
+      - --connect-timeout
+      - "5"
+      - --resolve
+      - "{{ item }}:443:{{ bottega_phase4_traefik_address }}"
+      - "https://{{ item }}/"
+  delegate_to: localhost
+  loop: "{{ bottega_phase4_public_hostnames }}"
+  changed_when: false

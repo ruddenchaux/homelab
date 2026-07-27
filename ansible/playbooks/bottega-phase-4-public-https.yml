@@ -1,0 +1,234 @@
+---
+# Implements specs/sites/bottega-phase-4-public-https.md.
+# Run 1 installs and externally validates the router path without changing DNS.
+# Run 2 sets bottega_phase4_dns_cutover_confirmed=true to update the existing
+# DNS-only Jellyfin, Home Assistant, and Immich A records after the VPS
+# curl --resolve tests succeed.
+- name: Install Bottega phase 4 public HTTPS forwarding
+  hosts: mikrotik
+  gather_facts: false
+  vars:
+    bottega_phase4_external_closed_baseline_confirmed: false
+    bottega_phase4_router_recovery_confirmed: false
+    bottega_phase4_vps_rollback_available_confirmed: false
+    bottega_phase4_dns_cutover_confirmed: false
+  roles:
+    - bottega_phase4
+
+- name: Validate the direct Bottega HTTPS path from the inventory VPS
+  hosts: vps
+  gather_facts: false
+  vars:
+    bottega_phase4_public_ipv4: 145.11.24.43
+    bottega_phase4_public_hostnames:
+      - jellyfin.ruddenchaux.xyz
+      - ha.ruddenchaux.xyz
+      - immich.ruddenchaux.xyz
+  tasks:
+    - name: Reach each public service through Bottega with valid TLS and SNI
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --silent
+          - --show-error
+          - --fail
+          - --output
+          - /dev/null
+          - --write-out
+          - "%{http_code}"
+          - --connect-timeout
+          - "10"
+          - --resolve
+          - "{{ item }}:443:{{ bottega_phase4_public_ipv4 }}"
+          - "https://{{ item }}/"
+      loop: "{{ bottega_phase4_public_hostnames }}"
+      register: _bottega_phase4_external_https
+      changed_when: false
+
+    - name: Require a successful application HTTP response for each hostname
+      ansible.builtin.assert:
+        that:
+          - item.stdout | trim | int >= 200
+          - item.stdout | trim | int < 400
+        quiet: true
+        fail_msg: >-
+          The VPS could not validate TLS, SNI routing, and an application
+          response through 145.11.24.43. Production DNS was not changed.
+      loop: "{{ _bottega_phase4_external_https.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+- name: Cut over the public Cloudflare A records
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    bottega_phase4_dns_cutover_confirmed: false
+    bottega_phase4_public_ipv4: 145.11.24.43
+    bottega_phase4_public_hostnames:
+      - jellyfin.ruddenchaux.xyz
+      - ha.ruddenchaux.xyz
+      - immich.ruddenchaux.xyz
+  pre_tasks:
+    - name: Keep production DNS on the VPS until explicitly confirmed
+      ansible.builtin.debug:
+        msg: >-
+          Router forwarding and the VPS external test passed. DNS remains on
+          the VPS; rerun with bottega_phase4_dns_cutover_confirmed=true after
+          reviewing the external test.
+      when: not (bottega_phase4_dns_cutover_confirmed | bool)
+
+    - name: End the DNS cutover play when it is not confirmed
+      ansible.builtin.meta: end_play
+      when: not (bottega_phase4_dns_cutover_confirmed | bool)
+
+    - name: Enforce a separate second run for DNS cutover
+      ansible.builtin.assert:
+        that:
+          - >-
+            hostvars[groups['mikrotik'] | first]
+            ['bottega_phase4_router_was_converged_at_start'] | bool
+        quiet: true
+        fail_msg: >-
+          DNS cutover requires a second playbook run. This run installed or
+          repaired the router path, so production DNS remains on the VPS.
+
+    - name: Load Bottega-only Cloudflare DNS credentials
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets/bottega.sops.yml"
+        name: bottega_phase4_secrets
+      no_log: true
+
+    - name: Set Bottega phase 4 Cloudflare facts
+      ansible.builtin.set_fact:
+        _bottega_phase4_cloudflare_token: >-
+          {{ _phase4_secrets['bottega_cloudflare_dns_api_token'] }}
+        _bottega_phase4_cloudflare_zone_id: >-
+          {{ _phase4_secrets['bottega_cloudflare_zone_id'] }}
+      vars:
+        _phase4_secrets: "{{ ansible_facts['bottega_phase4_secrets'] }}"
+      no_log: true
+
+    - name: Require provisioned Bottega-only Cloudflare credentials
+      ansible.builtin.assert:
+        that:
+          - _bottega_phase4_cloudflare_token | length >= 20
+          - _bottega_phase4_cloudflare_zone_id | length >= 20
+          - "'REPLACE_WITH' not in _bottega_phase4_cloudflare_token"
+          - "'REPLACE_WITH' not in _bottega_phase4_cloudflare_zone_id"
+        quiet: true
+        fail_msg: >-
+          Provision a least-privilege Cloudflare DNS token and zone ID in
+          ansible/secrets/bottega.sops.yml before confirming DNS cutover.
+      no_log: true
+
+  tasks:
+    - name: Read the existing public A records
+      ansible.builtin.uri:
+        url: >-
+          https://api.cloudflare.com/client/v4/zones/{{
+          _bottega_phase4_cloudflare_zone_id }}/dns_records?type=A&name={{
+          item }}
+        headers:
+          Authorization: "Bearer {{ _bottega_phase4_cloudflare_token }}"
+        return_content: true
+      loop: "{{ bottega_phase4_public_hostnames }}"
+      register: _bottega_phase4_cloudflare_a
+      changed_when: false
+      no_log: true
+
+    - name: Read any existing public AAAA records
+      ansible.builtin.uri:
+        url: >-
+          https://api.cloudflare.com/client/v4/zones/{{
+          _bottega_phase4_cloudflare_zone_id }}/dns_records?type=AAAA&name={{
+          item }}
+        headers:
+          Authorization: "Bearer {{ _bottega_phase4_cloudflare_token }}"
+        return_content: true
+      loop: "{{ bottega_phase4_public_hostnames }}"
+      register: _bottega_phase4_cloudflare_aaaa
+      changed_when: false
+      no_log: true
+
+    - name: Require one existing A record and no AAAA record per hostname
+      ansible.builtin.assert:
+        that:
+          - _bottega_phase4_cloudflare_a.results[host_index].json.success | bool
+          - _bottega_phase4_cloudflare_aaaa.results[host_index].json.success | bool
+          - _bottega_phase4_cloudflare_a.results[host_index].json.result | length == 1
+          - _bottega_phase4_cloudflare_aaaa.results[host_index].json.result | length == 0
+        quiet: true
+        fail_msg: >-
+          Cutover updates exactly one existing A record for each public
+          hostname and will not create or delete records. Resolve duplicate /
+          missing A or any AAAA record manually before continuing.
+      loop: "{{ bottega_phase4_public_hostnames }}"
+      loop_control:
+        index_var: host_index
+        label: "{{ item }}"
+      no_log: true
+
+    - name: Update public hostnames to the Bottega static IPv4
+      ansible.builtin.uri:
+        url: >-
+          https://api.cloudflare.com/client/v4/zones/{{
+          _bottega_phase4_cloudflare_zone_id }}/dns_records/{{
+          _bottega_phase4_cloudflare_a.results[host_index].json.result[0].id }}
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ _bottega_phase4_cloudflare_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          type: A
+          name: "{{ item }}"
+          content: "{{ bottega_phase4_public_ipv4 }}"
+          ttl: 60
+          proxied: false
+        status_code: 200
+      loop: "{{ bottega_phase4_public_hostnames }}"
+      loop_control:
+        index_var: host_index
+      register: _bottega_phase4_cloudflare_update
+      when: >-
+        _bottega_phase4_cloudflare_a.results[host_index].json.result[0].content
+        != bottega_phase4_public_ipv4
+        or
+        (_bottega_phase4_cloudflare_a.results[host_index].json.result[0].ttl |
+        int) != 60
+        or
+        (_bottega_phase4_cloudflare_a.results[host_index].json.result[0].proxied
+        | bool)
+      no_log: true
+
+    - name: Read back the public A records
+      ansible.builtin.uri:
+        url: >-
+          https://api.cloudflare.com/client/v4/zones/{{
+          _bottega_phase4_cloudflare_zone_id }}/dns_records?type=A&name={{
+          item }}
+        headers:
+          Authorization: "Bearer {{ _bottega_phase4_cloudflare_token }}"
+        return_content: true
+      loop: "{{ bottega_phase4_public_hostnames }}"
+      register: _bottega_phase4_cloudflare_final
+      changed_when: false
+      no_log: true
+
+    - name: Require exact DNS-only public A-record readback
+      ansible.builtin.assert:
+        that:
+          - item.json.success | bool
+          - item.json.result | length == 1
+          - item.json.result[0].content == bottega_phase4_public_ipv4
+          - (item.json.result[0].ttl | int) == 60
+          - not (item.json.result[0].proxied | bool)
+        quiet: true
+        fail_msg: >-
+          Cloudflare did not return the exact DNS-only A record for one of the
+          public hostnames.
+      loop: "{{ _bottega_phase4_cloudflare_final.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      no_log: true

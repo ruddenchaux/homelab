@@ -1,0 +1,304 @@
+---
+- name: Validate fixed Bottega phase 4 deployment inputs
+  ansible.builtin.assert:
+    that:
+      - bottega_phase4_wan_list == 'WAN'
+      - (bottega_phase4_public_port | int) == 443
+      - bottega_phase4_traefik_address == '10.30.0.200'
+      - (bottega_phase4_traefik_port | int) == 443
+      - bottega_phase4_public_ipv4 == '145.11.24.43'
+      - bottega_phase4_jellyfin_hostname == 'jellyfin.ruddenchaux.xyz'
+      - >-
+        bottega_phase4_public_hostnames | sort ==
+        [
+          'ha.ruddenchaux.xyz',
+          'immich.ruddenchaux.xyz',
+          'jellyfin.ruddenchaux.xyz'
+        ] | sort
+      - bottega_phase4_split_dns_domain == 'ruddenchaux.xyz'
+      - bottega_phase4_split_dns_address == '10.30.0.200'
+      - bottega_phase4_split_dns_comment == 'bottega-phase4-split-dns'
+    quiet: true
+    fail_msg: >-
+      Phase 4 is deliberately fixed to Bottega WAN TCP 443, Traefik at
+      10.30.0.200:443, public IPv4 145.11.24.43, the Jellyfin/Home Assistant/
+      Immich hostnames, and the Bottega split-DNS root.
+
+- name: Require Bottega phase 4 operator safety confirmations
+  ansible.builtin.assert:
+    that:
+      - bottega_phase4_external_closed_baseline_confirmed | bool
+      - bottega_phase4_router_recovery_confirmed | bool
+      - bottega_phase4_vps_rollback_available_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      Phase 4 requires an external closed-port baseline, a current RouterOS
+      export plus safe-mode or timed rollback, and a tested VPS rollback path.
+      Pass all three confirmations explicitly. No router changes were made.
+
+- name: Read Bottega phase 2 and phase 3 prerequisite state
+  community.routeros.command:
+    commands:
+      - /interface print count-only where name=pppoe-out1
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase4_wan_list }}
+        interface=pppoe-out1
+      - >-
+        /interface list member print count-only
+        where list=LAN interface=pppoe-out1
+      - /interface bridge print terse where name=bridge
+      - >-
+        /interface list member print terse
+        where list={{ bottega_phase4_wan_list }}
+      - /interface list member print terse where list=LAN
+      - >-
+        /interface bridge port print terse
+        where bridge=bridge interface=ether5
+  register: bottega_phase4_prerequisites
+  changed_when: false
+
+- name: Read required Bottega phase 3 VLAN state
+  community.routeros.command:
+    commands:
+      - >-
+        /interface vlan print count-only
+        where name=vlan{{ item.id }}-{{ item.name }}
+        interface=bridge vlan-id={{ item.id }}
+      - >-
+        /ip address print terse
+        where interface=vlan{{ item.id }}-{{ item.name }}
+      - >-
+        /interface list member print count-only
+        where list=LAN interface=vlan{{ item.id }}-{{ item.name }}
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase4_wan_list }}
+        interface=vlan{{ item.id }}-{{ item.name }}
+  loop:
+    - id: 10
+      name: management
+      gateway: 10.10.0.1/24
+    - id: 20
+      name: trusted-lan
+      gateway: 10.20.0.1/24
+    - id: 30
+      name: kubernetes
+      gateway: 10.30.0.1/24
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  register: bottega_phase4_vlan_prerequisites
+  changed_when: false
+
+- name: Require Bottega phases 2 and 3 to be complete
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase4_prerequisites.stdout_lines[0] |
+        last | trim | int) == 1
+      - >-
+        (bottega_phase4_prerequisites.stdout_lines[1] |
+        last | trim | int) == 1
+      - >-
+        (bottega_phase4_prerequisites.stdout_lines[2] |
+        last | trim | int) == 0
+      - >-
+        'vlan-filtering=yes' in
+        (bottega_phase4_prerequisites.stdout[3] |
+        regex_replace('[\\r\\n]', ''))
+      - >-
+        'frame-types=admit-only-vlan-tagged' in
+        (bottega_phase4_prerequisites.stdout[6] |
+        regex_replace('[\\r\\n]', ''))
+      - >-
+        'ingress-filtering=yes' in
+        (bottega_phase4_prerequisites.stdout[6] |
+        regex_replace('[\\r\\n]', ''))
+      - >-
+        (bottega_phase4_prerequisites.stdout[4] |
+        regex_findall('interface=([^\\s]+)') |
+        intersect(bottega_phase4_prerequisites.stdout[5] |
+        regex_findall('interface=([^\\s]+)')) | length) == 0
+      - >-
+        'interface=pppoe-out1' in
+        bottega_phase4_prerequisites.stdout[4]
+    quiet: true
+    fail_msg: >-
+      Bottega phases 2 and 3 are incomplete or unsafe: PPPoE must be WAN-only,
+      bridge filtering and the tagged ether5 trunk must be active, and LAN/WAN
+      must not overlap. No router changes were made.
+
+- name: Require each Bottega phase 3 VLAN to be complete
+  ansible.builtin.assert:
+    that:
+      - "(item.stdout_lines[0] | last | trim | int) == 1"
+      - >-
+        (item.stdout[1] | regex_replace('[\\r\\n]', '') |
+        regex_findall('(?:^|\\s)address=' ~
+        (item.item.gateway | regex_escape) ~ '(?:\\s|$)') |
+        length) == 1
+      - "(item.stdout_lines[2] | last | trim | int) == 1"
+      - "(item.stdout_lines[3] | last | trim | int) == 0"
+    quiet: true
+    fail_msg: >-
+      Phase 3 VLAN {{ item.item.id }} is incomplete: its interface, gateway,
+      and LAN-only membership must exactly match the Phase 3 specification.
+      No router changes were made.
+  loop: "{{ bottega_phase4_vlan_prerequisites.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+- name: Read Bottega PPPoE link state
+  community.routeros.command:
+    commands:
+      - /interface pppoe-client monitor pppoe-out1 once
+  register: bottega_phase4_pppoe_state
+  changed_when: false
+
+- name: Require the Bottega PPPoE link to be connected
+  ansible.builtin.assert:
+    that:
+      - "'status: connected' in bottega_phase4_pppoe_state.stdout[0]"
+    quiet: true
+    fail_msg: >-
+      pppoe-out1 is not connected. No phase 4 router changes were made.
+
+- name: Verify internal Traefik HTTPS and service routing
+  ansible.builtin.command:
+    argv:
+      - curl
+      - --silent
+      - --show-error
+      - --fail
+      - --output
+      - /dev/null
+      - --connect-timeout
+      - "5"
+      - --resolve
+      - "{{ item ~ ':443:' ~ bottega_phase4_traefik_address }}"
+      - "https://{{ item }}/"
+  delegate_to: localhost
+  loop: "{{ bottega_phase4_public_hostnames }}"
+  changed_when: false
+
+- name: Read RouterOS HTTPS and reverse-proxy services
+  community.routeros.command:
+    commands:
+      - /ip service print terse where name=www-ssl
+      - /ip service print terse where name=reverse-proxy
+      - /ip proxy print
+  register: bottega_phase4_router_https_services
+  changed_when: false
+
+- name: Require RouterOS HTTPS and proxy services to remain disabled
+  ansible.builtin.assert:
+    that:
+      - >-
+        bottega_phase4_router_https_services.stdout[0]
+        is search('(^|\\s)X\\s+name=www-ssl')
+      - >-
+        ('name=reverse-proxy' not in
+        bottega_phase4_router_https_services.stdout[1])
+        or
+        (bottega_phase4_router_https_services.stdout[1]
+        is search('(^|\\s)X\\s+name=reverse-proxy'))
+      - >-
+        'enabled: no' in
+        bottega_phase4_router_https_services.stdout[2]
+    quiet: true
+    fail_msg: >-
+      RouterOS www-ssl, reverse-proxy, or IP proxy is enabled. Disable it
+      before Phase 4; TLS must terminate only at Traefik.
+
+- name: Read exact Bottega phase 2 input-chain state
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: read-input-firewall-state
+  vars:
+    bottega_mikrotik_wan_list: "{{ bottega_phase4_wan_list }}"
+
+- name: Require the unchanged Bottega phase 2 input chain
+  ansible.builtin.assert:
+    that:
+      - _bottega_input_firewall_ok
+    quiet: true
+    fail_msg: >-
+      The RouterOS input chain does not exactly match Phase 2. Phase 4 never
+      adds an input-chain exception. No router changes were made.
+
+- name: Read possible TCP 443 rule conflicts
+  community.routeros.command:
+    commands:
+      - >-
+        :local count 0;
+        :foreach rule in=[/ip firewall filter find where chain=forward] do={
+        :if (([:tostr [/ip firewall filter get $rule protocol]] = "tcp")
+        && ([:tostr [/ip firewall filter get $rule dst-port]] =
+        "{{ bottega_phase4_public_port }}")) do={
+        :set count ($count + 1) } };
+        :put $count
+      - >-
+        :local count 0;
+        :foreach rule in=[/ip firewall nat find where chain=dstnat] do={
+        :if (([:tostr [/ip firewall nat get $rule protocol]] = "tcp")
+        && ([:tostr [/ip firewall nat get $rule dst-port]] =
+        "{{ bottega_phase4_public_port }}")) do={
+        :set count ($count + 1) } };
+        :put $count
+  register: bottega_phase4_port_conflicts
+  changed_when: false
+
+- name: Read Bottega phase 4 owned rules
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Read Bottega phase 4 split DNS state
+  ansible.builtin.include_tasks: read-split-dns.yml
+
+- name: Record whether Bottega phase 4 was already converged at play start
+  ansible.builtin.set_fact:
+    bottega_phase4_router_was_converged_at_start: >-
+      {{
+        ((bottega_phase4_owned_rule_counts.stdout_lines[0] |
+        last | trim | int) == 1) and
+        ((bottega_phase4_owned_rule_counts.stdout_lines[1] |
+        last | trim | int) == 1) and
+        bottega_phase4_forward_rule_ok and
+        bottega_phase4_nat_rule_ok and
+        (bottega_phase4_split_dns_rule_count | int == 1) and
+        bottega_phase4_split_dns_rule_ok
+      }}
+
+- name: Reject duplicate, ambiguous, or drifted TCP 443 rules
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase4_owned_rule_counts.stdout_lines[0] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase4_owned_rule_counts.stdout_lines[1] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase4_port_conflicts.stdout_lines[0] |
+        last | trim | int) ==
+        (bottega_phase4_owned_rule_counts.stdout_lines[0] |
+        last | trim | int)
+      - >-
+        (bottega_phase4_port_conflicts.stdout_lines[1] |
+        last | trim | int) ==
+        (bottega_phase4_owned_rule_counts.stdout_lines[1] |
+        last | trim | int)
+      - >-
+        ((bottega_phase4_owned_rule_counts.stdout_lines[0] |
+        last | trim | int) == 0) or bottega_phase4_forward_rule_ok
+      - >-
+        ((bottega_phase4_owned_rule_counts.stdout_lines[1] |
+        last | trim | int) == 0) or bottega_phase4_nat_rule_ok
+      - bottega_phase4_split_dns_rule_count | int <= 1
+      - >-
+        (bottega_phase4_split_dns_rule_count | int == 0) or
+        bottega_phase4_split_dns_rule_ok
+    quiet: true
+    fail_msg: >-
+      TCP 443 rules or the Bottega split-DNS static record are duplicate,
+      ambiguous, or drifted. Resolve the conflict manually under safe mode
+      before allowing Phase 4 to mutate RouterOS.
