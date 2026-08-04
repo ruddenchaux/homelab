@@ -48,6 +48,10 @@ running infrastructure
   guardrails for Bottega.
 - `sites/bottega-phase-3-vlans.md` — Bottega VLAN provisioning, tagged R740xd
   uplink, safe application, and power-on checkpoint.
+- `sites/bottega-phase-4-public-https.md` — direct public TCP `443` forwarding
+  to Traefik and the multi-host DNS cutover.
+- `sites/bottega-phase-5-wireguard.md` — the WireGuard hub on UDP `61536`, the
+  road-warrior peer, and the declared input-exception model.
 - `services/_template.md` — template for specifying a newly-exposed service.
 - `observability/external-checks.md` — health checks that must run from
   outside the network.

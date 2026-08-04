@@ -5,7 +5,22 @@ bottega_mikrotik_admin_ssh_public_key_path: >-
   {{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub
 bottega_mikrotik_admin_ssh_key_owner_prefix: bottega-admin-ed25519
 
-bottega_mikrotik_lan_management_subnet: 192.168.88.0/24
+# Subnets allowed to reach www/ssh/winbox. Phase 1 has only the factory LAN;
+# later phases append reachable-only-after-authentication ranges such as the
+# WireGuard overlay. Never a WAN-reachable range (AGENTS.md #5).
+bottega_mikrotik_management_subnets:
+  - 192.168.88.0/24
+
+# Input-chain WAN exceptions, inserted between "accept !WAN" and the final
+# "drop WAN" rule, which must stay last. Empty in phase 1; a later phase
+# declares its own exception here so this role keeps modelling the whole
+# chain and never wipes a rule another phase depends on.
+#
+# Each entry: comment (required, unique), protocol (required),
+# dst_port (required), in_interface_list (default WAN), src_address /
+# dst_address (optional).
+bottega_mikrotik_input_exceptions: []
+
 bottega_mikrotik_wan_interface: ether1
 bottega_mikrotik_lan_interface: bridge
 bottega_mikrotik_wan_list: WAN

@@ -3,3 +3,24 @@ ansible_connection: ansible.netcommon.network_cli
 ansible_network_os: community.routeros.routeros
 ansible_user: admin
 ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+
+# Declared router state shared by every Bottega phase playbook. Keeping these
+# here — rather than inside one phase role — is what stops a later run of
+# bottega-base-lockdown.yml from rebuilding the input chain without a rule an
+# earlier phase installed. See
+# ansible/roles/mikrotik-bottega-base-lockdown/README.md.
+
+# Phase 5: the WireGuard hub listener is the only WAN input exception.
+# specs/network/firewall.md; specs/sites/bottega-phase-5-wireguard.md
+bottega_mikrotik_input_exceptions:
+  - comment: "Bottega phase 5 input 03a accept-wireguard"
+    protocol: udp
+    dst_port: 61536
+    in_interface_list: WAN
+
+# Subnets allowed to reach www/ssh/winbox. The overlay is reachable only after
+# a WireGuard handshake, so this is a LAN/VPN grant, never a WAN one
+# (AGENTS.md #5). specs/network/topology.md owns the addressing.
+bottega_mikrotik_management_subnets:
+  - 192.168.88.0/24
+  - 10.99.0.0/24

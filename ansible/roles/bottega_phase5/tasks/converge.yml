@@ -1,0 +1,165 @@
+---
+# Order matters twice over: the interface must exist before any rule that
+# references it by name (RouterOS rejects in-interface=/out-interface= against
+# a name it doesn't recognize, and does so as ordinary command output rather
+# than a module failure — community.routeros.command does not parse that, so
+# the failure is silent unless the object is read back). The WAN input
+# exception is still installed last, so the listener is never reachable ahead
+# of the forwarding policy that governs it.
+
+# Only "create if absent" — preflight refuses to run when an owned object
+# exists but has drifted, so repairing drift is a deliberate manual step under
+# safe mode, not something automation guesses at on an internet-facing router.
+#
+# RouterOS generates the private key when the interface is created; it never
+# leaves the router. Only the public key is read back, for the client config.
+- name: Create the Bottega phase 5 WireGuard hub interface
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard add
+        name={{ bottega_phase5_wg_interface }}
+        listen-port={{ bottega_phase5_wg_port }}
+        mtu={{ bottega_phase5_wg_mtu }}
+        comment="{{ bottega_phase5_wg_interface_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[0] | last | trim | int) == 0
+
+- name: Assign the Bottega phase 5 tunnel address
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address add
+        address={{ bottega_phase5_wg_address }}
+        interface={{ bottega_phase5_wg_interface }}
+        comment="{{ bottega_phase5_wg_address_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[1] | last | trim | int) == 0
+
+# LAN, never WAN: the input chain accepts anything whose in-interface is not in
+# WAN, so tunnel traffic must not be treated as WAN, and the "no interface in
+# both lists" invariant must hold (specs/sites/bottega.md).
+- name: Remove the Bottega phase 5 WireGuard interface from the WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list={{ bottega_phase5_wan_list }}
+        interface={{ bottega_phase5_wg_interface }}]
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[3] | last | trim | int) > 0
+
+- name: Add the Bottega phase 5 WireGuard interface to the LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member add
+        list={{ bottega_phase5_lan_list }}
+        interface={{ bottega_phase5_wg_interface }}
+        comment="{{ bottega_phase5_wg_lan_member_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[2] | last | trim | int) == 0
+
+# No endpoint-address and no persistent-keepalive: the hub answers, it never
+# dials, and holding the NAT mapping open is the CGNAT side's job.
+- name: Add the Bottega phase 5 road-warrior peer
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard peers add
+        interface={{ bottega_phase5_wg_interface }}
+        public-key="{{ bottega_phase5_roadwarrior_public_key }}"
+        allowed-address={{ bottega_phase5_roadwarrior_address }}/32
+        comment="{{ bottega_phase5_peer_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[4] | last | trim | int) == 0
+
+# A /32 interface address gives RouterOS no connected route for the overlay,
+# and it does not derive one from the peer's allowed-address on this build —
+# confirmed empirically, not assumed (specs/sites/bottega-phase-5-wireguard.md
+# "Facts confirmed on the router"). Without this, the tunnel handshakes but
+# return traffic to the road-warrior black-holes.
+- name: Add the Bottega phase 5 route to the road-warrior overlay address
+  community.routeros.command:
+    commands:
+      - >-
+        /ip route add
+        dst-address={{ bottega_phase5_roadwarrior_address }}/32
+        gateway={{ bottega_phase5_wg_interface }}
+        comment="{{ bottega_phase5_route_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[8] | last | trim | int) == 0
+
+- name: Add the Bottega lab-VLAN address-list entries
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall address-list add
+        list={{ bottega_phase5_address_list }}
+        address={{ item }}
+        comment="{{ bottega_phase5_address_list_comment }}"
+  loop: "{{ bottega_phase5_missing_address_list_entries }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Add the Bottega phase 5 road-warrior forward rule
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter add
+        chain=forward
+        action=accept
+        in-interface={{ bottega_phase5_wg_interface }}
+        src-address={{ bottega_phase5_roadwarrior_address }}
+        dst-address-list={{ bottega_phase5_address_list }}
+        comment="{{ bottega_phase5_forward_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[5] | last | trim | int) == 0
+
+- name: Read the Bottega phase 5 forward-rule order
+  ansible.builtin.include_tasks: read-forward-order.yml
+
+- name: Place the owned road-warrior accept before the first forward drop
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter move
+        [find where comment="{{ bottega_phase5_forward_comment }}"]
+        {{ bottega_phase5_first_forward_drop_id }}
+  when:
+    - (bottega_phase5_forward_drop_count | int) > 0
+    - not (bottega_phase5_forward_before_first_drop | bool)
+
+# Bottega's WAN is PPPoE (1492) and WireGuard's own overhead cuts further into
+# the payload, so TCP sessions crossing the tunnel need their MSS clamped.
+# specs/network/topology.md "Tunnel parameters".
+- name: Add the Bottega phase 5 MSS clamp for tunnel traffic
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall mangle add
+        chain=forward
+        action=change-mss
+        new-mss=clamp-to-pmtu
+        passthrough=yes
+        protocol=tcp
+        tcp-flags=syn
+        out-interface={{ bottega_phase5_wg_interface }}
+        comment="{{ bottega_phase5_mangle_comment }}"
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[6] | last | trim | int) == 0
+
+# The base-lockdown role owns the input chain and rebuilds it as one unit, so
+# the exception declared in group_vars is installed here rather than by a bare
+# `add` this role would have to keep re-inserting in the right position.
+- name: Install the Bottega phase 5 WAN input exception
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: firewall
+  vars:
+    bottega_mikrotik_wan_list: "{{ bottega_phase5_wan_list }}"
+
+- name: Extend RouterOS management access to the WireGuard overlay
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: services

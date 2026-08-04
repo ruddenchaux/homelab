@@ -83,15 +83,18 @@ Two lists, referenced by every lockdown rule below:
 | List | Members at base-lockdown | Grows later with |
 |---|---|---|
 | `WAN` | `ether1` | the PPPoE interface (see below) |
-| `LAN` | `bridge` (carrying `ether2`–`ether5` + wireless) | VLAN interfaces (VLAN task), the WireGuard interface (WireGuard task) |
+| `LAN` | `bridge` (carrying `ether2`–`ether5` + wireless) | VLAN interfaces (Phase 3), `wg-hub` (Phase 5) |
 
 **WAN-list membership is the security boundary.** The input chain accepts
 anything whose in-interface is *not* in `WAN`, so an interface in neither list
 is treated as trusted. Two consequences:
 
-- Deliberate and correct: the future WireGuard interface becomes trusted for
-  input the moment it exists — which is what `specs/network/firewall.md`
-  already asserts ("LAN / VPN → router management: yes").
+- Deliberate and correct: the WireGuard interface becomes trusted for input the
+  moment it exists — which is what `specs/network/firewall.md` already asserts
+  ("LAN / VPN → router management: yes"). Phase 5 makes that grant real by also
+  adding the overlay to the `/ip service` address list; firewall acceptance
+  alone would not have been enough, since those services were bound to
+  `192.168.88.0/24`.
 - **Trap for the PPPoE task**: with PPPoE, decapsulated traffic arrives with
   `in-interface` set to the *PPPoE* interface, not `ether1`. If that interface
   is not added to the `WAN` list, the final drop rule stops matching and the
@@ -142,7 +145,9 @@ notes live in `ansible/roles/mikrotik-bottega-base-lockdown/README.md`.
 
 `/ip service`:
 
-- `www`, `ssh`, `winbox` → `address=192.168.88.0/24`
+- `www`, `ssh`, `winbox` → `address=192.168.88.0/24` (Phase 5 appends the
+  WireGuard overlay `10.99.0.0/24`; the list is
+  `bottega_mikrotik_management_subnets` in Ansible)
 - `telnet`, `ftp`, `api`, `api-ssl`, `www-ssl` → disabled
 - RouterOS `reverse-proxy`, if present → disabled
 
@@ -152,14 +157,23 @@ that port.
 
 ### Input chain
 
-Exactly four rules, in this order:
+Four base rules, in this order:
 
 1. `accept connection-state=established,related`
 2. `drop connection-state=invalid`
 3. `accept in-interface-list=!WAN`
 4. `drop in-interface-list=WAN` ← **must remain the last rule**
 
-Future WAN exceptions are *inserted before* rule 4, never appended after it.
+WAN exceptions are *inserted before* rule 4, never appended after it. Phase 5
+adds the only one that exists today (WireGuard UDP `61536`), so the live chain
+is five rules — see `specs/sites/bottega-phase-5-wireguard.md`.
+
+Exceptions are **declared**, not added ad hoc: they live in
+`bottega_mikrotik_input_exceptions` in
+`ansible/inventory/group_vars/mikrotik.yml`, and the base-lockdown role builds
+and verifies the whole chain from that declaration. The role rebuilds the chain
+from scratch whenever its readback drifts, so a rule added outside the
+declaration would be silently deleted on its next run.
 
 ### Credentials
 
@@ -202,7 +216,7 @@ phases of the same router.
 | 2 | PPPoE / WAN bring-up | nothing — link comes up, lockdown holds; PPPoE interface joins the `WAN` list |
 | 3 | VLANs and R740xd uplink | nothing — VLANs 10/20/30 are local; no WAN rule changes |
 | 4 | dst-nat / public TCP `443` | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
-| 5 | WireGuard UDP `61536` | + UDP `61536`, an input-chain accept inserted before the final drop |
+| 5 | WireGuard UDP `61536` (`bottega-phase-5-wireguard.md`) | + UDP `61536`, an input-chain accept inserted before the final drop |
 
 The acceptance script must be phase-aware: "nothing answers on WAN" is the
 correct result at phases 1–3, relaxing to "only TCP `443`" at phase 4 and
@@ -211,11 +225,17 @@ phase 4 is a pass, not a regression.
 
 ## Deferred (noted, not decided here)
 
-- **Tighten `/ip service` from `192.168.88.0/24` to the management VLAN
-  `10.10.0.0/24`** — belongs to the VLAN task, once VLAN 10 exists at Bottega.
-  Until then `192.168.88.0/24` is the only LAN that exists.
+- **Tighten the `/ip service` LAN entry from `192.168.88.0/24` to the
+  management VLAN `10.10.0.0/24`** — still open. VLAN 10 now exists (Phase 3),
+  but `192.168.88.0/24` is also the recovery path used when the VLAN
+  configuration itself is what broke, so narrowing it is a deliberate decision
+  and not a cleanup. The overlay entry added in Phase 5 is unaffected either
+  way.
 - **Wi-Fi** — SSIDs, bands, VLAN mapping, guest isolation. Nothing designed.
-- dst-nat and WireGuard — Phases 4 and 5, separate tasks.
+- **Casa's spoke peer** — the second half of the hub-and-spoke design. Needs
+  Casa in inventory, its own age recipient, and a LAN renumber to
+  `192.168.90.0/24`; see `bottega-phase-5-wireguard.md` for why it was not
+  bundled with the hub.
 
 ## Move logistics
 
@@ -237,8 +257,10 @@ and proves nothing about what the internet sees.
       `address=192.168.88.0/24`, and `telnet`, `ftp`, `api`, `api-ssl`,
       `www-ssl`, plus `reverse-proxy` if present, all flagged `X`
       (disabled).
-- [ ] `/ip firewall filter print chain=input` returns exactly the four rules
-      above, in that order, with `drop in-interface-list=WAN` last.
+- [ ] `/ip firewall filter print chain=input` returns exactly the four base
+      rules above plus every declared exception for the phases applied so far,
+      in that order, with `drop in-interface-list=WAN` last. At phase 1 that is
+      four rules; from phase 5 it is five.
 - [ ] `/interface list member print` shows `ether1` in `WAN`, `bridge` in
       `LAN`, and no interface in both.
 - [ ] `/tool mac-server print`, `/tool mac-server mac-winbox print` and

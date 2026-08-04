@@ -1,0 +1,368 @@
+---
+- name: Validate fixed Bottega phase 5 deployment inputs
+  ansible.builtin.assert:
+    that:
+      - bottega_phase5_wan_list == 'WAN'
+      - bottega_phase5_lan_list == 'LAN'
+      - (bottega_phase5_wg_port | int) == 61536
+      - (bottega_phase5_wg_mtu | int) == 1412
+      - bottega_phase5_wg_address == '10.99.0.1/32'
+      - bottega_phase5_overlay_subnet == '10.99.0.0/24'
+      - bottega_phase5_public_ipv4 == '145.11.24.43'
+      - bottega_phase5_roadwarrior_address == '10.99.0.11'
+      - >-
+        bottega_phase5_lab_vlans | sort ==
+        ['10.10.0.0/24', '10.20.0.0/24', '10.30.0.0/24'] | sort
+    quiet: true
+    fail_msg: >-
+      Phase 5 is fixed to the addressing in specs/network/topology.md: hub
+      10.99.0.1/32 on UDP 61536, MTU 1412, overlay 10.99.0.0/24, road-warrior
+      10.99.0.11, and the three Bottega lab VLANs. No router changes were made.
+
+- name: Require Bottega phase 5 operator safety confirmations
+  ansible.builtin.assert:
+    that:
+      - bottega_phase5_router_recovery_confirmed | bool
+      - bottega_phase5_external_baseline_confirmed | bool
+      - bottega_phase5_vps_fallback_available_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      Phase 5 requires a current RouterOS export plus safe-mode or a timed
+      rollback, an external scan recording the pre-change baseline, and a
+      working VPS road-warrior profile as the fallback path. Pass all three
+      confirmations explicitly. No router changes were made.
+
+# The base-lockdown role owns the input chain, so phase 5's rule only exists if
+# it is declared there. Catching a mismatch here beats discovering it when a
+# later base-lockdown run rebuilds the chain without the tunnel's rule.
+- name: Require the phase 5 input exception to be declared for the base lockdown
+  ansible.builtin.assert:
+    that:
+      - >-
+        bottega_mikrotik_input_exceptions |
+        selectattr('comment', 'equalto',
+        bottega_phase5_input_exception_comment) | list | length == 1
+      - "_declared_exception.protocol == 'udp'"
+      - (_declared_exception.dst_port | int) == (bottega_phase5_wg_port | int)
+      - >-
+        _declared_exception.in_interface_list | default(bottega_phase5_wan_list)
+        == bottega_phase5_wan_list
+    quiet: true
+    fail_msg: >-
+      inventory/group_vars/mikrotik.yml must declare exactly one
+      bottega_mikrotik_input_exceptions entry named
+      "{{ bottega_phase5_input_exception_comment }}" for UDP
+      {{ bottega_phase5_wg_port }} on the {{ bottega_phase5_wan_list }} list.
+      Without it the base lockdown would delete the WireGuard accept on its
+      next run. No router changes were made.
+  vars:
+    _declared_exception: >-
+      {{ (bottega_mikrotik_input_exceptions |
+      selectattr('comment', 'equalto',
+      bottega_phase5_input_exception_comment) | list | first) | default({}) }}
+
+- name: Require the WireGuard overlay to be a declared management subnet
+  ansible.builtin.assert:
+    that:
+      - bottega_phase5_overlay_subnet in bottega_mikrotik_management_subnets
+      - >-
+        bottega_mikrotik_management_subnets | reject('equalto', '') | list
+        | length == bottega_mikrotik_management_subnets | length
+    quiet: true
+    fail_msg: >-
+      inventory/group_vars/mikrotik.yml must list
+      {{ bottega_phase5_overlay_subnet }} in
+      bottega_mikrotik_management_subnets, or router management stays
+      unreachable over the tunnel (specs/network/firewall.md).
+
+- name: Require provisioned Bottega road-warrior WireGuard keys
+  ansible.builtin.assert:
+    that:
+      - _public_key | length == 44
+      - _private_key | length == 44
+      - _public_key.endswith('=')
+      - _private_key.endswith('=')
+      - _public_key != _private_key
+    quiet: true
+    fail_msg: >-
+      Generate a road-warrior keypair and store it in
+      ansible/secrets/bottega.sops.yml as
+      bottega_wg_roadwarrior_private_key / bottega_wg_roadwarrior_public_key
+      before running phase 5. The committed values are placeholders.
+  vars:
+    _public_key: "{{ bottega_phase5_roadwarrior_public_key | default('') }}"
+    _private_key: "{{ bottega_phase5_roadwarrior_private_key | default('') }}"
+  no_log: true
+
+- name: Check that qrencode is available for the client profile
+  ansible.builtin.command:
+    argv:
+      - qrencode
+      - --version
+  delegate_to: localhost
+  register: bottega_phase5_qrencode
+  changed_when: false
+  failed_when: false
+
+- name: Require qrencode before touching the router
+  ansible.builtin.assert:
+    that:
+      - bottega_phase5_qrencode.rc == 0
+    quiet: true
+    fail_msg: >-
+      qrencode is not installed locally, so the road-warrior profile could not
+      be handed to the phone after the router change. Install it first. No
+      router changes were made.
+
+- name: Read Bottega phase 2 and phase 3 prerequisite state
+  community.routeros.command:
+    commands:
+      - /interface print count-only where name=pppoe-out1
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase5_wan_list }} interface=pppoe-out1
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase5_lan_list }} interface=pppoe-out1
+      - /interface bridge print terse where name=bridge
+      - >-
+        /interface list member print terse
+        where list={{ bottega_phase5_wan_list }}
+      - >-
+        /interface list member print terse
+        where list={{ bottega_phase5_lan_list }}
+  register: bottega_phase5_prerequisites
+  changed_when: false
+
+- name: Require Bottega phases 2 and 3 to be complete
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase5_prerequisites.stdout_lines[0] |
+        last | trim | int) == 1
+      - >-
+        (bottega_phase5_prerequisites.stdout_lines[1] |
+        last | trim | int) == 1
+      - >-
+        (bottega_phase5_prerequisites.stdout_lines[2] |
+        last | trim | int) == 0
+      - >-
+        'vlan-filtering=yes' in
+        (bottega_phase5_prerequisites.stdout[3] |
+        regex_replace('[\r\n]', ''))
+      - >-
+        (bottega_phase5_prerequisites.stdout[4] |
+        regex_findall('interface=([^\s]+)') |
+        intersect(bottega_phase5_prerequisites.stdout[5] |
+        regex_findall('interface=([^\s]+)')) | length) == 0
+      - >-
+        'interface=pppoe-out1' in
+        bottega_phase5_prerequisites.stdout[4]
+    quiet: true
+    fail_msg: >-
+      Bottega phases 2 and 3 are incomplete or unsafe: PPPoE must be WAN-only,
+      bridge VLAN filtering must be active, and LAN/WAN must not overlap. No
+      router changes were made.
+
+- name: Read required Bottega phase 3 VLAN gateways
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address print terse
+        where interface=vlan{{ item.id }}-{{ item.name }}
+  loop:
+    - id: 10
+      name: management
+      gateway: 10.10.0.1/24
+    - id: 20
+      name: trusted-lan
+      gateway: 10.20.0.1/24
+    - id: 30
+      name: kubernetes
+      gateway: 10.30.0.1/24
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  register: bottega_phase5_vlan_prerequisites
+  changed_when: false
+
+- name: Require each Bottega phase 3 VLAN gateway to be present
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item.stdout[0] | regex_replace('[\r\n]', '') |
+        regex_findall('(?:^|\s)address=' ~
+        (item.item.gateway | regex_escape) ~ '(?:\s|$)') |
+        length) == 1
+    quiet: true
+    fail_msg: >-
+      Phase 3 VLAN {{ item.item.id }} gateway {{ item.item.gateway }} is
+      missing. The phase 5 forward rule targets these subnets. No router
+      changes were made.
+  loop: "{{ bottega_phase5_vlan_prerequisites.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+- name: Read Bottega PPPoE link state
+  community.routeros.command:
+    commands:
+      - /interface pppoe-client monitor pppoe-out1 once
+  register: bottega_phase5_pppoe_state
+  changed_when: false
+
+- name: Require the Bottega PPPoE link to be connected
+  ansible.builtin.assert:
+    that:
+      - "'status: connected' in bottega_phase5_pppoe_state.stdout[0]"
+    quiet: true
+    fail_msg: >-
+      pppoe-out1 is not connected, so the hub has no reachable endpoint. No
+      phase 5 router changes were made.
+
+- name: Read the Bottega input chain without the phase 5 exception
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: read-input-firewall-state
+  vars:
+    bottega_mikrotik_wan_list: "{{ bottega_phase5_wan_list }}"
+    bottega_mikrotik_input_exceptions: []
+
+- name: Record whether the Bottega input chain is at its pre-phase-5 baseline
+  ansible.builtin.set_fact:
+    bottega_phase5_input_chain_is_baseline: "{{ _bottega_input_firewall_ok }}"
+
+- name: Read the Bottega input chain with the phase 5 exception
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: read-input-firewall-state
+  vars:
+    bottega_mikrotik_wan_list: "{{ bottega_phase5_wan_list }}"
+
+- name: Record whether the Bottega input chain already carries the exception
+  ansible.builtin.set_fact:
+    bottega_phase5_input_chain_is_converged: "{{ _bottega_input_firewall_ok }}"
+
+- name: Require a known Bottega input chain before mutating it
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase5_input_chain_is_baseline | bool) or
+        (bottega_phase5_input_chain_is_converged | bool)
+    quiet: true
+    fail_msg: >-
+      The RouterOS input chain matches neither the phase 2 baseline nor the
+      converged phase 5 chain. Resolve the drift manually under safe mode
+      before letting automation rebuild a chain whose last rule drops WAN.
+      No router changes were made.
+
+- name: Read the exact Bottega phase 4 owned rules
+  ansible.builtin.include_role:
+    name: bottega_phase4
+    tasks_from: read-owned-rules
+  vars:
+    bottega_phase4_wan_list: "{{ bottega_phase5_wan_list }}"
+
+- name: Require the Bottega phase 4 public HTTPS path to be intact
+  ansible.builtin.assert:
+    that:
+      - bottega_phase4_forward_rule_ok
+      - bottega_phase4_nat_rule_ok
+    quiet: true
+    fail_msg: >-
+      The phase 4 dst-nat/forward rules are missing or drifted. Repair phase 4
+      before layering phase 5 on top of it. No router changes were made.
+
+- name: Read possible Bottega phase 5 conflicts
+  community.routeros.command:
+    commands:
+      - >-
+        :local count 0;
+        :foreach rule in=[/ip firewall filter find where chain=input] do={
+        :if ([:tostr [/ip firewall filter get $rule dst-port]] =
+        "{{ bottega_phase5_wg_port }}") do={
+        :set count ($count + 1) } };
+        :put $count
+      - >-
+        :local count 0;
+        :foreach iface in=[/interface wireguard find] do={
+        :if ([:tostr [/interface wireguard get $iface listen-port]] =
+        "{{ bottega_phase5_wg_port }}") do={
+        :set count ($count + 1) } };
+        :put $count
+      - >-
+        /interface wireguard peers print count-only
+        where allowed-address~"{{ bottega_phase5_roadwarrior_address }}"
+      - >-
+        :local count 0;
+        :foreach rule in=[/ip firewall filter find where chain=forward] do={
+        :if ([:tostr [/ip firewall filter get $rule in-interface]] =
+        "{{ bottega_phase5_wg_interface }}") do={
+        :set count ($count + 1) } };
+        :put $count
+      - >-
+        :local count 0;
+        :foreach rule in=[/ip firewall mangle find] do={
+        :if ([:tostr [/ip firewall mangle get $rule out-interface]] =
+        "{{ bottega_phase5_wg_interface }}") do={
+        :set count ($count + 1) } };
+        :put $count
+  register: bottega_phase5_conflicts
+  changed_when: false
+
+- name: Read owned Bottega phase 5 objects
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Reject duplicate, ambiguous, or drifted Bottega phase 5 state
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase5_owned_counts.stdout_lines[0] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase5_owned_counts.stdout_lines[1] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase5_owned_counts.stdout_lines[4] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase5_owned_counts.stdout_lines[5] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase5_owned_counts.stdout_lines[6] |
+        last | trim | int) <= 1
+      - >-
+        (bottega_phase5_conflicts.stdout_lines[0] | last | trim | int) <=
+        (bottega_mikrotik_input_exceptions | length)
+      - >-
+        (bottega_phase5_conflicts.stdout_lines[1] | last | trim | int) ==
+        (bottega_phase5_owned_counts.stdout_lines[0] | last | trim | int)
+      - >-
+        (bottega_phase5_conflicts.stdout_lines[2] | last | trim | int) ==
+        (bottega_phase5_owned_counts.stdout_lines[4] | last | trim | int)
+      - >-
+        (bottega_phase5_conflicts.stdout_lines[3] | last | trim | int) ==
+        (bottega_phase5_owned_counts.stdout_lines[5] | last | trim | int)
+      - >-
+        (bottega_phase5_conflicts.stdout_lines[4] | last | trim | int) ==
+        (bottega_phase5_owned_counts.stdout_lines[6] | last | trim | int)
+      - >-
+        ((bottega_phase5_owned_counts.stdout_lines[0] |
+        last | trim | int) == 0) or bottega_phase5_wg_interface_ok
+      - >-
+        ((bottega_phase5_owned_counts.stdout_lines[1] |
+        last | trim | int) == 0) or bottega_phase5_wg_address_ok
+      - >-
+        ((bottega_phase5_owned_counts.stdout_lines[4] |
+        last | trim | int) == 0) or bottega_phase5_peer_ok
+      - >-
+        ((bottega_phase5_owned_counts.stdout_lines[5] |
+        last | trim | int) == 0) or bottega_phase5_forward_rule_ok
+      - >-
+        ((bottega_phase5_owned_counts.stdout_lines[6] |
+        last | trim | int) == 0) or bottega_phase5_mangle_rule_ok
+      - bottega_phase5_extra_address_list_entries | length == 0
+    quiet: true
+    fail_msg: >-
+      Another WireGuard interface, peer, forward rule, mangle rule, or
+      address-list entry already claims phase 5's port, address, or interface,
+      or an owned object has drifted. Resolve the conflict manually under safe
+      mode before allowing phase 5 to mutate RouterOS.

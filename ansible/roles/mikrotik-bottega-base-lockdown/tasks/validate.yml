@@ -7,18 +7,26 @@
   register: _bottega_enabled_service_validation
   changed_when: false
 
-- name: Assert Bottega enabled RouterOS services are LAN-limited
+- name: Assert Bottega enabled RouterOS services are subnet-limited
   ansible.builtin.assert:
     that:
-      - "bottega_mikrotik_lan_management_subnet in item.stdout[0]"
+      - >-
+        (_current_subnets |
+        symmetric_difference(bottega_mikrotik_management_subnets) |
+        length) == 0
       - "item.stdout[0] is not search('(^|\\s)X\\s+name=')"
     quiet: true
     fail_msg: >-
-      RouterOS service {{ item.item }} is not enabled and limited to the
-      Bottega LAN.
+      RouterOS service {{ item.item }} is not enabled and limited to exactly
+      {{ bottega_mikrotik_management_subnets | join(',') }}. An unexpected
+      entry here would widen router management beyond LAN/VPN (AGENTS.md #5).
   loop: "{{ _bottega_enabled_service_validation.results }}"
   loop_control:
     label: "{{ item.item }}"
+  vars:
+    _current_subnets: >-
+      {{ (item.stdout[0] | regex_search('address=([^\s]*)', '\1')
+      | first | default('')).split(',') | reject('equalto', '') | list }}
 
 - name: Validate Bottega disabled RouterOS services
   community.routeros.command:
@@ -63,13 +71,15 @@
 - name: Read Bottega input firewall validation state
   ansible.builtin.include_tasks: read-input-firewall-state.yml
 
-- name: Assert Bottega input firewall has exactly the phase 1 rule order
+- name: Assert Bottega input firewall has exactly the expected rule order
   ansible.builtin.assert:
     that:
       - _bottega_input_firewall_ok
     quiet: true
     fail_msg: >-
-      Bottega input firewall does not match the exact phase 1 rule order.
+      Bottega input firewall does not match the base rules plus the
+      {{ bottega_mikrotik_input_exceptions | length }} declared WAN
+      exception(s), with drop-WAN last.
 
 - name: Validate Bottega interface-list membership
   community.routeros.command:

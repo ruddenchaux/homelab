@@ -1,0 +1,73 @@
+---
+- name: Read the Bottega hub WireGuard public key
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("public-key=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] public-key])
+  register: bottega_phase5_hub_public_key_raw
+  changed_when: false
+
+- name: Set the Bottega hub WireGuard public-key fact
+  ansible.builtin.set_fact:
+    bottega_phase5_hub_public_key: >-
+      {{ bottega_phase5_hub_public_key_raw.stdout_lines[0] | last | trim
+      | regex_replace('^public-key=', '') }}
+
+# AllowedIPs follows the road-warrior row in specs/network/wireguard.md. Casa's
+# LAN is included even though Casa is not a peer yet: it is a route to nowhere
+# today, and keeping it means this profile survives the Casa phase unchanged.
+- name: Render the Bottega road-warrior client configuration
+  ansible.builtin.copy:
+    content: |
+      [Interface]
+      PrivateKey = {{ bottega_phase5_roadwarrior_private_key }}
+      Address = {{ bottega_phase5_roadwarrior_address }}/32
+      DNS = {{ bottega_phase5_roadwarrior_dns }}
+
+      [Peer]
+      PublicKey = {{ bottega_phase5_hub_public_key }}
+      Endpoint = {{ bottega_phase5_public_ipv4 }}:{{ bottega_phase5_wg_port }}
+      AllowedIPs = {{ (bottega_phase5_lab_vlans
+        + [bottega_phase5_casa_lan]) | join(', ') }}
+      PersistentKeepalive = 25
+    dest: "{{ _client_config_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  vars:
+    _client_config_path: >-
+      {{ bottega_phase5_client_output_dir }}/{{
+      bottega_phase5_roadwarrior_name }}-bottega-vpn.conf
+  no_log: true
+
+- name: Generate the Bottega road-warrior QR code
+  ansible.builtin.command:
+    argv:
+      - qrencode
+      - -t
+      - png
+      - -o
+      - >-
+        {{ bottega_phase5_client_output_dir }}/{{
+        bottega_phase5_roadwarrior_name }}-bottega-vpn-qr.png
+      - -r
+      - >-
+        {{ bottega_phase5_client_output_dir }}/{{
+        bottega_phase5_roadwarrior_name }}-bottega-vpn.conf
+  delegate_to: localhost
+  changed_when: true
+
+- name: Show how to import and verify the Bottega road-warrior profile
+  ansible.builtin.debug:
+    msg:
+      - >-
+        Config: {{ bottega_phase5_roadwarrior_name }}-bottega-vpn.conf
+        (repository root, gitignored)
+      - >-
+        QR code: {{ bottega_phase5_roadwarrior_name }}-bottega-vpn-qr.png
+      - >-
+        Import it as a NEW profile — keep the existing VPS profile until this
+        one is proven, then remove the VPS peer (MIGRATION.md).
+      - >-
+        Verify from cellular, not from the LAN: connect, then check
+        /interface wireguard peers print for a recent handshake.

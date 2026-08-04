@@ -5,12 +5,14 @@ safe-mode-aware, and router management interfaces must never be exposed to WAN.
 
 ## Bottega (hub)
 
-> **Phasing**: the tables below are the **end state**. Bottega's router starts
-> from the base lockdown in `specs/sites/bottega.md`, where WAN answers nothing
-> at all. Phase 3 adds only local VLANs and keeps WAN closed. TCP `443` opens
-> with the Phase 4 dst-nat task, and UDP `61536` opens with the Phase 5
-> WireGuard task. A port scan showing nothing open through Phase 3 is the
-> *correct* result — see the phase table in `sites/bottega.md`.
+> **Phasing**: the tables below are the **end state**, and Bottega has now
+> reached it. The router started from the base lockdown in
+> `specs/sites/bottega.md`, where WAN answered nothing at all; Phase 3 added
+> only local VLANs; TCP `443` opened with the Phase 4 dst-nat task
+> (`sites/bottega-phase-4-public-https.md`), and UDP `61536` with the Phase 5
+> WireGuard task (`sites/bottega-phase-5-wireguard.md`). A port scan showing
+> nothing open through Phase 3 was the *correct* result at the time — see the
+> phase table in `sites/bottega.md`.
 
 Input (traffic destined for the router itself):
 
@@ -21,7 +23,7 @@ Input (traffic destined for the router itself):
 | WAN | TCP `80` | **No** | Not needed — certificates use ACME DNS-01 via Cloudflare, no inbound HTTP-01 challenge required |
 | WAN | Router management (WinBox/WebFig/API/SSH) | **No** | Rule #5 — management only from LAN/VPN |
 | WAN | anything else | **No** | Default-deny from WAN. Exactly two exceptions exist: WireGuard `61536` and TCP `443` — nothing else is ever opened directly |
-| LAN / VPN | Router management | Yes | |
+| LAN / VPN | Router management | Yes | Firewall acceptance is not sufficient on its own: `/ip service` binds `www`/`ssh`/`winbox` to an address list, so the WireGuard overlay `10.99.0.0/24` has to be in that list too. Phase 5 adds it |
 
 Note on chains: only WireGuard `61536` is a true **input**-chain exception — it
 terminates on the router. TCP `443` is dst-nat'd in prerouting to Traefik and
@@ -33,8 +35,8 @@ Forward (traffic passing through the router):
 
 | From | To | Allow? | Notes |
 |------|----|--------|-------|
-| WireGuard (Casa peer) | Bottega lab VLANs it's entitled to (per `wireguard.md` AllowedIPs) | Yes | Mirrors the old `fw-wg-vps-fwd` pattern, source interface changes from `wg-vps` to the Casa peer interface |
-| WireGuard (road-warrior peer) | Bottega lab VLANs + (if in scope) onward to Casa | Yes | |
+| WireGuard (Casa peer) | Bottega lab VLANs it's entitled to (per `wireguard.md` AllowedIPs) | Yes | Not yet implemented — lands on the same `wg-hub` interface, so it must be scoped by `src-address=10.99.0.2`, not by interface |
+| WireGuard (road-warrior peer) | Bottega lab VLANs + (if in scope) onward to Casa | Yes | Implemented as `bottega-phase5-fwd-roadwarrior`: `in-interface=wg-hub`, `src-address=10.99.0.11`, `dst-address-list=bottega-lab-vlans` |
 | Bottega lab VLANs | WireGuard (toward Casa) | Yes, for the subnets Casa should be reachable/reachable-from | Needed for Home Assistant → Casa devices use case |
 | Any other cross-VLAN traffic | — | Follow existing VLAN segmentation intent (mgmt/trusted/k8s isolated), unchanged from single-site design | See `NETWORKING.md` for the current rule set being carried forward |
 

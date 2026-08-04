@@ -43,11 +43,16 @@ the full rationale.
   the new procedure.
 - **What replaces it**: a WireGuard peer added directly to Bottega's MikroTik,
   with forwarding rules to whichever subnets (Bottega's own, and/or Casa's
-  through the site-to-site tunnel) the peer needs.
+  through the site-to-site tunnel) the peer needs. **Built** — see
+  `specs/sites/bottega-phase-5-wireguard.md` and
+  `ansible/roles/bottega_phase5`. The Bottega peer uses a *new* keypair at
+  `10.99.0.11`, so both profiles can coexist on the phone.
 - **Safe removal order**: existing road-warrior devices should be
   re-provisioned against Bottega's hub and verified working *before* the VPS
   peer is removed, so there's no gap in the ability to administer the lab
-  remotely during the transition.
+  remotely during the transition. Removal is unblocked once the Bottega profile
+  has been observed working from cellular; it is not automatic, because the VPS
+  profile is also the documented rollback for phase 5.
 
 ### `ansible/roles/mikrotik-wireguard` (VPS-relay-oriented form)
 
@@ -61,13 +66,14 @@ the full rationale.
   (`mikrotik_wg_address: 10.100.0.2/30`, `vps_wg_ip` hardcoded) are
   VPS-relay-specific and need to become site-aware (hub vs. spoke behavior)
   rather than being deleted outright.
-- **What replaces it**: the same role, generalized to configure either a hub
-  (Bottega) or a spoke (Casa) WireGuard interface — not a new role, an
-  evolution of this one. This generalization is implementation work, out of
-  scope for this restructuring task.
-- **Safe removal order**: N/A — this role isn't removed, it's extended. Keep
-  the existing VPS-oriented task files working until the generalized version
-  is verified against Bottega, then retire the VPS-specific defaults.
+- **What replaces it**: superseded rather than generalized. Bottega's hub side
+  is `ansible/roles/bottega_phase5`, written to the same preflight/converge/
+  strict-readback shape as the other Bottega phase roles instead of extending a
+  role with no readback and VPS-specific defaults. Casa's spoke side is still
+  unwritten; whether it extends this role or follows the phase-role shape is
+  open.
+- **Safe removal order**: N/A — not removed. It keeps serving the VPS tunnel,
+  which is the phase 5 rollback path, until that tunnel is decommissioned.
 
 ### `PUBLIC_INTERNET.md` (as a forward-looking design doc)
 

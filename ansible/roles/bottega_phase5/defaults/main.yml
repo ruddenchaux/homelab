@@ -1,0 +1,28 @@
+---
+bottega_phase5_wan_list: WAN
+bottega_phase5_lan_list: LAN
+
+# Hub listener. specs/network/topology.md "Tunnel parameters" owns the port and
+# MTU; specs/network/wireguard.md owns the overlay addresses.
+bottega_phase5_wg_interface: wg-hub
+bottega_phase5_wg_port: 61536
+bottega_phase5_wg_mtu: 1412
+bottega_phase5_wg_address: 10.99.0.1/32
+bottega_phase5_overlay_subnet: 10.99.0.0/24
+bottega_phase5_public_ipv4: 145.11.24.43
+
+# Road-warrior peer. Casa's spoke peer lands on this same interface in a later
+# phase, which is why forward rules are scoped by src-address, not interface.
+bottega_phase5_roadwarrior_name: roadwarrior
+bottega_phase5_roadwarrior_address: 10.99.0.11
+bottega_phase5_roadwarrior_dns: 10.30.0.1
+bottega_phase5_casa_lan: 192.168.90.0/24
+
+bottega_phase5_lab_vlans:
+  - 10.10.0.0/24
+  - 10.20.0.0/24
+  - 10.30.0.0/24
+bottega_phase5_address_list: bottega-lab-vlans
+
+# Rendered client artefacts land at the repository root, gitignored.
+bottega_phase5_client_output_dir: "{{ playbook_dir }}/../.."

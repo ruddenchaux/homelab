@@ -7,19 +7,25 @@
   register: _bottega_enabled_services
   changed_when: false
 
-- name: Limit Bottega RouterOS services to the default LAN
+- name: Limit Bottega RouterOS services to the management subnets
   community.routeros.command:
     commands:
       - >-
         /ip service set [find where name="{{ item.item }}"]
         disabled=no
-        address={{ bottega_mikrotik_lan_management_subnet }}
+        address={{ bottega_mikrotik_management_subnets | join(',') }}
   loop: "{{ _bottega_enabled_services.results }}"
   loop_control:
     label: "{{ item.item }}"
+  vars:
+    _current_subnets: >-
+      {{ (item.stdout[0] | regex_search('address=([^\s]*)', '\1')
+      | first | default('')).split(',') | reject('equalto', '') | list }}
   when: >-
-    bottega_mikrotik_lan_management_subnet not in item.stdout[0] or
-    item.stdout[0] is search('(^|\\s)X\\s+name=')
+    (item.stdout[0] is search('(^|\\s)X\\s+name=')) or
+    ((_current_subnets |
+    symmetric_difference(bottega_mikrotik_management_subnets) |
+    length) > 0)
 
 - name: Check Bottega disabled RouterOS services
   community.routeros.command:

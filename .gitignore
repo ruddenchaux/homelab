@@ -18,6 +18,7 @@ downloaded_iso_path/
 *.age
 *.key
 *-vpn-qr.png
+*-vpn.conf
 
 # Editor files
 *.swp

@@ -1,0 +1,15 @@
+---
+bottega_phase5_wg_interface_comment: bottega-phase5-wg-hub
+bottega_phase5_wg_address_comment: bottega-phase5-wg-address
+bottega_phase5_wg_lan_member_comment: bottega-phase5-wg-lan
+bottega_phase5_peer_comment: bottega-phase5-peer-roadwarrior
+bottega_phase5_forward_comment: bottega-phase5-fwd-roadwarrior
+bottega_phase5_mangle_comment: bottega-phase5-wg-mss-clamp
+bottega_phase5_address_list_comment: bottega-phase5-lab-vlans
+bottega_phase5_route_comment: bottega-phase5-route-roadwarrior
+
+# Must match the entry declared in inventory/group_vars/mikrotik.yml — preflight
+# asserts they agree, because the base-lockdown role is what actually installs
+# this rule.
+bottega_phase5_input_exception_comment: >-
+  Bottega phase 5 input 03a accept-wireguard

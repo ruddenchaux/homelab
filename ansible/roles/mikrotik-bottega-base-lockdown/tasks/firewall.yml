@@ -1,8 +1,13 @@
 ---
-- name: Read Bottega phase 1 input firewall state
+- name: Read Bottega input firewall state
   ansible.builtin.include_tasks: read-input-firewall-state.yml
 
-- name: Replace Bottega input chain with phase 1 rules
+# RouterOS appends, so emitting base rules, then exceptions, then the WAN drop
+# reproduces the required order without any `move`. The three tasks share one
+# condition and must always run together — the chain is briefly empty between
+# them, which is safe (an empty input chain defaults to accept) but never
+# leaves the WAN drop missing at rest.
+- name: Replace Bottega input chain with the base rules
   community.routeros.command:
     commands:
       - /ip firewall filter remove [find where chain=input]
@@ -24,6 +29,32 @@
         action=accept
         in-interface-list=!{{ bottega_mikrotik_wan_list }}
         comment="Bottega phase 1 input 03 accept-not-WAN"
+  when: "not _bottega_input_firewall_ok"
+
+- name: Add the declared Bottega input-chain WAN exceptions
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter add
+        chain=input
+        action=accept
+        in-interface-list={{ item.in_interface_list
+        | default(bottega_mikrotik_wan_list) }}
+        protocol={{ item.protocol }}
+        dst-port={{ item.dst_port }}
+        {{ ('src-address=' ~ item.src_address)
+        if item.src_address is defined else '' }}
+        {{ ('dst-address=' ~ item.dst_address)
+        if item.dst_address is defined else '' }}
+        comment="{{ item.comment }}"
+  loop: "{{ bottega_mikrotik_input_exceptions }}"
+  loop_control:
+    label: "{{ item.comment }}"
+  when: "not _bottega_input_firewall_ok"
+
+- name: Close the Bottega input chain with the WAN drop
+  community.routeros.command:
+    commands:
       - >-
         /ip firewall filter add
         chain=input

@@ -1,0 +1,43 @@
+---
+# Implements specs/sites/bottega-phase-5-wireguard.md.
+# Opens the only inbound WAN VPN service on Bottega — WireGuard UDP 61536 —
+# and provisions the road-warrior peer. Run under RouterOS safe mode from a
+# laptop cabled to ether2, ether3, or ether4, with the existing VPS
+# road-warrior profile still working as the fallback path.
+- name: Install the Bottega phase 5 WireGuard hub
+  hosts: mikrotik
+  gather_facts: false
+  vars:
+    bottega_phase5_router_recovery_confirmed: false
+    bottega_phase5_external_baseline_confirmed: false
+    bottega_phase5_vps_fallback_available_confirmed: false
+
+  pre_tasks:
+    - name: Load Bottega-only WireGuard secrets
+      community.sops.load_vars:
+        file: "{{ playbook_dir }}/../secrets/bottega.sops.yml"
+        name: bottega_phase5_secrets
+      no_log: true
+
+    - name: Set the Bottega road-warrior key facts
+      ansible.builtin.set_fact:
+        bottega_phase5_roadwarrior_private_key: >-
+          {{ _phase5_secrets['bottega_wg_roadwarrior_private_key'] }}
+        bottega_phase5_roadwarrior_public_key: >-
+          {{ _phase5_secrets['bottega_wg_roadwarrior_public_key'] }}
+      vars:
+        _phase5_secrets: "{{ ansible_facts['bottega_phase5_secrets'] }}"
+      no_log: true
+
+    - name: Confirm Bottega management services remain reachable
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: "{{ item }}"
+        timeout: 2
+      loop:
+        - 22
+        - 8291
+      delegate_to: localhost
+
+  roles:
+    - bottega_phase5

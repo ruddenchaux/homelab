@@ -1,0 +1,12 @@
+---
+- name: Run Bottega phase 5 preflight checks
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Converge the Bottega phase 5 WireGuard hub
+  ansible.builtin.include_tasks: converge.yml
+
+- name: Validate the Bottega phase 5 WireGuard hub
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Render the Bottega phase 5 road-warrior client configuration
+  ansible.builtin.include_tasks: client-config.yml

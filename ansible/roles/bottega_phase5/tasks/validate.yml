@@ -1,0 +1,167 @@
+---
+- name: Read the final Bottega phase 5 owned objects
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Assert every owned Bottega phase 5 object is exact and enabled
+  ansible.builtin.assert:
+    that:
+      - bottega_phase5_wg_interface_ok
+      - bottega_phase5_wg_address_ok
+      - bottega_phase5_wg_lists_ok
+      - bottega_phase5_peer_ok
+      - bottega_phase5_forward_rule_ok
+      - bottega_phase5_mangle_rule_ok
+      - bottega_phase5_address_list_ok
+      - bottega_phase5_route_ok
+    quiet: true
+    fail_msg: >-
+      Strict readback of the owned Bottega phase 5 objects failed: the
+      interface, tunnel address, LAN-only membership, road-warrior peer,
+      forward accept, MSS clamp, lab-VLAN address list, or road-warrior route
+      did not converge.
+
+- name: Read the final Bottega phase 5 forward-rule order
+  ansible.builtin.include_tasks: read-forward-order.yml
+
+- name: Assert the road-warrior accept precedes the first forward drop
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase5_forward_drop_count | int) == 0
+        or (bottega_phase5_forward_before_first_drop | bool)
+    quiet: true
+    fail_msg: >-
+      The owned phase 5 forward accept is not before the first enabled forward
+      drop, so tunnel traffic can be shadowed by that drop.
+
+- name: Re-read the exact Bottega input chain
+  ansible.builtin.include_role:
+    name: mikrotik-bottega-base-lockdown
+    tasks_from: read-input-firewall-state
+  vars:
+    bottega_mikrotik_wan_list: "{{ bottega_phase5_wan_list }}"
+
+- name: Assert the input chain carries the exception and still drops WAN last
+  ansible.builtin.assert:
+    that:
+      - _bottega_input_firewall_ok
+      - >-
+        (_bottega_actual_input_rules | last)[2] == 'action=drop'
+      - >-
+        (_bottega_actual_input_rules | last)[4] ==
+        ('in-interface-list=' ~ bottega_phase5_wan_list)
+    quiet: true
+    fail_msg: >-
+      The input chain does not match the base rules plus the phase 5 WireGuard
+      exception, with drop-WAN last. Router management must never become
+      WAN-reachable (AGENTS.md #5).
+
+- name: Read final Bottega phase 5 router-local state
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member print terse
+        where list={{ bottega_phase5_wan_list }}
+      - >-
+        /interface list member print terse
+        where list={{ bottega_phase5_lan_list }}
+      - >-
+        /ip route print terse
+        where dst-address={{ bottega_phase5_roadwarrior_address }}/32
+      - >-
+        :put ("public-key=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] public-key])
+      - /ip service print terse where name=ssh
+      - /ip service print terse where name=winbox
+      - /ip service print terse where name=www
+  register: bottega_phase5_final_state
+  changed_when: false
+
+- name: Assert LAN and WAN interface lists remain disjoint
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase5_final_state.stdout[0] |
+        regex_findall('interface=([^\s]+)') |
+        intersect(bottega_phase5_final_state.stdout[1] |
+        regex_findall('interface=([^\s]+)')) | length) == 0
+      - >-
+        bottega_phase5_wg_interface not in
+        (bottega_phase5_final_state.stdout[0] |
+        regex_findall('interface=([^\s]+)'))
+      - >-
+        bottega_phase5_wg_interface in
+        (bottega_phase5_final_state.stdout[1] |
+        regex_findall('interface=([^\s]+)'))
+    quiet: true
+    fail_msg: >-
+      {{ bottega_phase5_wg_interface }} must be a LAN-list member and never a
+      WAN-list member, and no interface may be in both lists.
+
+# Cross-check via the live routing table, independent of the strict-readback
+# path above: the hub address is a /32, so there is no connected route
+# covering the overlay, and RouterOS does not derive one from the peer's
+# allowed-address on this build — the owned static route added in converge.yml
+# is what makes the road-warrior reachable at all.
+- name: Assert a route to the road-warrior overlay address exists
+  ansible.builtin.assert:
+    that:
+      - >-
+        bottega_phase5_wg_interface in
+        bottega_phase5_final_state.stdout[2]
+    quiet: true
+    fail_msg: >-
+      No route to {{ bottega_phase5_roadwarrior_address }}/32 via
+      {{ bottega_phase5_wg_interface }} in the live routing table, even though
+      the owned static route ({{ bottega_phase5_route_comment }}) read back as
+      present and correct. Investigate before re-running.
+
+- name: Assert the hub has a usable WireGuard public key
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_phase5_final_state.stdout_lines[3] | last | trim
+        | regex_replace('^public-key=', '') | length) == 44
+    quiet: true
+    fail_msg: >-
+      {{ bottega_phase5_wg_interface }} has no readable public key, so no
+      client configuration can be generated for it.
+
+- name: Assert router management is scoped to the declared subnets only
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item | regex_search('address=([^\\s]*)', '\\1') | first
+        | default(''))
+        .split(',') | reject('equalto', '') | list |
+        symmetric_difference(bottega_mikrotik_management_subnets) | length == 0
+      - "item is not search('(^|\\s)X\\s+name=')"
+    quiet: true
+    fail_msg: >-
+      A RouterOS management service is not limited to exactly
+      {{ bottega_mikrotik_management_subnets | join(',') }}. The overlay is
+      reachable only after a WireGuard handshake; anything wider would expose
+      management beyond LAN/VPN (AGENTS.md #5).
+  loop:
+    - "{{ bottega_phase5_final_state.stdout[4] }}"
+    - "{{ bottega_phase5_final_state.stdout[5] }}"
+    - "{{ bottega_phase5_final_state.stdout[6] }}"
+  loop_control:
+    label: "{{ item | regex_search('name=([^\\s]+)', '\\1') | first }}"
+
+- name: Re-read the exact Bottega phase 4 owned rules
+  ansible.builtin.include_role:
+    name: bottega_phase4
+    tasks_from: read-owned-rules
+  vars:
+    bottega_phase4_wan_list: "{{ bottega_phase5_wan_list }}"
+
+- name: Assert the Bottega phase 4 public HTTPS path is unchanged
+  ansible.builtin.assert:
+    that:
+      - bottega_phase4_forward_rule_ok
+      - bottega_phase4_nat_rule_ok
+    quiet: true
+    fail_msg: >-
+      Phase 5 disturbed the phase 4 dst-nat or forward rule. Public HTTPS must
+      keep working across this change.

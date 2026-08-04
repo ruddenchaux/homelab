@@ -1,0 +1,295 @@
+---
+- name: Count owned Bottega phase 5 objects
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard print count-only
+        where name={{ bottega_phase5_wg_interface }}
+      - >-
+        /ip address print count-only
+        where comment="{{ bottega_phase5_wg_address_comment }}"
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase5_lan_list }}
+        interface={{ bottega_phase5_wg_interface }}
+      - >-
+        /interface list member print count-only
+        where list={{ bottega_phase5_wan_list }}
+        interface={{ bottega_phase5_wg_interface }}
+      - >-
+        /interface wireguard peers print count-only
+        where comment="{{ bottega_phase5_peer_comment }}"
+      - >-
+        /ip firewall filter print count-only
+        where comment="{{ bottega_phase5_forward_comment }}"
+      - >-
+        /ip firewall mangle print count-only
+        where comment="{{ bottega_phase5_mangle_comment }}"
+      - >-
+        /ip firewall address-list print count-only
+        where list={{ bottega_phase5_address_list }}
+      - >-
+        /ip route print count-only
+        where comment="{{ bottega_phase5_route_comment }}"
+  register: bottega_phase5_owned_counts
+  changed_when: false
+
+- name: Read owned Bottega phase 5 WireGuard interface properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] disabled])
+      - >-
+        :put ("name=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] name])
+      - >-
+        :put ("listen-port=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] listen-port])
+      - >-
+        :put ("mtu=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] mtu])
+      - >-
+        :put ("comment=" . [/interface wireguard get
+        [find where name={{ bottega_phase5_wg_interface }}] comment])
+  register: bottega_phase5_wg_interface_properties
+  changed_when: false
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[0] | last | trim | int) == 1
+
+- name: Read owned Bottega phase 5 tunnel address properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip address get
+        [find where comment="{{ bottega_phase5_wg_address_comment }}"]
+        disabled])
+      - >-
+        :put ("address=" . [/ip address get
+        [find where comment="{{ bottega_phase5_wg_address_comment }}"]
+        address])
+      - >-
+        :put ("interface=" . [/ip address get
+        [find where comment="{{ bottega_phase5_wg_address_comment }}"]
+        interface])
+  register: bottega_phase5_wg_address_properties
+  changed_when: false
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[1] | last | trim | int) == 1
+
+# endpoint-address must stay empty: the hub only ever answers, it never dials a
+# peer. persistent-keepalive belongs on the CGNAT side, not here.
+- name: Read owned Bottega phase 5 road-warrior peer properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_phase5_peer_comment }}"] disabled])
+      - >-
+        :put ("interface=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_phase5_peer_comment }}"] interface])
+      - >-
+        :put ("public-key=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_phase5_peer_comment }}"] public-key])
+      - >-
+        :put ("allowed-address=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_phase5_peer_comment }}"]
+        allowed-address])
+      - >-
+        :put ("endpoint-address=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_phase5_peer_comment }}"]
+        endpoint-address])
+  register: bottega_phase5_peer_properties
+  changed_when: false
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[4] | last | trim | int) == 1
+
+- name: Read owned Bottega phase 5 forward-rule properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"] disabled])
+      - >-
+        :put ("chain=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"] chain])
+      - >-
+        :put ("action=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"] action])
+      - >-
+        :put ("in-interface=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"]
+        in-interface])
+      - >-
+        :put ("in-interface-list=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"]
+        in-interface-list])
+      - >-
+        :put ("src-address=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"]
+        src-address])
+      - >-
+        :put ("dst-address-list=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"]
+        dst-address-list])
+      - >-
+        :put ("dst-address=" . [/ip firewall filter get
+        [find where comment="{{ bottega_phase5_forward_comment }}"]
+        dst-address])
+  register: bottega_phase5_forward_properties
+  changed_when: false
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[5] | last | trim | int) == 1
+
+- name: Read owned Bottega phase 5 MSS-clamp properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"] disabled])
+      - >-
+        :put ("chain=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"] chain])
+      - >-
+        :put ("action=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"] action])
+      - >-
+        :put ("new-mss=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"] new-mss])
+      - >-
+        :put ("protocol=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"] protocol])
+      - >-
+        :put ("tcp-flags=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"] tcp-flags])
+      - >-
+        :put ("out-interface=" . [/ip firewall mangle get
+        [find where comment="{{ bottega_phase5_mangle_comment }}"]
+        out-interface])
+  register: bottega_phase5_mangle_properties
+  changed_when: false
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[6] | last | trim | int) == 1
+
+- name: Read the Bottega phase 5 lab-VLAN address list
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall address-list print terse
+        where list={{ bottega_phase5_address_list }}
+  register: bottega_phase5_address_list_entries
+  changed_when: false
+
+# RouterOS does not derive a route to the peer's allowed-address from a /32
+# interface address, so the road-warrior's overlay address is unreachable
+# without one (confirmed on the hAP be3 build in use here) — this is an owned
+# static route, not a readback of something RouterOS manages on its own.
+- name: Read owned Bottega phase 5 road-warrior route properties
+  community.routeros.command:
+    commands:
+      - >-
+        :put ("disabled=" . [/ip route get
+        [find where comment="{{ bottega_phase5_route_comment }}"] disabled])
+      - >-
+        :put ("dst-address=" . [/ip route get
+        [find where comment="{{ bottega_phase5_route_comment }}"] dst-address])
+      - >-
+        :put ("gateway=" . [/ip route get
+        [find where comment="{{ bottega_phase5_route_comment }}"] gateway])
+  register: bottega_phase5_route_properties
+  changed_when: false
+  when: >-
+    (bottega_phase5_owned_counts.stdout_lines[8] | last | trim | int) == 1
+
+- name: Record exact owned Bottega phase 5 object state
+  ansible.builtin.set_fact:
+    bottega_phase5_wg_interface_ok: >-
+      {{ (_interface_count == 1) and
+      ((bottega_phase5_wg_interface_properties.stdout_lines |
+      default([]) | map('last') | map('trim') | list) == _expected_interface) }}
+    bottega_phase5_wg_address_ok: >-
+      {{ (_address_count == 1) and
+      ((bottega_phase5_wg_address_properties.stdout_lines |
+      default([]) | map('last') | map('trim') | list) == _expected_address) }}
+    bottega_phase5_wg_lists_ok: >-
+      {{ (_lan_member_count == 1) and (_wan_member_count == 0) }}
+    bottega_phase5_peer_ok: >-
+      {{ (_peer_count == 1) and
+      ((bottega_phase5_peer_properties.stdout_lines |
+      default([]) | map('last') | map('trim') | list) == _expected_peer) }}
+    bottega_phase5_forward_rule_ok: >-
+      {{ (_forward_count == 1) and
+      ((bottega_phase5_forward_properties.stdout_lines |
+      default([]) | map('last') | map('trim') | list) == _expected_forward) }}
+    bottega_phase5_mangle_rule_ok: >-
+      {{ (_mangle_count == 1) and
+      ((bottega_phase5_mangle_properties.stdout_lines |
+      default([]) | map('last') | map('trim') | list) == _expected_mangle) }}
+    bottega_phase5_address_list_ok: >-
+      {{ (_actual_list_entries | sort) ==
+      (bottega_phase5_lab_vlans | sort) }}
+    bottega_phase5_missing_address_list_entries: >-
+      {{ bottega_phase5_lab_vlans | difference(_actual_list_entries) }}
+    bottega_phase5_extra_address_list_entries: >-
+      {{ _actual_list_entries | difference(bottega_phase5_lab_vlans) }}
+    bottega_phase5_route_ok: >-
+      {{ (_route_count == 1) and
+      ((bottega_phase5_route_properties.stdout_lines |
+      default([]) | map('last') | map('trim') | list) == _expected_route) }}
+  vars:
+    _interface_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[0] | last | trim | int }}
+    _address_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[1] | last | trim | int }}
+    _lan_member_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[2] | last | trim | int }}
+    _wan_member_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[3] | last | trim | int }}
+    _peer_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[4] | last | trim | int }}
+    _forward_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[5] | last | trim | int }}
+    _mangle_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[6] | last | trim | int }}
+    _route_count: >-
+      {{ bottega_phase5_owned_counts.stdout_lines[8] | last | trim | int }}
+    _actual_list_entries: >-
+      {{ bottega_phase5_address_list_entries.stdout[0] |
+      regex_findall('address=([^\s]+)') }}
+    _expected_interface:
+      - disabled=false
+      - "name={{ bottega_phase5_wg_interface }}"
+      - "listen-port={{ bottega_phase5_wg_port }}"
+      - "mtu={{ bottega_phase5_wg_mtu }}"
+      - "comment={{ bottega_phase5_wg_interface_comment }}"
+    _expected_address:
+      - disabled=false
+      - "address={{ bottega_phase5_wg_address }}"
+      - "interface={{ bottega_phase5_wg_interface }}"
+    _expected_peer:
+      - disabled=false
+      - "interface={{ bottega_phase5_wg_interface }}"
+      - "public-key={{ bottega_phase5_roadwarrior_public_key }}"
+      - "allowed-address={{ bottega_phase5_roadwarrior_address }}/32"
+      - endpoint-address=
+    _expected_forward:
+      - disabled=false
+      - chain=forward
+      - action=accept
+      - "in-interface={{ bottega_phase5_wg_interface }}"
+      - in-interface-list=
+      - "src-address={{ bottega_phase5_roadwarrior_address }}"
+      - "dst-address-list={{ bottega_phase5_address_list }}"
+      - dst-address=
+    _expected_mangle:
+      - disabled=false
+      - chain=forward
+      - action=change-mss
+      - new-mss=clamp-to-pmtu
+      - protocol=tcp
+      - tcp-flags=syn
+      - "out-interface={{ bottega_phase5_wg_interface }}"
+    _expected_route:
+      - disabled=false
+      - "dst-address={{ bottega_phase5_roadwarrior_address }}/32"
+      - "gateway={{ bottega_phase5_wg_interface }}"

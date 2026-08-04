@@ -14,11 +14,12 @@ ansible-playbook playbooks/bottega-base-lockdown.yml
 This role implements Bottega phase 1 and preserves the phase 2 WAN boundary on
 reruns after PPPoE exists:
 
-- RouterOS management services limited to the factory LAN.
+- RouterOS management services limited to the declared management subnets.
 - RouterOS HTTPS listeners disabled until the later public-exposure phase.
 - WAN/LAN interface-list baseline.
 - Existing phase 2 PPPoE WAN interfaces kept in `WAN`, not `LAN`.
-- Four-rule input firewall baseline.
+- The complete input firewall chain: four base rules plus any declared WAN
+  exceptions.
 - LAN-scoped MAC recovery.
 - Admin SSH key import and SSH password-auth disablement.
 - Bottega-specific SOPS recovery password for WinBox/console recovery.
@@ -27,6 +28,41 @@ It intentionally does not configure PPPoE, VLANs, WireGuard, dst-nat, Wi-Fi,
 service exposure, or topology/addressing changes. The PPPoE task still owns
 creating and enabling `pppoe-out1`; this role only treats that interface as
 WAN when it already exists.
+
+## Input-Chain Ownership Contract
+
+This role owns the **whole** `input` chain, not just its own four rules. Later
+phases that need a WAN exception declare it here instead of adding a rule
+behind this role's back:
+
+```yaml
+bottega_mikrotik_input_exceptions:
+  - comment: "Bottega phase 5 input 03a accept-wireguard"
+    protocol: udp
+    dst_port: 61536
+    in_interface_list: WAN
+```
+
+`comment` must be unique; `protocol` and `dst_port` are required;
+`in_interface_list` defaults to `WAN`; `src_address` and `dst_address` are
+optional. Declarations are checked into
+`ansible/inventory/group_vars/mikrotik.yml` so every playbook that touches this
+router agrees on the same chain.
+
+The reason this is not optional: `tasks/firewall.yml` rebuilds the chain with
+`/ip firewall filter remove [find where chain=input]` whenever the readback
+drifts. A rule added outside this model would be silently deleted on the next
+run of the base lockdown — dropping a live WireGuard tunnel, which is the
+remote-lockout scenario `AGENTS.md` #4 exists to prevent. Exceptions are always
+emitted between `accept !WAN` and `drop WAN`, so the WAN drop stays last.
+
+`tasks/read-input-firewall-state.yml` is included by other phase roles
+(`bottega_phase4`, `bottega_phase5`) to assert the chain is intact before and
+after their own changes; it exports `_bottega_input_firewall_ok`.
+
+Similarly, `bottega_mikrotik_management_subnets` is the full list of subnets
+allowed to reach `www`/`ssh`/`winbox`. Validation asserts an exact match, so an
+unexpected entry fails rather than silently widening management access.
 
 ## Spec Link
 
@@ -79,10 +115,12 @@ ansible-lint playbooks/bottega-base-lockdown.yml
 
 Router validation is built into `tasks/validate.yml` and checks:
 
-- `www`, `ssh`, and `winbox` are limited to `192.168.88.0/24`.
+- `www`, `ssh`, and `winbox` are limited to exactly
+  `bottega_mikrotik_management_subnets`.
 - `telnet`, `ftp`, `api`, `api-ssl`, and `www-ssl` are disabled.
 - If RouterOS exposes `reverse-proxy`, it is disabled.
-- Input firewall has exactly the four phase-1 rules in spec order.
+- Input firewall has exactly the base rules plus the declared exceptions, in
+  spec order, with `drop in-interface-list=WAN` last.
 - `WAN` contains `ether1`, `LAN` contains `bridge`, with no overlap.
 - If `pppoe-out1` exists, it is a member of `WAN` and not `LAN`.
 - MAC server, MAC WinBox, and neighbor discovery are LAN-scoped.
