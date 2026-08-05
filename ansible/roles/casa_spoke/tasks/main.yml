@@ -1,0 +1,13 @@
+---
+# Default entry point: the whole Casa side in one pass. casa-spoke.yml does not
+# use it -- it needs the hub-side peer applied between the two halves -- but it
+# is the right shape for a converged re-run, where every step is a no-op and the
+# point is to prove it.
+- name: Build the Casa spoke tunnel
+  ansible.builtin.include_tasks: tunnel.yml
+
+- name: Converge the Casa site changes
+  ansible.builtin.include_tasks: site.yml
+
+- name: Validate the Casa spoke
+  ansible.builtin.include_tasks: validate.yml

@@ -1,0 +1,81 @@
+---
+# Comments are this role's ownership marker on RouterOS: every object the role
+# creates carries one, every object it reads back is found by one, and preflight
+# refuses to run when an owned comment matches something that has drifted. The
+# casa-phase1- prefix is shared with the hub side (bottega_casa_peer) because
+# both halves are one change.
+casa_spoke_wg_interface_comment: casa-phase1-wg-casa
+casa_spoke_wg_address_comment: casa-phase1-wg-address
+casa_spoke_wg_lan_member_comment: casa-phase1-wg-lan
+casa_spoke_peer_comment: casa-phase1-peer-bottega
+casa_spoke_mangle_comment: casa-phase1-wg-mss-clamp
+casa_spoke_route_comment: casa-phase1-route
+
+casa_spoke_cutover_script_name: casa-phase1-cutover
+casa_spoke_cutover_scheduler_name: casa-phase1-cutover
+
+# RouterOS policy set the cutover script and its scheduler run under. `policy`
+# is needed for /ip service, `write` for everything else; nothing here reboots,
+# sniffs, or reads credentials.
+casa_spoke_cutover_policy: read,write,policy,test
+
+# The cutover statements, in the order the router executes them.
+#
+# They are one script rather than a sequence of Ansible tasks because the first
+# statement destroys the transport the later ones would have travelled over: the
+# moment the bridge address moves, the operator's session on 192.168.88.x is
+# gone. Splitting them would leave a window in which management is already
+# restricted to 192.168.90.0/24 while the router still answers only on
+# 192.168.88.1 -- a lockout with no path back except the console.
+#
+# The renumber comes before the service restriction, and the restriction is
+# additionally *guarded* on the renumber having actually taken effect.
+#
+# Without that guard there is a real lockout path: every statement matches on the
+# value it replaces, so if the bridge address were not the expected
+# 192.168.88.1/24 at the moment the script fires, the renumber would silently
+# match nothing and no-op -- and the script would then go on to restrict
+# management to a subnet that does not exist on this router, from a session that
+# is about to be told it is no longer allowed. Preflight checks the address
+# seconds earlier, but the guard makes the failure structurally impossible rather
+# than merely unlikely, which is the right trade for an unattended job holding
+# write and policy permissions.
+#
+# With the guard, the worst case is a router left reachable and unrestricted.
+#
+# Every statement is idempotent and matches on the value it is replacing, so a
+# second run of the script is a no-op rather than a second renumber. (Verified:
+# RouterOS `set` against an empty `find` is a no-op, not an error.)
+casa_spoke_cutover_statements: >-
+  {{
+  [
+    '/ip address set [find where interface="' ~ casa_spoke_bridge ~
+    '" and address="' ~ casa_spoke_legacy_lan_gateway_address ~ '"]' ~
+    ' address=' ~ casa_spoke_lan_gateway_address,
+
+    '/ip pool set [find where name="' ~ casa_spoke_dhcp_pool_name ~ '"]' ~
+    ' ranges=' ~ casa_spoke_dhcp_pool_ranges,
+
+    '/ip dhcp-server network set [find where address="' ~
+    casa_spoke_legacy_lan_subnet ~ '"]' ~
+    ' address=' ~ casa_spoke_lan_subnet ~
+    ' gateway=' ~ casa_spoke_lan_gateway ~
+    ' dns-server=' ~ casa_spoke_adguard_address,
+
+    '/ip firewall nat set [find where chain=dstnat and dst-address="' ~
+    casa_spoke_legacy_lan_gateway ~ '" and to-addresses="' ~
+    casa_spoke_adguard_address ~ '"]' ~
+    ' dst-address=' ~ casa_spoke_lan_gateway,
+
+    ':if ([:len [/ip address find where interface="' ~ casa_spoke_bridge ~
+    '" and address="' ~ casa_spoke_lan_gateway_address ~ '"]] = 1) do={ ' ~
+    (casa_spoke_restricted_services | map('regex_replace', '^(.*)$',
+     '/ip service set [find where name="\1" and !dynamic] address=' ~
+     (casa_spoke_management_subnets | join(','))) | join('; ')) ~ ' }',
+
+    '/system scheduler remove [find where name="' ~
+    casa_spoke_cutover_scheduler_name ~ '"]'
+  ]
+  }}
+
+casa_spoke_cutover_source: "{{ casa_spoke_cutover_statements | join('; ') }}"

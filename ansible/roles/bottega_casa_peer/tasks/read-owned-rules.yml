@@ -1,0 +1,237 @@
+---
+- name: Count owned Bottega Casa-peer objects
+  community.routeros.command:
+    commands:
+      - ':put ("peer=" .
+        [:len [/interface wireguard peers find where
+        comment="{{ bottega_casa_peer_comment }}"]])'
+      - ':put ("route=" .
+        [:len [/ip route find where
+        comment="{{ bottega_casa_peer_route_comment }}"]])'
+      - ':local n 0;
+        :foreach r in=[/ip route find where
+        comment="{{ bottega_casa_peer_route_comment }}"] do={
+        :if ([/ip route get $r active]) do={ :set n ($n + 1) } };
+        :put ("route-active=" . $n)'
+      - ':put ("source-list=" .
+        [:len [/ip firewall address-list find where
+        list="{{ bottega_casa_peer_source_list }}"]])'
+      - ':put ("lab-vlan-list=" .
+        [:len [/ip firewall address-list find where
+        list="{{ bottega_casa_peer_lab_vlan_list }}"]])'
+      # Phase 5 objects this role must leave exactly as it found them.
+      - ':put ("hub-interface=" .
+        [:len [/interface wireguard find where
+        name="{{ bottega_casa_peer_wg_interface }}"]])'
+      - ':put ("hub-lan-member=" .
+        [:len [/interface list member find where
+        list="{{ bottega_casa_peer_lan_list }}"
+        and interface="{{ bottega_casa_peer_wg_interface }}"]])'
+      - ':put ("hub-wan-member=" .
+        [:len [/interface list member find where
+        list="{{ bottega_casa_peer_wan_list }}"
+        and interface="{{ bottega_casa_peer_wg_interface }}"]])'
+      # Every string-valued matcher is quoted: RouterOS `find where` compares an
+      # unquoted bareword by a different path and silently matches nothing --
+      # `protocol=udp` returns 0 where `protocol="udp"` returns the rule.
+      - ':put ("input-exception=" .
+        [:len [/ip firewall filter find where chain="input"
+        and protocol="udp"
+        and dst-port="{{ bottega_casa_peer_wg_port }}"]])'
+      - ':local n [:len [/ip firewall filter find where chain=input]];
+        :local r [:pick [/ip firewall filter find where chain=input] ($n - 1)];
+        :put ("input-last-action=" . [/ip firewall filter get $r action])'
+      - ':local n [:len [/ip firewall filter find where chain=input]];
+        :local r [:pick [/ip firewall filter find where chain=input] ($n - 1)];
+        :put ("input-last-list=" .
+        [:tostr [/ip firewall filter get $r in-interface-list]])'
+      - ':put ("input-rule-count=" .
+        [:len [/ip firewall filter find where chain=input]])'
+      # Anything else already claiming Casa's overlay address would make the
+      # rules below ambiguous.
+      - ':put ("conflicting-peer=" .
+        [:len [/interface wireguard peers find where
+        allowed-address~"{{ bottega_casa_peer_overlay_address }}"]])'
+  register: bottega_casa_peer_counts_raw
+  changed_when: false
+
+- name: Record owned Bottega Casa-peer counts
+  ansible.builtin.set_fact:
+    bottega_casa_peer_counts: "{{ dict(_pairs) }}"
+  vars:
+    _pairs: >-
+      {{ bottega_casa_peer_counts_raw.stdout_lines | map('last') |
+      map('trim') | map('regex_findall', '^([^=]+)=(.*)$') |
+      map('first') | list }}
+
+# The hub half of the peer pair: no endpoint and no keepalive. The hub only ever
+# answers -- Casa is the side behind CGNAT, so dialling and holding the mapping
+# open are its job, and an endpoint here would have the hub chasing a CGNAT
+# address that changes without notice.
+- name: Read owned Bottega Casa-peer properties
+  community.routeros.command:
+    commands:
+      - ':put ("disabled=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"] disabled])'
+      - ':put ("interface=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"] interface])'
+      - ':put ("public-key=" . [/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"] public-key])'
+      # One short line per entry. RouterOS hard-wraps output at 80 columns with
+      # no continuation marker, so a single `:put` of a list property comes back
+      # split mid-CIDR; it also repeats the prefix and joins with ";" rather than
+      # emitting the comma-separated string `print` shows.
+      - ':foreach a in=[/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"] allowed-address]
+        do={ :put ("allowed-address=" . $a) }'
+      - ':put ("endpoint-address=" . [:tostr [/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"]
+        endpoint-address]])'
+      - ':put ("persistent-keepalive=" . [:tostr [/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"]
+        persistent-keepalive]])'
+      - ':put ("last-handshake=" . [:tostr [/interface wireguard peers get
+        [find where comment="{{ bottega_casa_peer_comment }}"]
+        last-handshake]])'
+  register: bottega_casa_peer_properties
+  changed_when: false
+  when: (bottega_casa_peer_counts['peer'] | int) == 1
+
+# Not `print terse` for any of these: a terse row carries creation-time and
+# routing-table fields that push it well past the 80-column wrap, splitting the
+# very values being parsed. Synthesised short lines instead, one per object.
+- name: Read owned Bottega Casa routes and address-list entries
+  community.routeros.command:
+    commands:
+      - ':foreach r in=[/ip route find where
+        comment="{{ bottega_casa_peer_route_comment }}"] do={
+        :put ("route=" . [/ip route get $r dst-address] . "|" .
+        [:tostr [/ip route get $r gateway]]) }'
+      - ':foreach e in=[/ip firewall address-list find where
+        list="{{ bottega_casa_peer_source_list }}"] do={
+        :put ("source=" . [/ip firewall address-list get $e address]) }'
+      - ':foreach e in=[/ip firewall address-list find where
+        list="{{ bottega_casa_peer_lab_vlan_list }}"] do={
+        :put ("labvlan=" . [/ip firewall address-list get $e address]) }'
+  register: bottega_casa_peer_lists
+  changed_when: false
+
+# One self-guarding command per rule rather than one per property: RouterOS
+# errors on `get` against an empty `find`, and the whole point of this read is
+# to work equally well before and after the rules exist. The `:if` keeps a
+# missing rule reported as `count=0` instead of failing the task, and a single
+# command may emit as many lines as it likes.
+- name: Read owned Bottega Casa forward-rule properties
+  community.routeros.command:
+    commands:
+      - ':local id [/ip firewall filter find where
+        comment="{{ item.comment }}"];
+        :put ("count=" . [:len $id]);
+        :if ([:len $id] = 1) do={
+        :put ("disabled=" . [:tostr [/ip firewall filter get $id disabled]]);
+        :put ("chain=" . [:tostr [/ip firewall filter get $id chain]]);
+        :put ("action=" . [:tostr [/ip firewall filter get $id action]]);
+        :put ("in-interface=" .
+        [:tostr [/ip firewall filter get $id in-interface]]);
+        :put ("out-interface=" .
+        [:tostr [/ip firewall filter get $id out-interface]]);
+        :put ("src-address=" .
+        [:tostr [/ip firewall filter get $id src-address]]);
+        :put ("dst-address=" .
+        [:tostr [/ip firewall filter get $id dst-address]]);
+        :put ("src-address-list=" .
+        [:tostr [/ip firewall filter get $id src-address-list]]);
+        :put ("dst-address-list=" .
+        [:tostr [/ip firewall filter get $id dst-address-list]]) }'
+  loop: "{{ bottega_casa_peer_forward_rules }}"
+  loop_control:
+    label: "{{ item.comment }}"
+  register: bottega_casa_peer_forward_properties
+  changed_when: false
+
+- name: Record exact owned Bottega Casa-peer state
+  ansible.builtin.set_fact:
+    bottega_casa_peer_ok: >-
+      {{ ((bottega_casa_peer_counts['peer'] | int) == 1) and
+      (_peer['disabled'] | default('') == 'false') and
+      (_peer['interface'] | default('') ==
+      bottega_casa_peer_wg_interface) and
+      (_peer['public-key'] | default('') ==
+      bottega_casa_peer_public_key) and
+      (_peer['endpoint-address'] | default('x') == '') and
+      (_peer['persistent-keepalive'] | default('x') in ['', '00:00:00']) and
+      ((_peer_allowed | sort) ==
+      (bottega_casa_peer_allowed_addresses | sort)) }}
+    bottega_casa_peer_handshake: "{{ _peer['last-handshake'] | default('') }}"
+    bottega_casa_peer_routes_ok: >-
+      {{ ((_actual_routes | sort) == (bottega_casa_peer_routes | sort)) and
+      ((_route_gateways | unique) == [bottega_casa_peer_wg_interface]) }}
+    bottega_casa_peer_routes_active: >-
+      {{ (bottega_casa_peer_counts['route-active'] | int) ==
+      (bottega_casa_peer_routes | length) }}
+    bottega_casa_peer_missing_routes: >-
+      {{ bottega_casa_peer_routes | difference(_actual_routes) }}
+    bottega_casa_peer_extra_routes: >-
+      {{ _actual_routes | difference(bottega_casa_peer_routes) }}
+    bottega_casa_peer_source_list_ok: >-
+      {{ (_actual_sources | sort) == (_expected_sources | sort) }}
+    bottega_casa_peer_missing_sources: >-
+      {{ _expected_sources | difference(_actual_sources) }}
+    bottega_casa_peer_extra_sources: >-
+      {{ _actual_sources | difference(_expected_sources) }}
+    bottega_casa_peer_lab_vlans: "{{ _actual_lab_vlans }}"
+    # comment -> the raw `key=value` lines read back for that rule. Callers
+    # assert over it in a loop rather than reducing it to a boolean here, so a
+    # failure message can name the rule and show what it actually found.
+    bottega_casa_peer_forward_state: "{{ _forward_state }}"
+  vars:
+    # Flatten and filter rather than `map('last')`: RouterOS echoes each command
+    # back before its output and hard-wraps at 80 columns, so "the last line" is
+    # a fragment whenever a value is long. Echo lines start with ":" or "<" and
+    # wrap tails start with whatever character the split fell on, so anchoring on
+    # a lowercase key name rejects all three.
+    _peer: >-
+      {{ dict(bottega_casa_peer_properties.stdout_lines | default([]) |
+      flatten | map('trim') | select('match', '^[a-z][a-z0-9-]*=') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list) }}
+    # allowed-address is read one entry per line, so it cannot live in the dict
+    # above -- the key repeats and dict() would keep only the last.
+    _peer_allowed: >-
+      {{ bottega_casa_peer_properties.stdout_lines | default([]) | flatten |
+      map('trim') | select('match', '^allowed-address=.+$') |
+      map('regex_replace', '^allowed-address=', '') | list }}
+    _list_lines: >-
+      {{ bottega_casa_peer_lists.stdout_lines | default([]) | flatten |
+      map('trim') | list }}
+    _route_pairs: >-
+      {{ _list_lines | select('match', '^route=.+\|.*$') |
+      map('regex_replace', '^route=', '') | list }}
+    _actual_routes: "{{ _route_pairs | map('split', '|') | map('first') | list }}"
+    _route_gateways: "{{ _route_pairs | map('split', '|') | map('last') | list }}"
+    # RouterOS normalises a single-host address-list entry by dropping the /32:
+    # `add address=10.99.0.2/32` reads back as `10.99.0.2`. (Routes are not
+    # normalised -- they keep the /32 -- so only this list needs it.) Both sides
+    # are compared stripped, which keeps the check about the address rather than
+    # the notation and, more importantly, keeps create-if-missing idempotent:
+    # comparing raw would report the entry missing on every subsequent run and
+    # try to add it again.
+    _actual_sources: >-
+      {{ _list_lines | select('match', '^source=.+$') |
+      map('regex_replace', '^source=', '') |
+      map('regex_replace', '/32$', '') | list }}
+    _expected_sources: >-
+      {{ bottega_casa_peer_source_addresses |
+      map('regex_replace', '/32$', '') | list }}
+    _actual_lab_vlans: >-
+      {{ _list_lines | select('match', '^labvlan=.+$') |
+      map('regex_replace', '^labvlan=', '') | list }}
+    # Same flatten-and-filter as above. Without it these lists also carry the
+    # echoed command text, which is what the drift fail_msg prints -- unreadable
+    # at exactly the moment it matters.
+    _forward_state: >-
+      {{ dict(bottega_casa_peer_forward_properties.results |
+      map(attribute='item.comment') |
+      zip(bottega_casa_peer_forward_properties.results |
+      map(attribute='stdout_lines') | map('flatten') |
+      map('map', 'trim') | map('select', 'match', '^[a-z][a-z0-9-]*=') |
+      map('list') | list)) }}

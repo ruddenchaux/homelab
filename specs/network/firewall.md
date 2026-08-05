@@ -35,9 +35,10 @@ Forward (traffic passing through the router):
 
 | From | To | Allow? | Notes |
 |------|----|--------|-------|
-| WireGuard (Casa peer) | Bottega lab VLANs it's entitled to (per `wireguard.md` AllowedIPs) | Yes | Not yet implemented — lands on the same `wg-hub` interface, so it must be scoped by `src-address=10.99.0.2`, not by interface |
-| WireGuard (road-warrior peer) | Bottega lab VLANs + (if in scope) onward to Casa | Yes | Implemented as `bottega-phase5-fwd-roadwarrior`: `in-interface=wg-hub`, `src-address=10.99.0.11`, `dst-address-list=bottega-lab-vlans` |
-| Bottega lab VLANs | WireGuard (toward Casa) | Yes, for the subnets Casa should be reachable/reachable-from | Needed for Home Assistant → Casa devices use case |
+| WireGuard (Casa peer) | Bottega lab VLANs it's entitled to (per `wireguard.md` AllowedIPs) | Yes | `casa-phase1-fwd-casa-to-lab`: `in-interface=wg-hub`, `src-address-list=casa-networks`, `dst-address-list=bottega-lab-vlans`. Lands on the same `wg-hub` interface as the road-warrior, so it is scoped by source as well as interface — never by interface alone. The source is an **address list** (`10.99.0.2/32` + `192.168.90.0/24`), not the Casa router's `/32` alone: hosts behind Casa are sourced from `192.168.90.x` and would otherwise not match. See `sites/casa-phase-1-spoke.md` |
+| WireGuard (road-warrior peer) | Bottega lab VLANs | Yes | Implemented as `bottega-phase5-fwd-roadwarrior`: `in-interface=wg-hub`, `src-address=10.99.0.11`, `dst-address-list=bottega-lab-vlans` |
+| WireGuard (road-warrior peer) | onward to Casa's LAN | Yes | `casa-phase1-fwd-roadwarrior-to-casa`: `in-interface=wg-hub`, `src-address=10.99.0.11`, `dst-address=192.168.90.0/24`. Without it the `192.168.90.0/24` entry in the phone profile's AllowedIPs is a route to nowhere |
+| Bottega lab VLANs | WireGuard (toward Casa) | Yes, for the subnets Casa should be reachable/reachable-from | `casa-phase1-fwd-lab-to-casa`: `src-address-list=bottega-lab-vlans`, `dst-address=192.168.90.0/24`, `out-interface=wg-hub`. Needed for the Home Assistant → Casa devices use case; return traffic rides established/related |
 | Any other cross-VLAN traffic | — | Follow existing VLAN segmentation intent (mgmt/trusted/k8s isolated), unchanged from single-site design | See `NETWORKING.md` for the current rule set being carried forward |
 
 ## Casa (spoke)
@@ -48,6 +49,21 @@ Forward (traffic passing through the router):
 | WireGuard (from Bottega, once tunnel is up) | Casa router management | Yes, treated as "LAN-equivalent" per rule #5, never as a WAN exposure | Required per `sites/casa.md` acceptance criteria: an admin at Bottega must be able to apply a RouterOS change to Casa's router over the tunnel without physical access. Reachable because Bottega's `AllowedIPs` for the Casa peer includes Casa's LAN `192.168.90.0/24` (see `wireguard.md`), which is where the router's management interface lives |
 | WireGuard (from Bottega) | Casa LAN devices | Yes | Required use case: Home Assistant (at Bottega) reaching local devices at Casa |
 | Casa LAN | WireGuard (toward Bottega) | Yes | Required: Casa must be administrable from Bottega |
+
+Casa needs **no new forward rule** for any of the above. Its defconf forward
+chain ends at "drop all from WAN not DSTNATed", scoped to the `WAN` interface
+list; `wg-casa` is a `LAN`-list member, so tunnel traffic in both directions
+falls through to the chain's default accept. Likewise, no new *input* rule: the
+defconf input chain's last rule drops everything whose in-interface is not in
+`LAN`, so adding `wg-casa` to `LAN` is the entire mechanism that makes Bottega
+"LAN-equivalent" for Casa router management.
+
+Firewall acceptance is not sufficient on its own at Casa either: `/ip service`
+binds `www`/`ssh`/`winbox` to `192.168.90.0/24,10.99.0.0/24`, and
+`ftp`/`telnet`/`api`/`api-ssl`/`www-ssl`/`reverse-proxy` are disabled outright —
+the same posture Bottega runs, so the spoke never exposes a broader admin
+surface than the hub. Neither subnet is reachable from Casa's WAN, which is
+CGNAT and carries no inbound configuration at all.
 
 ## Acceptance criteria
 

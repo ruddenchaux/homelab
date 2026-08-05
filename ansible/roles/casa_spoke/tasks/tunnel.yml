@@ -1,0 +1,28 @@
+---
+# Entry point for the first Casa play of casa-spoke.yml: preflight, then build
+# wg-casa and read its public key back for the hub.
+#
+# Split from site.yml because the hub-side peer has to be applied in between:
+# the spoke cannot handshake until Bottega knows this router's public key, and
+# nothing at Casa should be torn down before that handshake proves the new
+# administrative path works.
+- name: Run Casa spoke preflight checks
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Build the Casa spoke tunnel to the Bottega hub
+  ansible.builtin.include_tasks: converge-tunnel.yml
+
+- name: Publish the Casa wg-casa public key for the hub-side peer
+  ansible.builtin.set_fact:
+    casa_spoke_wg_public_key: "{{ casa_spoke_public_key }}"
+
+# RouterOS generated the private half on this router and it stays there. This is
+# the public half, which the hub needs and which is not a secret. Printed for the
+# same reason the hub's is: a split run has no hostvars path between the two
+# machines, so the operator carries it across by hand.
+- name: Report the Casa wg-casa public key
+  ansible.builtin.debug:
+    msg:
+      - "Casa wg-casa public key: {{ casa_spoke_wg_public_key }}"
+      - "Split run? Pass it to the Bottega machine as
+         -e bottega_casa_peer_public_key={{ casa_spoke_wg_public_key }}"

@@ -1,0 +1,58 @@
+---
+# Re-address the static DHCP reservations onto the renumbered LAN.
+#
+# Why this is a separate step and not part of the cutover script: unlike the
+# bridge address and the /ip service restriction, changing a reservation does
+# not drop the operator's session and does not have to be atomic with anything.
+# It only affects the *next* lease the device asks for. So it belongs in an
+# ordinary converge task, where it is idempotent and independently verifiable,
+# rather than inside an unattended deferred script.
+#
+# It is gated on the renumber having landed, because a reservation pointing at
+# 192.168.90.x while the router still answers on 192.168.88.1 would strand the
+# device just as surely as the reverse -- which is the bug this step exists to
+# fix. In a from-scratch run the gate is satisfied on the step 7 re-run.
+
+- name: Move the Casa static DHCP reservations onto the renumbered LAN
+  community.routeros.command:
+    commands:
+      - >-
+        /ip dhcp-server lease set
+        [find where !dynamic and mac-address="{{ item.mac }}"]
+        address={{ item.address }}
+  loop: "{{ casa_spoke_dhcp_reservations }}"
+  loop_control:
+    label: "{{ item.hostname }} -> {{ item.address }}"
+  when:
+    - (casa_spoke_reservations['present-' ~ item.mac] | int) == 1
+    - (casa_spoke_reservations['correct-' ~ item.mac] | int) == 0
+
+# Removed rather than re-addressed: this hardware left with the lab and takes
+# its address from Bottega's DHCP now, so a Casa reservation for it can only
+# ever be misleading. Same disposition as the guest-wifi leftovers.
+- name: Remove the Casa reservations for hardware that left the site
+  community.routeros.command:
+    commands:
+      - >-
+        /ip dhcp-server lease remove
+        [find where !dynamic and mac-address="{{ item.mac }}"]
+  loop: "{{ casa_spoke_legacy_reservations }}"
+  loop_control:
+    label: "{{ item.hostname }}"
+  when: (casa_spoke_reservations['legacy-' ~ item.mac] | int) > 0
+
+# A declared reservation with no object to move is not something to create
+# blindly: a MAC that has never taken a lease here is far more likely to be a
+# typo in the declaration than a missing reservation, and inventing one would
+# reserve an address for a device that may not exist.
+- name: Report declared Casa reservations that have no object on the router
+  ansible.builtin.debug:
+    msg: >-
+      No static reservation exists for {{ item.hostname }}
+      ({{ item.mac }}), so there was nothing to move to {{ item.address }}.
+      Check the MAC in casa_spoke_dhcp_reservations against
+      /ip dhcp-server lease print. Nothing was created.
+  loop: "{{ casa_spoke_dhcp_reservations }}"
+  loop_control:
+    label: "{{ item.hostname }}"
+  when: (casa_spoke_reservations['present-' ~ item.mac] | int) == 0

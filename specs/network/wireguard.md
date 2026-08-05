@@ -8,7 +8,7 @@ same change.
 
 | Peer A | Peer B | Who initiates | Purpose | Status |
 |--------|--------|----------------|---------|--------|
-| Bottega MikroTik (hub) | Casa MikroTik (spoke) | Casa dials out to Bottega (CGNAT) | Site-to-site: Casa LAN ↔ Bottega lab | **Not implemented** — needs Casa in inventory, its own age recipient, and the LAN renumber |
+| Bottega MikroTik (hub) | Casa MikroTik (spoke) | Casa dials out to Bottega (CGNAT) | Site-to-site: Casa LAN ↔ Bottega lab | **Implemented** (2026-08-05) — `ansible/playbooks/casa-spoke.yml` (roles `casa_spoke` + `bottega_casa_peer`), see `specs/sites/casa-phase-1-spoke.md`. Hub peer `casa-phase1-hub-peer` and spoke peer `casa-phase1-peer-bottega` both report recent handshakes with non-zero rx/tx; both roles re-run `changed=0`. Casa is in inventory; **no** age recipient (Casa's key is RouterOS-generated, see "Key custody") |
 | Bottega MikroTik (hub) | Road-warrior (phone) | Phone dials out to Bottega | Remote admin + service access to both sites | Implemented by `sites/bottega-phase-5-wireguard.md` |
 
 Both peers terminate on the **same** hub interface `wg-hub`, since they share
@@ -48,6 +48,16 @@ Addressing values are taken from the single source of truth in
   to reach through the hub: Bottega's three lab VLANs and, since the phone
   also needs Casa, Casa's LAN (`192.168.90.0/24`) — reachable transitively
   through Bottega's forwarding rule (see `specs/network/firewall.md`).
+- **The road-warrior's entry also includes the overlay `10.99.0.0/24`**, so the
+  client has a route to the hub's *own* address `10.99.0.1`. Without it a
+  road-warrior can reach everything behind Bottega but not Bottega's router,
+  which is how Ansible administers the hub (the inventory targets `10.99.0.1`;
+  `bottega_mikrotik_management_subnets` already grants `10.99.0.0/24`).
+  This is a **client-side-only** change and not an AllowedIPs asymmetry: the
+  hub's entry for this peer stays `10.99.0.11/32`, because that governs what the
+  hub *accepts from* the client, and the client still only ever sources from
+  `10.99.0.11`. What changed is what the client accepts *from the hub* — replies
+  sourced from `10.99.0.1` — which only the client's own list can authorise.
 
 mDNS/SSDP-based autodiscovery does **not** cross this tunnel — it's an L3
 WireGuard link, and those protocols rely on L2 multicast/broadcast. Any Home
@@ -60,7 +70,30 @@ discovery.
 | Bottega ↔ Casa tunnel | Bottega (hub, listens) | `10.99.0.1/32` | `10.99.0.2/32`, `192.168.90.0/24` | No `Endpoint=` on hub side (Casa initiates); listens on UDP `61536` |
 | Bottega ↔ Casa tunnel | Casa (spoke, dials out) | `10.99.0.2/32` | `10.99.0.0/24`, `10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24` | `Endpoint=145.11.24.43:61536`, `PersistentKeepalive=25` (Casa is behind CGNAT) |
 | Bottega ↔ road-warrior | Bottega (hub, listens) | `10.99.0.1/32` | `10.99.0.11/32` | `wg-hub` peer `bottega-phase5-peer-roadwarrior`; no `Endpoint=` and no keepalive on hub side |
-| Bottega ↔ road-warrior | Phone | `10.99.0.11/32` | `10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24`, `192.168.90.0/24` | `Endpoint=145.11.24.43:61536`, `PersistentKeepalive=25`, `DNS=10.30.0.1` |
+| Bottega ↔ road-warrior | Phone / dev-box | `10.99.0.11/32` | `10.99.0.0/24`, `10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24`, and `192.168.90.0/24` **only when the client is not itself on Casa's LAN** | `Endpoint=145.11.24.43:61536`, `PersistentKeepalive=25`, `DNS=10.30.0.1` |
+
+The phone and the operator's dev-box currently share this one road-warrior peer
+identity (`10.99.0.11`, one keypair, locally the `marconi` interface). That works
+but is not ideal, for two reasons. First, WireGuard tracks a single endpoint per
+peer, so the two devices cannot be connected at the same time — whichever
+handshakes last wins.
+
+Second, and the reason the last column above is conditional: the two devices do
+not want the same `AllowedIPs`. The dev-box sits *on* Casa's LAN. Putting
+`192.168.90.0/24` in its `AllowedIPs` would have wg-quick install a `/24` route
+for that prefix via `marconi`, competing with the kernel's connected route for
+the same prefix on the physical interface — the client would tunnel traffic
+destined for machines on the wire next to it, or lose its own LAN outright.
+`AllowedIPs` must therefore never contain a prefix the client is directly
+attached to. The phone, which is remote, does want Casa's LAN and is the peer
+the hub's `casa-phase1-fwd-roadwarrior-to-casa` rule exists to serve.
+
+The dev-box's `marconi` profile consequently carries only `10.99.0.0/24` plus
+Bottega's three lab VLANs, and that is correct rather than an omission — but it
+means road-warrior→Casa reachability cannot be validated from the dev-box while
+it is at Casa. Splitting the dev-box onto its own peer (`10.99.0.12`) with its
+own profile is a small, additive follow-up on the hub that resolves both
+problems; it is not a blocker for anything here.
 
 The phone's `AllowedIPs` keeps Casa's LAN even though Casa is not yet a peer —
 it is a route to nowhere until then, and including it now means the profile
@@ -91,8 +124,19 @@ internal-only service unreachable.
 
 The hub's private key is generated by RouterOS on interface creation and never
 leaves the router; only its public key is read back, to build client profiles.
-Peer keypairs (the road-warrior's, and Casa's when it exists) live in
-Bottega's SOPS file only — `AGENTS.md` #1.
+
+The road-warrior peer's keypair is generated off-router and stored in Bottega's
+SOPS file only — `AGENTS.md` #1 — because there is no RouterOS instance on the
+phone to generate it in place.
+
+Casa's key is different: Casa is a RouterOS router, so its `wg-casa` private key
+is generated by the Casa MikroTik on interface creation and never leaves it,
+exactly like the hub's. Only Casa's *public* key is read back, and it is not a
+secret — it is carried as a plain inventory var for the hub-side peer config, so
+Casa has **no** SOPS file and **no** age recipient of its own. This supersedes an
+earlier draft of this section that said Casa's keypair lived in Bottega's SOPS
+file; storing a second router's private key off-site would violate the per-site
+blast-radius isolation `AGENTS.md` #1 requires.
 
 ## Acceptance criteria
 

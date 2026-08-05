@@ -1,8 +1,6 @@
 ---
-ansible_connection: ansible.netcommon.network_cli
-ansible_network_os: community.routeros.routeros
-ansible_user: admin
-ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+# Bottega (hub) only. Connection settings are inherited from the parent
+# `routers` group -- see group_vars/routers.yml.
 
 # Declared router state shared by every Bottega phase playbook. Keeping these
 # here — rather than inside one phase role — is what stops a later run of
@@ -12,6 +10,9 @@ ansible_ssh_private_key_file: ~/.ssh/id_ed25519
 
 # Phase 5: the WireGuard hub listener is the only WAN input exception.
 # specs/network/firewall.md; specs/sites/bottega-phase-5-wireguard.md
+#
+# The Casa spoke shares this listener (specs/sites/casa-phase-1-spoke.md), so
+# adding Casa needs no new input exception and must not change this list.
 bottega_mikrotik_input_exceptions:
   - comment: "Bottega phase 5 input 03a accept-wireguard"
     protocol: udp

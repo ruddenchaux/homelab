@@ -1,0 +1,327 @@
+---
+- name: Validate fixed Casa spoke deployment inputs
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_lan_list == 'LAN'
+      - casa_spoke_wan_list == 'WAN'
+      - casa_spoke_wg_interface == 'wg-casa'
+      - (casa_spoke_wg_mtu | int) == 1412
+      - casa_spoke_wg_address == '10.99.0.2/32'
+      - casa_spoke_overlay_subnet == '10.99.0.0/24'
+      - casa_spoke_hub_endpoint == '145.11.24.43'
+      - (casa_spoke_hub_port | int) == 61536
+      - (casa_spoke_keepalive_seconds | int) == 25
+      - >-
+        casa_spoke_hub_allowed_addresses | sort ==
+        ['10.99.0.0/24', '10.10.0.0/24', '10.20.0.0/24', '10.30.0.0/24'] | sort
+      - casa_spoke_lan_subnet == '192.168.90.0/24'
+      - casa_spoke_lan_gateway_address == '192.168.90.1/24'
+      - casa_spoke_legacy_lan_subnet == '192.168.88.0/24'
+      - >-
+        casa_spoke_management_subnets | sort ==
+        ['192.168.90.0/24', '10.99.0.0/24'] | sort
+      # The forbidden range must never appear in anything this role installs.
+      - >-
+        (casa_spoke_hub_allowed_addresses + casa_spoke_management_subnets +
+        [casa_spoke_lan_subnet, casa_spoke_overlay_subnet]) |
+        select('match', '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.') |
+        list | length == 0
+    quiet: true
+    fail_msg: >-
+      Casa phase 1 is fixed to the addressing in specs/network/topology.md:
+      LAN 192.168.90.0/24, overlay 10.99.0.2/32 inside 10.99.0.0/24, hub
+      145.11.24.43:61536, MTU 1412, keepalive 25s, and never anything inside
+      Starlink's 100.64.0.0/10 CGNAT range. No router changes were made.
+
+# Checked against the declaration, before the router is touched: a reservation
+# inside the dynamic pool can be handed to a different device before its owner
+# asks for it, and a duplicate address or MAC makes converge's `find where`
+# match ambiguously. Both are cheap to get wrong by hand and hard to spot after.
+- name: Validate the declared Casa DHCP reservations
+  ansible.builtin.assert:
+    that:
+      - >-
+        (casa_spoke_dhcp_reservations | map(attribute='address') | unique |
+        length) == (casa_spoke_dhcp_reservations | length)
+      - >-
+        (casa_spoke_dhcp_reservations | map(attribute='mac') | unique |
+        length) == (casa_spoke_dhcp_reservations | length)
+      # Below the pool's first host, so a dynamic lease can never land on one.
+      - >-
+        (casa_spoke_dhcp_reservations | map(attribute='address') |
+        map('regex_replace', '^.*\.', '') | map('int') |
+        select('ge', _pool_first_host | int) | list | length) == 0
+      # On the renumbered LAN, not left behind on the old one.
+      - >-
+        (casa_spoke_dhcp_reservations | map(attribute='address') |
+        select('search', _lan_prefix) | list | length) ==
+        (casa_spoke_dhcp_reservations | length)
+    quiet: true
+    fail_msg: >-
+      casa_spoke_dhcp_reservations is not self-consistent. Every entry needs a
+      unique MAC and address, must sit on {{ casa_spoke_lan_subnet }}, and must
+      be below the {{ casa_spoke_dhcp_pool_name }} pool
+      ({{ casa_spoke_dhcp_pool_ranges }}) so a dynamic lease can never be handed
+      out on top of it. Declared:
+      {{ casa_spoke_dhcp_reservations | map(attribute='address') | join(', ') }}.
+      No router changes were made.
+  vars:
+    _pool_first_host: >-
+      {{ casa_spoke_dhcp_pool_ranges | regex_replace('^[^-]*\.', '') |
+      regex_replace('-.*$', '') }}
+    _lan_prefix: >-
+      ^{{ casa_spoke_lan_subnet | regex_replace('\.0/24$', '') |
+      regex_replace('\.', '\.') }}\.
+
+- name: Require Casa spoke operator safety confirmations
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_router_export_confirmed | bool
+      - casa_spoke_operator_onsite_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      Casa phase 1 requires a current `/export hide-sensitive` of this router
+      stored off-router, and an operator physically at Casa with console/cable
+      access -- the LAN renumber drops the operator's own session and physical
+      access is the only backstop. Pass both confirmations explicitly. No
+      router changes were made.
+
+- name: Require Bottega's WireGuard hub public key
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_hub_public_key | length == 44
+      - casa_spoke_hub_public_key.endswith('=')
+    quiet: true
+    fail_msg: >-
+      No usable Bottega wg-hub public key was passed to this role. In a
+      single-machine run it is read off the hub by casa-spoke.yml Play A, so a
+      missing value means the hub was unreachable -- and the tunnel this role
+      builds could not have come up anyway. In a split run (each site driven
+      from a different control machine) pass it explicitly:
+      -e casa_spoke_hub_public_key=<the hub's wg-hub public key>.
+      No router changes were made.
+
+- name: Read the live Casa router state
+  ansible.builtin.include_tasks: read-audit.yml
+
+# Pointing this role at the wrong router would renumber the wrong LAN. The
+# board model, and the absence of a wg-hub interface, are the cheapest
+# unambiguous discriminators between the Casa L009 and the Bottega hAP.
+- name: Require the target to be the Casa router
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_audit['board'] is search('L009')
+      - (casa_spoke_audit['hub-interface-present'] | int) == 0
+    quiet: true
+    fail_msg: >-
+      The host answering as the Casa spoke reports board
+      "{{ casa_spoke_audit['board'] }}" and
+      {{ casa_spoke_audit['hub-interface-present'] }} wg-hub interface(s). This
+      does not look like the Casa L009 -- check that `casa_router_address`
+      points at Casa and not at the Bottega hub. No router changes were made.
+
+# AGENTS.md #5. Casa is behind CGNAT and dials out only, so there must be
+# nothing inbound: one WAN member, and the only dst-nat is AdGuard's LAN-side
+# web redirect (which is matched on its own dst-address, never on WAN).
+- name: Require Casa to expose nothing inbound from WAN
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['wan-member-count'] | int) == 1
+      - (casa_spoke_audit['wan-is-expected-interface'] | int) == 1
+      - (casa_spoke_audit['dstnat-rule-count'] | int) == 1
+      - >-
+        ((casa_spoke_audit['adguard-dstnat-legacy'] | int) +
+        (casa_spoke_audit['adguard-dstnat-target'] | int)) == 1
+    quiet: true
+    fail_msg: >-
+      Casa's WAN or NAT state is not what this change expects: the
+      {{ casa_spoke_wan_list }} list must hold only
+      {{ casa_spoke_wan_interface }}, and the only dst-nat rule must be the
+      AdGuard web redirect. An unexpected dst-nat on a CGNAT site is either
+      dead config or an inbound exposure -- resolve it by hand first
+      (AGENTS.md #5). No router changes were made.
+
+# The defconf input tail is what makes "add wg-casa to the LAN list" sufficient
+# for Bottega to administer this router, with no new input rule (and therefore
+# no new WAN exposure). If it has drifted, that reasoning no longer holds.
+- name: Require the defconf input chain to still drop everything not from LAN
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_audit['input-last-action'] == 'drop'
+      - >-
+        casa_spoke_audit['input-last-list'] ==
+        ('!' ~ casa_spoke_lan_list)
+    quiet: true
+    fail_msg: >-
+      The last input-chain rule is
+      "{{ casa_spoke_audit['input-last-action'] }} in-interface-list={{
+      casa_spoke_audit['input-last-list'] }}", not "drop
+      in-interface-list=!{{ casa_spoke_lan_list }}". This role relies on that
+      rule for router-management scoping and adds no input rule of its own.
+      Resolve the drift by hand under safe mode. No router changes were made.
+
+# Exactly one of each pre/post pair, never both and never neither: "both" means
+# a half-applied renumber, "neither" means the router is not the one audited.
+- name: Require the Casa LAN to be exactly pre- or post-renumber
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['bridge-address-count'] | int) == 1
+      - >-
+        ((casa_spoke_audit['lan-legacy'] | int) +
+        (casa_spoke_audit['lan-target'] | int)) == 1
+      - >-
+        ((casa_spoke_audit['pool-legacy'] | int) +
+        (casa_spoke_audit['pool-target'] | int)) == 1
+      - >-
+        ((casa_spoke_audit['dhcp-network-legacy'] | int) +
+        (casa_spoke_audit['dhcp-network-target'] | int)) == 1
+    quiet: true
+    fail_msg: >-
+      The Casa LAN is neither cleanly on {{ casa_spoke_legacy_lan_subnet }} nor
+      cleanly on {{ casa_spoke_lan_subnet }}: bridge addresses
+      {{ casa_spoke_audit['bridge-address-count'] }}, legacy/target address
+      {{ casa_spoke_audit['lan-legacy'] }}/{{ casa_spoke_audit['lan-target'] }},
+      pool {{ casa_spoke_audit['pool-legacy'] }}/{{
+      casa_spoke_audit['pool-target'] }}, dhcp-network
+      {{ casa_spoke_audit['dhcp-network-legacy'] }}/{{
+      casa_spoke_audit['dhcp-network-target'] }}. A half-applied renumber must
+      be finished or reverted by hand under safe mode -- automation will not
+      guess which half is authoritative. No router changes were made.
+
+- name: Record whether the Casa LAN renumber has already been applied
+  ansible.builtin.set_fact:
+    casa_spoke_renumber_applied: >-
+      {{ (casa_spoke_audit['lan-target'] | int) == 1 and
+      (casa_spoke_audit['pool-target'] | int) == 1 and
+      (casa_spoke_audit['dhcp-network-target'] | int) == 1 and
+      (casa_spoke_audit['adguard-dstnat-target'] | int) == 1 }}
+
+# AdGuardHome stays at Casa as local DNS and is explicitly out of this change's
+# scope, so its network must be found intact -- and left intact.
+- name: Require the AdGuard container network to be intact
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['container-address'] | int) == 1
+      - (casa_spoke_audit['container-masquerade'] | int) == 1
+      - (casa_spoke_audit['defconf-masquerade'] | int) == 1
+    quiet: true
+    fail_msg: >-
+      The AdGuard container network ({{ casa_spoke_container_subnet }} on
+      {{ casa_spoke_container_bridge }}), its masquerade, or the defconf WAN
+      masquerade is missing. This change keeps all three untouched and will not
+      run against a router where they have already been altered. No router
+      changes were made.
+
+# Everything below is about what will be *deleted*. Refusing on an unexpected
+# count is the whole point: a rule this role did not expect is a rule someone
+# added deliberately, and deleting it silently is how a teardown becomes an
+# outage.
+- name: Require the obsolete Casa objects to match the audited shape
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['vps-interface'] | int) <= 1
+      - >-
+        (casa_spoke_audit['vps-address'] | int) <=
+        (casa_spoke_audit['vps-interface'] | int)
+      - (casa_spoke_audit['vps-peers'] | int) <= 1
+      - (casa_spoke_audit['vps-forward-rules'] | int) <= 2
+      - (casa_spoke_audit['guest-address'] | int) <= 1
+      - (casa_spoke_audit['guest-dhcp-network'] | int) <= 1
+      - (casa_spoke_audit['guest-masquerade'] | int) <= 1
+      - (casa_spoke_audit['guest-forward-rules'] | int) <= 1
+    quiet: true
+    fail_msg: >-
+      The obsolete objects on this router do not match the audited shape in
+      specs/sites/casa-phase-1-spoke.md: wg-vps interface/address/peers/forward
+      = {{ casa_spoke_audit['vps-interface'] }}/{{
+      casa_spoke_audit['vps-address'] }}/{{ casa_spoke_audit['vps-peers'] }}/{{
+      casa_spoke_audit['vps-forward-rules'] }}, guest
+      address/dhcp/masquerade/forward = {{ casa_spoke_audit['guest-address']
+      }}/{{ casa_spoke_audit['guest-dhcp-network'] }}/{{
+      casa_spoke_audit['guest-masquerade'] }}/{{
+      casa_spoke_audit['guest-forward-rules'] }}. Something was added that this
+      teardown would delete blind. No router changes were made.
+
+- name: Require each lab VLAN to be absent or unused before it is deleted
+  ansible.builtin.assert:
+    that:
+      # Interface, address and LAN membership move together: a VLAN that is
+      # half-removed means someone else is mid-change on this router.
+      - >-
+        ['interface=1', 'address=1', 'lan-member=1'] |
+        intersect(_properties) | length in [0, 3]
+      - >-
+        ('interface=1' in _properties) or ('bridge-vlan=0' in _properties)
+      # `current-tagged`/`current-untagged` name the ports actually carrying the
+      # VLAN right now. The bridge itself is expected (it terminates the
+      # vlanNN interface); any physical port means the VLAN is still in use and
+      # the lab has not, in fact, finished leaving.
+      - >-
+        (_live_ports | difference([casa_spoke_bridge])) | length == 0
+    quiet: true
+    fail_msg: >-
+      Lab VLAN {{ item.item.id }} ({{ item.item.interface }}) is either
+      half-removed or still live: {{ _properties | join(', ') }}, ports
+      currently carrying it = {{ _live_ports | join(', ') | default('none') }}.
+      specs/sites/casa-phase-1-spoke.md deletes these VLANs only because the lab
+      has physically left Casa and nothing carries them. No router changes were
+      made.
+  vars:
+    _properties: "{{ item.stdout_lines | map('last') | map('trim') | list }}"
+    _live_ports: >-
+      {{ (item.stdout_lines | map('last') | map('trim') |
+      select('match', '^live-ports=') | first | default('live-ports=')) |
+      regex_replace('^live-ports=', '') | split(',') |
+      reject('equalto', '') | list | unique }}
+  loop: "{{ casa_spoke_vlan_audit_raw.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+- name: Read owned Casa spoke objects
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+# Same contract as bottega_phase5: create only when absent, and refuse rather
+# than repair. An owned object that exists but differs is either a partly
+# applied run or a hand edit, and on a router reachable only over the tunnel
+# it is about to build, guessing is the expensive mistake.
+- name: Reject duplicate, ambiguous, or drifted Casa spoke state
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_counts['interface'] | int) <= 1
+      - (casa_spoke_counts['address'] | int) <= 1
+      - (casa_spoke_counts['peer'] | int) <= 1
+      - (casa_spoke_counts['mangle'] | int) <= 1
+      - (casa_spoke_counts['lan-member'] | int) <= 1
+      - >-
+        (casa_spoke_counts['route'] | int) <=
+        (casa_spoke_hub_allowed_addresses | length)
+      - ((casa_spoke_counts['interface'] | int) == 0) or casa_spoke_interface_ok
+      - ((casa_spoke_counts['address'] | int) == 0) or casa_spoke_address_ok
+      - ((casa_spoke_counts['peer'] | int) == 0) or casa_spoke_peer_ok
+      - ((casa_spoke_counts['mangle'] | int) == 0) or casa_spoke_mangle_ok
+      - casa_spoke_extra_routes | length == 0
+    quiet: true
+    fail_msg: >-
+      An owned casa-phase1 object is duplicated or has drifted from what this
+      role declares (interface/address/peer/mangle ok =
+      {{ casa_spoke_interface_ok }}/{{ casa_spoke_address_ok }}/{{
+      casa_spoke_peer_ok }}/{{ casa_spoke_mangle_ok }}, unexpected routes =
+      {{ casa_spoke_extra_routes | join(', ') | default('none') }}). Resolve it
+      by hand under safe mode; this role will not rewrite an object it did not
+      create in its declared shape. No router changes were made.
+
+# The cutover script renumbers the LAN unattended. A leftover copy from an
+# earlier run is a live hazard, not a cosmetic one.
+- name: Require no stale Casa cutover job when the renumber is already done
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['cutover-scheduler'] | int) == 0
+    quiet: true
+    fail_msg: >-
+      A "{{ casa_spoke_cutover_scheduler_name }}" scheduler is still armed on
+      this router while the LAN renumber has already been applied. It would
+      re-run the cutover script unattended. Remove it under safe mode
+      (/system scheduler remove [find where
+      name="{{ casa_spoke_cutover_scheduler_name }}"]) and re-run. No router
+      changes were made.
+  when: casa_spoke_renumber_applied | bool

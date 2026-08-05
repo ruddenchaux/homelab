@@ -31,6 +31,14 @@ the full rationale.
   Bottega's hub role is verified end-to-end (public DNS records repointed,
   dst-nat working, certificates issuing) — i.e. until the physical move is
   complete and confirmed, not just planned. Only then decommission the VPS.
+- **Update (2026-08-04, owner decision)**: the physical move to Bottega is
+  confirmed complete and the hub is live, so the Casa end of this tunnel
+  (`wg-vps` on the Casa MikroTik) is being torn down as part of
+  `specs/sites/casa-phase-1-spoke.md` — the relay's target (the lab) has left
+  Casa, so it serves nothing there anymore. This only removes the **Casa end**.
+  The **VPS host itself** (Hetzner `wg0`/nginx) and the
+  `jellyfin.ruddenchaux.xyz → 89.167.62.126` A record stay up until Bottega's
+  public path is verified end-to-end, then are decommissioned separately.
 
 ### `ansible/roles/vps-client-vpn` + `ansible/playbooks/vps-client-vpn.yml`
 

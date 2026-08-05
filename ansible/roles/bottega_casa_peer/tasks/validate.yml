@@ -1,0 +1,92 @@
+---
+- name: Read the final Bottega Casa-peer objects
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Assert the Bottega Casa peer is exact and enabled
+  ansible.builtin.assert:
+    that:
+      - bottega_casa_peer_ok
+      - bottega_casa_peer_routes_ok
+      - bottega_casa_peer_source_list_ok
+    quiet: true
+    fail_msg: >-
+      Strict read-back of the Bottega hub's Casa peer failed (peer/routes/
+      {{ bottega_casa_peer_source_list }} = {{ bottega_casa_peer_ok }}/{{
+      bottega_casa_peer_routes_ok }}/{{ bottega_casa_peer_source_list_ok }}).
+
+- name: Assert both Bottega routes toward Casa are active
+  ansible.builtin.assert:
+    that:
+      - bottega_casa_peer_routes_active
+    quiet: true
+    fail_msg: >-
+      Only {{ bottega_casa_peer_counts['route-active'] }} of
+      {{ bottega_casa_peer_routes | length }} routes toward Casa are active.
+      An inactive route means the hub has an accept rule for Casa traffic and
+      nowhere to send it.
+
+- name: Assert every Bottega Casa forward rule is exact
+  ansible.builtin.assert:
+    that:
+      - "'count=1' in _properties"
+      - "'disabled=false' in _properties"
+      - "'chain=forward' in _properties"
+      - "'action=accept' in _properties"
+      - item.expect | difference(_properties) | length == 0
+    quiet: true
+    fail_msg: >-
+      Forward rule "{{ item.comment }}" ({{ item.purpose }}) did not converge.
+      Expected: {{ item.expect | join(' ') }}
+      Found:    {{ _properties | join(' ') }}
+  vars:
+    _properties: >-
+      {{ bottega_casa_peer_forward_state[item.comment] | default(['count=0']) }}
+  loop: "{{ bottega_casa_peer_forward_rules }}"
+  loop_control:
+    label: "{{ item.comment }}"
+
+- name: Re-read the Bottega forward-chain order for each owned rule
+  ansible.builtin.include_tasks: assert-forward-order.yml
+  loop: "{{ bottega_casa_peer_forward_rules }}"
+  loop_control:
+    loop_var: casa_rule
+    label: "{{ casa_rule.comment }}"
+
+# The guardrail for this change: Casa rides the phase 5 listener and needs no
+# input-chain rule of its own. Proving the input chain is untouched is what
+# distinguishes "additive" from "we think it was additive".
+- name: Assert the Bottega input chain and phase 5 hub are untouched
+  ansible.builtin.assert:
+    that:
+      - (bottega_casa_peer_counts['hub-interface'] | int) == 1
+      - (bottega_casa_peer_counts['hub-lan-member'] | int) == 1
+      - (bottega_casa_peer_counts['hub-wan-member'] | int) == 0
+      - (bottega_casa_peer_counts['input-exception'] | int) == 1
+      - >-
+        (bottega_casa_peer_counts['input-rule-count'] | int) ==
+        (bottega_casa_peer_input_baseline | int)
+      - bottega_casa_peer_counts['input-last-action'] == 'drop'
+      - >-
+        bottega_casa_peer_counts['input-last-list'] ==
+        bottega_casa_peer_wan_list
+      - >-
+        (bottega_casa_peer_lab_vlans | sort) ==
+        (bottega_casa_peer_expected_lab_vlans | sort)
+    quiet: true
+    fail_msg: >-
+      This change altered Bottega's input chain, its wg-hub interface listing,
+      or the {{ bottega_casa_peer_lab_vlan_list }} address list. Adding Casa is
+      strictly additive: the phase 5 UDP {{ bottega_casa_peer_wg_port }} listener
+      already accepts it and bottega_mikrotik_input_exceptions must not change.
+      Input rules now {{ bottega_casa_peer_counts['input-rule-count'] }}, before
+      {{ bottega_casa_peer_input_baseline }}.
+
+- name: Report the Bottega hub-side Casa peer
+  ansible.builtin.debug:
+    msg:
+      - "Bottega hub now carries the Casa peer."
+      - "Casa handshake seen from the hub: {{ bottega_casa_peer_handshake
+         if (bottega_casa_peer_handshake | length > 0)
+         else 'none yet -- expected until the Casa side finishes' }}"
+      - "Casa reaches {{ bottega_casa_peer_lab_vlans | join(', ') }};
+         the lab reaches {{ bottega_casa_peer_casa_lan }}."

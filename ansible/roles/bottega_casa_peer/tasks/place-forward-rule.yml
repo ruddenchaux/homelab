@@ -1,0 +1,22 @@
+---
+# Move one owned accept ahead of the first enabled forward drop, if it is not
+# already there. Bottega's forward chain carries drops from phase 2 onward, and
+# an accept sitting behind one of them is inert -- the rule reads correctly and
+# does nothing.
+- name: Select the Casa forward rule to place
+  ansible.builtin.set_fact:
+    bottega_casa_peer_order_comment: "{{ casa_rule.comment }}"
+
+- name: Read the Bottega forward-chain order for this rule
+  ansible.builtin.include_tasks: read-forward-order.yml
+
+- name: Place the owned Casa accept before the first forward drop
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter move
+        [find where comment="{{ bottega_casa_peer_order_comment }}"]
+        {{ bottega_casa_peer_first_drop_id }}
+  when:
+    - (bottega_casa_peer_drop_count | int) > 0
+    - not (bottega_casa_peer_order_ok | bool)

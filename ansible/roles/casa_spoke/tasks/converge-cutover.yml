@@ -1,0 +1,182 @@
+---
+# Steps 5 and 6 of the Safe Application order, applied together and last.
+#
+# Why they are one RouterOS script rather than a run of Ansible tasks:
+#
+#   * The renumber destroys the transport. The moment the bridge address moves
+#     to 192.168.90.1/24, the operator's session on 192.168.88.x is gone and no
+#     following task can be delivered.
+#   * The /ip service restriction to 192.168.90.0/24,10.99.0.0/24 must not land
+#     while the router still answers on 192.168.88.1. That ordering leaves the
+#     router reachable only from a subnet that does not exist yet -- a lockout
+#     whose only remedy is the console.
+#
+# So the two must be atomic from the operator's point of view, which means they
+# have to run *without* an operator session attached. The script is written and
+# verified first, then a one-shot scheduler arms it a few seconds out; Ansible
+# returns cleanly, and the session drops afterwards, on purpose.
+#
+# The script removes its own scheduler as its last statement, so it cannot fire
+# a second time after a reboot. Removing the script itself is left to validate
+# on the next run, so a leftover script is inert evidence rather than a hazard.
+
+# One fact instead of the same compound condition on nine tasks: the cutover is
+# needed unless the LAN is already renumbered *and* management is already
+# restricted. Both halves must be true, because they land together.
+- name: Record whether the Casa cutover still has work to do
+  ansible.builtin.set_fact:
+    casa_spoke_cutover_needed: >-
+      {{ not ((casa_spoke_renumber_applied | bool) and
+      (casa_spoke_restricted_services_ok | bool)) }}
+
+- name: Report that the Casa LAN renumber is already applied
+  ansible.builtin.debug:
+    msg: >-
+      Casa is already on {{ casa_spoke_lan_subnet }} with management restricted
+      to {{ casa_spoke_management_subnets | join(',') }}. Nothing to cut over.
+  when: not (casa_spoke_cutover_needed | bool)
+
+- name: Remove the spent Casa cutover script
+  community.routeros.command:
+    commands:
+      - >-
+        /system script remove
+        [find where name="{{ casa_spoke_cutover_script_name }}"]
+  when:
+    - not (casa_spoke_cutover_needed | bool)
+    - (casa_spoke_audit['cutover-script'] | int) > 0
+
+- name: Require an explicit confirmation before dropping the Casa session
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_cutover_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      Everything up to the cutover has been applied: the tunnel to Bottega is
+      up and the obsolete VLANs, the VPS tunnel and the guest cruft are gone.
+      The remaining step renumbers the LAN to {{ casa_spoke_lan_subnet }} and
+      restricts router management to
+      {{ casa_spoke_management_subnets | join(',') }}, which WILL drop this
+      session. Re-run with -e casa_spoke_cutover_confirmed=true when ready to
+      reconnect on {{ casa_spoke_lan_subnet }}. No renumber was scheduled.
+  when: casa_spoke_cutover_needed | bool
+
+# `start-time` is computed from the router's own clock. RouterOS time arithmetic
+# rolls past midnight into a `1d00:00:10` value that is not a valid start-time,
+# so a cutover armed in the last few minutes of the day would silently never
+# fire -- or fire a day later, unattended. Refusing is the only safe answer.
+- name: Require the Casa router clock to be clear of midnight
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((casa_spoke_audit['clock-time'].split(':')[0] | int) * 3600 +
+        (casa_spoke_audit['clock-time'].split(':')[1] | int) * 60 +
+        (casa_spoke_audit['clock-time'].split(':')[2] | int) +
+        (casa_spoke_cutover_delay_seconds | int)) < 86400
+    quiet: true
+    fail_msg: >-
+      The Casa router clock reads {{ casa_spoke_audit['clock-time'] }}, and
+      arming the cutover {{ casa_spoke_cutover_delay_seconds }}s out would cross
+      midnight. RouterOS would turn that into a start-time it never reaches
+      today. Wait a few minutes and re-run. No renumber was scheduled.
+  when: casa_spoke_cutover_needed | bool
+
+- name: Create the Casa cutover script
+  community.routeros.command:
+    commands:
+      - >-
+        /system script add
+        name="{{ casa_spoke_cutover_script_name }}"
+        policy={{ casa_spoke_cutover_policy }}
+        comment="specs/sites/casa-phase-1-spoke.md steps 5-6"
+        source={ {{ casa_spoke_cutover_source }} }
+  when:
+    - casa_spoke_cutover_needed | bool
+    - (casa_spoke_audit['cutover-script'] | int) == 0
+
+# The source is ~700 characters and RouterOS hard-wraps console output at 80
+# columns with no continuation marker, so reading it in one `:put` comes back as
+# unreassemblable fragments. Emitted in fixed-width chunks instead: every line is
+# `src=` plus at most casa_spoke_cutover_readback_chunk characters, comfortably
+# inside the wrap, and concatenating them in order reproduces the source exactly.
+- name: Read the Casa cutover script back
+  community.routeros.command:
+    commands:
+      - ':local s [/system script get
+        [find where name="{{ casa_spoke_cutover_script_name }}"] source];
+        :local n [:len $s]; :local i 0;
+        :while ($i < $n) do={
+        :put ("src=" . [:pick $s $i
+        ($i + {{ casa_spoke_cutover_readback_chunk }})]);
+        :set i ($i + {{ casa_spoke_cutover_readback_chunk }}) }'
+      - ':put ("policy=" . [:tostr [/system script get
+        [find where name="{{ casa_spoke_cutover_script_name }}"] policy]])'
+  register: casa_spoke_cutover_script_readback
+  changed_when: false
+  when: casa_spoke_cutover_needed | bool
+
+# Verify, then arm -- never the other way round. This script runs unattended
+# with write and policy permissions and renumbers the LAN out from under the
+# only session that could stop it; reading it back is the last point at which a
+# mistake is still cheap. Whitespace is collapsed because RouterOS reformats
+# what it stores, but nothing else is normalised away.
+- name: Assert the Casa cutover script is exactly what was declared
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_actual_source | regex_replace('\s+', ' ') | trim) ==
+        (casa_spoke_cutover_source | regex_replace('\s+', ' ') | trim)
+    quiet: true
+    fail_msg: >-
+      The cutover script stored on the router does not match the declared
+      source. It has NOT been armed. Remove it
+      (/system script remove [find where
+      name="{{ casa_spoke_cutover_script_name }}"]) and re-run.
+      On router: {{ _actual_source }}
+      Declared:  {{ casa_spoke_cutover_source }}
+  vars:
+    # Chunks in emission order, concatenated. Only lines that start with the
+    # marker are taken, which drops the echoed command RouterOS prints first.
+    # Not trimmed per chunk: a chunk boundary can fall on a space, and stripping
+    # it would silently change the text being verified.
+    _actual_source: >-
+      {{ casa_spoke_cutover_script_readback.stdout_lines[0] |
+      select('match', '^src=') |
+      map('regex_replace', '^src=', '') | join('') }}
+  when: casa_spoke_cutover_needed | bool
+
+- name: Arm the Casa cutover
+  community.routeros.command:
+    commands:
+      - >-
+        :local t [/system clock get time];
+        /system scheduler add
+        name="{{ casa_spoke_cutover_scheduler_name }}"
+        start-date=[/system clock get date]
+        start-time=($t + {{ casa_spoke_cutover_delay_seconds }}s)
+        interval=0s
+        policy={{ casa_spoke_cutover_policy }}
+        comment="specs/sites/casa-phase-1-spoke.md steps 5-6; self-removing"
+        on-event="/system script run
+        {{ casa_spoke_cutover_script_name }}"
+  when:
+    - casa_spoke_cutover_needed | bool
+    - (casa_spoke_audit['cutover-scheduler'] | int) == 0
+
+- name: Report the armed Casa cutover
+  ansible.builtin.debug:
+    msg:
+      - "The Casa cutover is armed and fires in about
+         {{ casa_spoke_cutover_delay_seconds }} seconds."
+      - "This session will drop. That is the expected outcome."
+      - "It will renumber the LAN
+         {{ casa_spoke_legacy_lan_subnet }} -> {{ casa_spoke_lan_subnet }}
+         (bridge address, DHCP pool, dhcp-network, AdGuard dst-nat) and
+         restrict {{ casa_spoke_restricted_services | join('/') }} to
+         {{ casa_spoke_management_subnets | join(',') }}."
+      - "Then: renew DHCP on your machine, reconnect on
+         {{ casa_spoke_lan_subnet }}, and re-run this playbook without
+         -e casa_router_address to converge and validate (step 7)."
+      - "If it does not come back: you are on site. Console in, and the saved
+         /export is the restore path."
+  when: casa_spoke_cutover_needed | bool

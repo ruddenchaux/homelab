@@ -1,0 +1,148 @@
+---
+# Step 1 of the Safe Application order in specs/sites/casa-phase-1-spoke.md.
+#
+# The tunnel is built first and entirely independently of the renumber, so it
+# comes up while the operator is still on the old 192.168.88.x LAN. That
+# ordering is what makes the rest of the change recoverable: by the time the
+# renumber drops the operator's session, Bottega already has an administrative
+# path into this router that does not depend on Casa's LAN addressing at all.
+#
+# Create-only-if-absent throughout; preflight has already refused if an owned
+# object exists in a shape other than the one declared here.
+
+# Order matters: RouterOS rejects in-interface=/out-interface= against a name it
+# does not know yet, and reports that as ordinary command output rather than a
+# module failure -- community.routeros.command does not parse it, so the failure
+# would be silent until the read-back.
+#
+# No private key is supplied. RouterOS generates the keypair on creation and the
+# private half never leaves this router (wireguard.md "Key custody"), which is
+# why Casa needs no SOPS file and no age recipient of its own.
+- name: Create the Casa spoke WireGuard interface
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard add
+        name="{{ casa_spoke_wg_interface }}"
+        mtu={{ casa_spoke_wg_mtu }}
+        comment="{{ casa_spoke_wg_interface_comment }}"
+  when: (casa_spoke_counts['interface'] | int) == 0
+
+- name: Assign the Casa spoke tunnel address
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address add
+        address="{{ casa_spoke_wg_address }}"
+        interface="{{ casa_spoke_wg_interface }}"
+        comment="{{ casa_spoke_wg_address_comment }}"
+  when: (casa_spoke_counts['address'] | int) == 0
+
+# LAN, never WAN. The defconf input chain drops everything whose in-interface is
+# not in the LAN list, so LAN membership is the entire mechanism by which
+# Bottega can administer this router over the tunnel -- and putting a WireGuard
+# interface in the WAN list would instead make it look like the internet.
+- name: Remove the Casa spoke WireGuard interface from the WAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list="{{ casa_spoke_wan_list }}"
+        and interface="{{ casa_spoke_wg_interface }}"]
+  when: (casa_spoke_counts['wan-member'] | int) > 0
+
+- name: Add the Casa spoke WireGuard interface to the LAN list
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member add
+        list="{{ casa_spoke_lan_list }}"
+        interface="{{ casa_spoke_wg_interface }}"
+        comment="{{ casa_spoke_wg_lan_member_comment }}"
+  when: (casa_spoke_counts['lan-member'] | int) == 0
+
+# The spoke half of the peer pair: this end dials (endpoint-address/port) and
+# keeps the CGNAT mapping alive (persistent-keepalive), while the hub end has
+# neither. allowed-address is the mirror of what the hub actually owns, straight
+# from the wireguard.md table -- it is both the accept filter and, with the
+# routes below, the only thing that tells this router where those subnets live.
+- name: Add the Casa spoke peer to the Bottega hub
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard peers add
+        interface="{{ casa_spoke_wg_interface }}"
+        public-key="{{ casa_spoke_hub_public_key }}"
+        endpoint-address="{{ casa_spoke_hub_endpoint }}"
+        endpoint-port={{ casa_spoke_hub_port }}
+        persistent-keepalive={{ casa_spoke_keepalive_seconds }}s
+        allowed-address="{{ casa_spoke_hub_allowed_addresses | join(',') }}"
+        comment="{{ casa_spoke_peer_comment }}"
+  when: (casa_spoke_counts['peer'] | int) == 0
+
+# One static route per AllowedIPs entry. The tunnel address is a /32, so there
+# is no connected route covering the overlay, and RouterOS does not derive
+# routes from a peer's allowed-address on these builds -- established
+# empirically during Bottega phase 5 rather than assumed here.
+#
+# The three lab-VLAN routes are added while the local vlanNN interfaces may
+# still exist. That is deliberate: RouterOS accepts them and leaves them
+# inactive behind the connected routes, and they become active by themselves the
+# moment the teardown removes those interfaces. validate asserts they are
+# active, which is also the check that nothing local still shadows them.
+- name: Add the Casa spoke routes through the tunnel
+  community.routeros.command:
+    commands:
+      - >-
+        /ip route add
+        dst-address="{{ item }}"
+        gateway="{{ casa_spoke_wg_interface }}"
+        comment="{{ casa_spoke_route_comment }}"
+  loop: "{{ casa_spoke_missing_routes }}"
+  loop_control:
+    label: "{{ item }}"
+
+# Bottega's WAN is PPPoE (1492 MTU) and WireGuard's own overhead cuts further
+# into the payload, so TCP sessions crossing the tunnel need their MSS clamped
+# at this end too. specs/network/topology.md "Tunnel parameters".
+- name: Add the Casa spoke MSS clamp for tunnel traffic
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall mangle add
+        chain=forward
+        action=change-mss
+        new-mss=clamp-to-pmtu
+        passthrough=yes
+        protocol=tcp
+        tcp-flags=syn
+        out-interface="{{ casa_spoke_wg_interface }}"
+        comment="{{ casa_spoke_mangle_comment }}"
+  when: (casa_spoke_counts['mangle'] | int) == 0
+
+# No forward rule is added at Casa, and none is needed: the defconf forward
+# chain ends at "drop all from WAN not DSTNATed", scoped to the WAN list.
+# wg-casa is a LAN-list member, so tunnel traffic in both directions falls
+# through to the chain's default accept. specs/network/firewall.md "Casa
+# (spoke)" is satisfied by the existing chain, and adding a redundant accept
+# would only be one more rule to keep ordered.
+
+- name: Re-read owned Casa spoke objects after building the tunnel
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Assert the Casa spoke tunnel converged before anything is torn down
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_interface_ok
+      - casa_spoke_address_ok
+      - casa_spoke_lists_ok
+      - casa_spoke_peer_ok
+      - casa_spoke_mangle_ok
+      - casa_spoke_routes_ok
+    quiet: true
+    fail_msg: >-
+      Strict read-back of the Casa tunnel failed (interface/address/lists/peer/
+      mss/routes = {{ casa_spoke_interface_ok }}/{{ casa_spoke_address_ok }}/{{
+      casa_spoke_lists_ok }}/{{ casa_spoke_peer_ok }}/{{ casa_spoke_mangle_ok
+      }}/{{ casa_spoke_routes_ok }}). Nothing has been torn down and the LAN has
+      not been renumbered, so this router is still exactly as it was found.

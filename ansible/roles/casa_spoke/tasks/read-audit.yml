@@ -1,0 +1,213 @@
+---
+# Re-reads the live Casa router into a flat key/value fact.
+#
+# specs/sites/casa-phase-1-spoke.md carries a read-only audit taken on
+# 2026-08-04. That audit is a snapshot and this role must never trust it: every
+# value it depends on is read again here, at run time, and preflight refuses on
+# any disagreement. Each command is a self-describing `key=value` line so the
+# assertions read as names rather than as list offsets, and every expression is
+# safe when the object it asks about is absent.
+- name: Read the live Casa router state
+  community.routeros.command:
+    commands:
+      # Identity: proves this is the Casa L009 and not the Bottega hub. A
+      # wg-hub interface here would mean the inventory is pointed at Bottega.
+      - ':put ("board=" . [/system resource get board-name])'
+      - ':put ("version=" . [/system resource get version])'
+      - ':put ("identity=" . [/system identity get name])'
+      - ':put ("hub-interface-present=" .
+        [:len [/interface wireguard find where name="wg-hub"]])'
+      - ':put ("clock-time=" . [/system clock get time])'
+
+      # WAN. Casa is CGNAT and dials out only: nothing inbound may exist.
+      - ':put ("wan-member-count=" .
+        [:len [/interface list member find
+        where list="{{ casa_spoke_wan_list }}"]])'
+      - ':put ("wan-is-expected-interface=" .
+        [:len [/interface list member find where list="{{ casa_spoke_wan_list }}"
+        and interface="{{ casa_spoke_wan_interface }}"]])'
+      - ':put ("dstnat-rule-count=" .
+        [:len [/ip firewall nat find where chain=dstnat]])'
+      - ':put ("srcnat-rule-count=" .
+        [:len [/ip firewall nat find where chain=srcnat]])'
+
+      # Input chain. The defconf tail drops everything not arriving on a LAN
+      # interface, which is exactly what makes adding wg-casa to the LAN list
+      # sufficient for Bottega to administer this router -- and what makes any
+      # drift in that last rule a safety problem.
+      - ':local n [:len [/ip firewall filter find where chain=input]];
+        :local r [:pick [/ip firewall filter find where chain=input] ($n - 1)];
+        :put ("input-last-action=" . [/ip firewall filter get $r action])'
+      - ':local n [:len [/ip firewall filter find where chain=input]];
+        :local r [:pick [/ip firewall filter find where chain=input] ($n - 1)];
+        :put ("input-last-list=" .
+        [:tostr [/ip firewall filter get $r in-interface-list]])'
+
+      # LAN address, pool, dhcp-network and the AdGuard dst-nat, in both their
+      # pre- and post-renumber forms. Exactly one of each pair must be present.
+      - ':put ("bridge-address-count=" .
+        [:len [/ip address find where interface="{{ casa_spoke_bridge }}"]])'
+      - ':put ("lan-legacy=" .
+        [:len [/ip address find where interface="{{ casa_spoke_bridge }}"
+        and address="{{ casa_spoke_legacy_lan_gateway_address }}"]])'
+      - ':put ("lan-target=" .
+        [:len [/ip address find where interface="{{ casa_spoke_bridge }}"
+        and address="{{ casa_spoke_lan_gateway_address }}"]])'
+      - ':put ("pool-legacy=" .
+        [:len [/ip pool find where name="{{ casa_spoke_dhcp_pool_name }}"
+        and ranges="{{ casa_spoke_legacy_dhcp_pool_ranges }}"]])'
+      - ':put ("pool-target=" .
+        [:len [/ip pool find where name="{{ casa_spoke_dhcp_pool_name }}"
+        and ranges="{{ casa_spoke_dhcp_pool_ranges }}"]])'
+      - ':put ("dhcp-network-legacy=" .
+        [:len [/ip dhcp-server network find where
+        address="{{ casa_spoke_legacy_lan_subnet }}"]])'
+      - ':put ("dhcp-network-target=" .
+        [:len [/ip dhcp-server network find where
+        address="{{ casa_spoke_lan_subnet }}"
+        and gateway="{{ casa_spoke_lan_gateway }}"]])'
+      - ':put ("adguard-dstnat-legacy=" .
+        [:len [/ip firewall nat find where chain=dstnat
+        and dst-address="{{ casa_spoke_legacy_lan_gateway }}"
+        and to-addresses="{{ casa_spoke_adguard_address }}"]])'
+      - ':put ("adguard-dstnat-target=" .
+        [:len [/ip firewall nat find where chain=dstnat
+        and dst-address="{{ casa_spoke_lan_gateway }}"
+        and to-addresses="{{ casa_spoke_adguard_address }}"]])'
+
+      # AdGuard's container network, kept untouched by this change.
+      - ':put ("container-address=" .
+        [:len [/ip address find where
+        interface="{{ casa_spoke_container_bridge }}"]])'
+      - ':put ("container-masquerade=" .
+        [:len [/ip firewall nat find where chain=srcnat and action=masquerade
+        and src-address="{{ casa_spoke_container_subnet }}"]])'
+      - ':put ("defconf-masquerade=" .
+        [:len [/ip firewall nat find where chain=srcnat and action=masquerade
+        and out-interface-list="{{ casa_spoke_wan_list }}"]])'
+
+      # The VPS relay's Casa end.
+      - ':put ("vps-interface=" .
+        [:len [/interface wireguard find where
+        name="{{ casa_spoke_legacy_wg_interface }}"]])'
+      - ':put ("vps-address=" .
+        [:len [/ip address find where
+        interface="{{ casa_spoke_legacy_wg_interface }}"]])'
+      - ':put ("vps-peers=" .
+        [:len [/interface wireguard peers find where
+        interface="{{ casa_spoke_legacy_wg_interface }}"]])'
+      - ':put ("vps-forward-rules=" .
+        [:len [/ip firewall filter find where chain=forward
+        and in-interface="{{ casa_spoke_legacy_wg_interface }}"]])'
+
+      # Guest-wifi cruft.
+      - ':put ("guest-address=" .
+        [:len [/ip address find where
+        address="{{ casa_spoke_legacy_guest_address }}"]])'
+      - ':put ("guest-dhcp-network=" .
+        [:len [/ip dhcp-server network find where
+        address="{{ casa_spoke_legacy_guest_subnet }}"]])'
+      - ':put ("guest-masquerade=" .
+        [:len [/ip firewall nat find where chain=srcnat
+        and src-address="{{ casa_spoke_legacy_guest_subnet }}"]])'
+      - ':put ("guest-forward-rules=" .
+        [:len [/ip firewall filter find where chain=forward
+        and src-address="{{ casa_spoke_legacy_guest_subnet }}"]])'
+
+      # The stranded trunk port. Guarded like the rest: if it is not a port of
+      # this bridge, an unguarded `get` would error and take the whole audit
+      # down rather than reporting the fact.
+      - ':local id [/interface bridge port find where
+        interface="{{ casa_spoke_trunk_port }}"
+        and bridge="{{ casa_spoke_bridge }}"];
+        :if ([:len $id] = 1) do={
+        :put ("trunk-port-frame-types=" .
+        [:tostr [/interface bridge port get $id frame-types]]) }
+        else={ :put "trunk-port-frame-types=absent" }'
+
+      # Name collisions for the objects the cutover creates.
+      - ':put ("cutover-script=" .
+        [:len [/system script find where
+        name="{{ casa_spoke_cutover_script_name }}"]])'
+      - ':put ("cutover-scheduler=" .
+        [:len [/system scheduler find where
+        name="{{ casa_spoke_cutover_scheduler_name }}"]])'
+  register: casa_spoke_audit_raw
+  changed_when: false
+
+# Per-VLAN reads are a loop rather than more lines above, so adding or removing
+# a VLAN from casa_spoke_legacy_vlans needs no edit here. `current-tagged` and
+# `current-untagged` are what actually matter: a bridge-VLAN entry may name a
+# port that is link-down, but a port present in the *current* set means
+# something is really using the VLAN and it is not safe to delete.
+- name: Read the live Casa lab-VLAN state
+  community.routeros.command:
+    commands:
+      - ':put ("interface=" .
+        [:len [/interface vlan find where name="{{ item.interface }}"]])'
+      - ':put ("address=" .
+        [:len [/ip address find where interface="{{ item.interface }}"
+        and address="{{ item.address }}"]])'
+      - ':put ("lan-member=" .
+        [:len [/interface list member find where list="{{ casa_spoke_lan_list }}"
+        and interface="{{ item.interface }}"]])'
+      - ':put ("bridge-vlan=" .
+        [:len [/interface bridge vlan find where vlan-ids={{ item.id }}
+        and !dynamic]])'
+      - ':local ports "";
+        :foreach v in=[/interface bridge vlan find where vlan-ids={{ item.id }}
+        and !dynamic] do={
+        :set ports ($ports . [:tostr [/interface bridge vlan get $v
+        current-tagged]] . "," . [:tostr [/interface bridge vlan get $v
+        current-untagged]] . ",") };
+        :put ("live-ports=" . $ports)'
+  loop: "{{ casa_spoke_legacy_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  register: casa_spoke_vlan_audit_raw
+  changed_when: false
+
+# One read per declared entry, the same shape the /ip service hardening uses.
+# `present` and `correct` are separate counts so converge can tell "reservation
+# exists but still points at the old subnet" (fix it) from "no reservation for
+# this MAC at all" (report it -- more likely a typo in the declaration than a
+# missing object). MAC is the identity: the address is the thing being changed,
+# so it cannot also be the key.
+- name: Read the Casa static DHCP reservations
+  community.routeros.command:
+    commands: "{{ _present_reads + _correct_reads + _legacy_reads }}"
+  vars:
+    _present_reads: >-
+      {{ casa_spoke_dhcp_reservations | map(attribute='mac') |
+      map('regex_replace', '^(.*)$',
+      ':put ("present-\1=" . [:len [/ip dhcp-server lease find where !dynamic
+      and mac-address="\1"]])') | list }}
+    # zip rather than json_query: the latter needs jmespath, which is not a
+    # dependency of anything else this repo runs.
+    _correct_reads: >-
+      {{ casa_spoke_dhcp_reservations | map(attribute='mac') |
+      zip(casa_spoke_dhcp_reservations | map(attribute='address')) |
+      map('join', '=') |
+      map('regex_replace', '^(.*)=(.*)$',
+      ':put ("correct-\1=" . [:len [/ip dhcp-server lease find where !dynamic
+      and mac-address="\1" and address="\2"]])') | list }}
+    _legacy_reads: >-
+      {{ casa_spoke_legacy_reservations | map(attribute='mac') |
+      map('regex_replace', '^(.*)$',
+      ':put ("legacy-\1=" . [:len [/ip dhcp-server lease find where !dynamic
+      and mac-address="\1"]])') | list }}
+  register: casa_spoke_reservation_raw
+  changed_when: false
+
+- name: Record the live Casa router state
+  ansible.builtin.set_fact:
+    casa_spoke_audit: "{{ dict(_pairs) }}"
+    casa_spoke_reservations: "{{ dict(_res_pairs) }}"
+  vars:
+    _pairs: >-
+      {{ casa_spoke_audit_raw.stdout_lines | map('last') | map('trim') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list }}
+    _res_pairs: >-
+      {{ casa_spoke_reservation_raw.stdout_lines | default([]) | flatten |
+      map('trim') | select('match', '^(present|correct|legacy)-') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list }}

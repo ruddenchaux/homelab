@@ -1,0 +1,65 @@
+---
+# Read-only. Runs before anything is touched at either site, because Casa's peer
+# block cannot be written without it: WireGuard has no negotiation, so the hub's
+# public key has to be transported out of band -- here, cross-play through
+# hostvars, the same shape the old vps-relay.yml used.
+#
+# The hub is the authority for this value and it is not a secret, so it is read
+# live rather than stored. Nothing new goes into SOPS.
+- name: Read the Bottega hub WireGuard public key
+  community.routeros.command:
+    commands:
+      - ':put ("public-key=" . [:tostr [/interface wireguard get
+        [find where name="{{ bottega_casa_peer_wg_interface }}"] public-key]])'
+      - ':put ("listen-port=" . [:tostr [/interface wireguard get
+        [find where name="{{ bottega_casa_peer_wg_interface }}"] listen-port]])'
+      - ':put ("mtu=" . [:tostr [/interface wireguard get
+        [find where name="{{ bottega_casa_peer_wg_interface }}"] mtu]])'
+      - ':put ("count=" .
+        [:len [/interface wireguard find where
+        name="{{ bottega_casa_peer_wg_interface }}"]])'
+  register: bottega_casa_peer_hub_raw
+  changed_when: false
+
+- name: Record the Bottega hub WireGuard identity
+  ansible.builtin.set_fact:
+    bottega_casa_peer_hub: "{{ dict(_pairs) }}"
+    bottega_casa_peer_hub_public_key: "{{ dict(_pairs)['public-key'] }}"
+  vars:
+    _pairs: >-
+      {{ bottega_casa_peer_hub_raw.stdout_lines | map('last') | map('trim') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list }}
+
+# If the hub is not the shape phase 5 built, Casa must not be pointed at it: a
+# spoke configured against the wrong port or MTU handshakes badly or not at all,
+# and by then Casa's own tunnel objects already exist.
+- name: Require the Bottega hub to be the phase 5 listener
+  ansible.builtin.assert:
+    that:
+      - (bottega_casa_peer_hub['count'] | int) == 1
+      - (bottega_casa_peer_hub['listen-port'] | int) ==
+        (bottega_casa_peer_wg_port | int)
+      - (bottega_casa_peer_hub['mtu'] | int) ==
+        (bottega_casa_peer_wg_mtu | int)
+      - bottega_casa_peer_hub_public_key | length == 44
+      - bottega_casa_peer_hub_public_key.endswith('=')
+    quiet: true
+    fail_msg: >-
+      The Bottega hub does not look like the phase 5 WireGuard listener:
+      {{ bottega_casa_peer_wg_interface }} count
+      {{ bottega_casa_peer_hub['count'] }}, listen-port
+      {{ bottega_casa_peer_hub['listen-port'] }} (expected
+      {{ bottega_casa_peer_wg_port }}), MTU {{ bottega_casa_peer_hub['mtu'] }}
+      (expected {{ bottega_casa_peer_wg_mtu }}). No changes were made at either
+      site.
+
+# Printed because a split run (each site driven from a different control
+# machine) has no hostvars path between the plays, and the operator has to carry
+# this value to the Casa machine by hand. It is a public key: not a secret, and
+# deliberately not stored anywhere -- the hub is the authority for it.
+- name: Report the Bottega hub public key
+  ansible.builtin.debug:
+    msg:
+      - "Bottega wg-hub public key: {{ bottega_casa_peer_hub_public_key }}"
+      - "Split run? Pass it to the Casa machine as
+         -e casa_spoke_hub_public_key={{ bottega_casa_peer_hub_public_key }}"

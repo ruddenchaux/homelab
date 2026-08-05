@@ -1,0 +1,147 @@
+---
+- name: Validate fixed Bottega Casa-peer inputs
+  ansible.builtin.assert:
+    that:
+      - bottega_casa_peer_wg_interface == 'wg-hub'
+      - (bottega_casa_peer_wg_port | int) == 61536
+      - bottega_casa_peer_overlay_address == '10.99.0.2'
+      - bottega_casa_peer_casa_lan == '192.168.90.0/24'
+      - >-
+        bottega_casa_peer_allowed_addresses | sort ==
+        ['10.99.0.2/32', '192.168.90.0/24'] | sort
+      - bottega_casa_peer_roadwarrior_address == '10.99.0.11'
+      # Casa's LAN must not collide with Bottega's VLAN 1 or its lab VLANs --
+      # AGENTS.md #2, checked here rather than trusted from the spec text.
+      - >-
+        bottega_casa_peer_casa_lan not in
+        ['192.168.88.0/24', '10.10.0.0/24', '10.20.0.0/24', '10.30.0.0/24']
+    quiet: true
+    fail_msg: >-
+      The Bottega Casa peer is fixed to the addressing in
+      specs/network/topology.md and the AllowedIPs table in
+      specs/network/wireguard.md: Casa at 10.99.0.2/32 with LAN
+      192.168.90.0/24, on wg-hub UDP 61536. No router changes were made.
+
+- name: Require the Bottega Casa-peer operator safety confirmation
+  ansible.builtin.assert:
+    that:
+      - bottega_casa_peer_router_recovery_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      This change is applied to the Bottega hub over the road-warrior tunnel --
+      the same tunnel it modifies forward rules around. Confirm a current
+      RouterOS export plus safe mode or a timed rollback before proceeding. No
+      router changes were made.
+
+- name: Require Casa's wg-casa public key
+  ansible.builtin.assert:
+    that:
+      - bottega_casa_peer_public_key | length == 44
+      - bottega_casa_peer_public_key.endswith('=')
+    quiet: true
+    fail_msg: >-
+      No usable Casa wg-casa public key was passed to this role. In a
+      single-machine run casa-spoke.yml configures Casa first and carries the
+      key across; in a split run, build wg-casa on the Casa machine first and
+      pass the key it prints:
+      -e bottega_casa_peer_public_key=<the Casa router's wg-casa public key>.
+      No router changes were made.
+
+- name: Read owned Bottega Casa-peer objects
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+# This role is additive on top of phase 5 and must find phase 5 intact. It also
+# never writes to the input chain: the UDP 61536 listener already accepts Casa,
+# so bottega_mikrotik_input_exceptions stays exactly as declared.
+- name: Require the Bottega phase 5 hub to be intact
+  ansible.builtin.assert:
+    that:
+      - (bottega_casa_peer_counts['hub-interface'] | int) == 1
+      - (bottega_casa_peer_counts['hub-lan-member'] | int) == 1
+      - (bottega_casa_peer_counts['hub-wan-member'] | int) == 0
+      - (bottega_casa_peer_counts['input-exception'] | int) == 1
+      - bottega_casa_peer_counts['input-last-action'] == 'drop'
+      - >-
+        bottega_casa_peer_counts['input-last-list'] ==
+        bottega_casa_peer_wan_list
+      - >-
+        (bottega_casa_peer_lab_vlans | sort) ==
+        (bottega_casa_peer_expected_lab_vlans | sort)
+    quiet: true
+    fail_msg: >-
+      The Bottega phase 5 hub is not in the state this change builds on:
+      wg-hub {{ bottega_casa_peer_counts['hub-interface'] }}, LAN/WAN membership
+      {{ bottega_casa_peer_counts['hub-lan-member'] }}/{{
+      bottega_casa_peer_counts['hub-wan-member'] }}, UDP
+      {{ bottega_casa_peer_wg_port }} input exceptions
+      {{ bottega_casa_peer_counts['input-exception'] }}, last input rule
+      "{{ bottega_casa_peer_counts['input-last-action'] }}
+      in-interface-list={{ bottega_casa_peer_counts['input-last-list'] }}",
+      {{ bottega_casa_peer_lab_vlan_list }} entries
+      {{ bottega_casa_peer_counts['lab-vlan-list'] }}. Repair phase 5 before
+      layering Casa on top of it. No router changes were made.
+
+- name: Record the pre-change Bottega input-chain shape
+  ansible.builtin.set_fact:
+    bottega_casa_peer_input_baseline: >-
+      {{ bottega_casa_peer_counts['input-rule-count'] }}
+
+# A second peer already claiming 10.99.0.2 would make every src-address-scoped
+# rule below ambiguous about which peer it governs.
+- name: Reject a conflicting claim on Casa's overlay address
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_casa_peer_counts['conflicting-peer'] | int) ==
+        (bottega_casa_peer_counts['peer'] | int)
+    quiet: true
+    fail_msg: >-
+      {{ bottega_casa_peer_counts['conflicting-peer'] }} WireGuard peer(s)
+      already carry {{ bottega_casa_peer_overlay_address }} in their
+      allowed-address, but only {{ bottega_casa_peer_counts['peer'] }} of them
+      is the one this role owns. Two peers claiming the same overlay address
+      make the src-address-scoped forward rules ambiguous. Resolve by hand under
+      safe mode. No router changes were made.
+
+- name: Reject duplicate or drifted Bottega Casa-peer state
+  ansible.builtin.assert:
+    that:
+      - (bottega_casa_peer_counts['peer'] | int) <= 1
+      - >-
+        (bottega_casa_peer_counts['route'] | int) <=
+        (bottega_casa_peer_routes | length)
+      - ((bottega_casa_peer_counts['peer'] | int) == 0) or bottega_casa_peer_ok
+      - bottega_casa_peer_extra_routes | length == 0
+      - bottega_casa_peer_extra_sources | length == 0
+    quiet: true
+    fail_msg: >-
+      An owned casa-phase1 object on the Bottega hub is duplicated or has
+      drifted (peer ok = {{ bottega_casa_peer_ok }}, unexpected routes =
+      {{ bottega_casa_peer_extra_routes | join(', ') | default('none') }},
+      unexpected {{ bottega_casa_peer_source_list }} entries =
+      {{ bottega_casa_peer_extra_sources | join(', ') | default('none') }}).
+      Resolve by hand under safe mode. No router changes were made.
+
+- name: Reject drifted Bottega Casa forward rules
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('count=0' in _properties) or
+        (('count=1' in _properties) and
+        ('disabled=false' in _properties) and
+        ('chain=forward' in _properties) and
+        ('action=accept' in _properties) and
+        (item.expect | difference(_properties) | length == 0))
+    quiet: true
+    fail_msg: >-
+      Forward rule "{{ item.comment }}" ({{ item.purpose }}) exists but does not
+      match what this role declares.
+      Expected: {{ item.expect | join(' ') }}
+      Found:    {{ _properties | join(' ') }}
+      Resolve by hand under safe mode. No router changes were made.
+  vars:
+    _properties: >-
+      {{ bottega_casa_peer_forward_state[item.comment] | default(['count=0']) }}
+  loop: "{{ bottega_casa_peer_forward_rules }}"
+  loop_control:
+    label: "{{ item.comment }}"

@@ -1,0 +1,61 @@
+---
+# The Bottega hub side of specs/sites/casa-phase-1-spoke.md: purely additive.
+#
+# Deliberately NOT part of bottega_phase5 and deliberately never including
+# mikrotik-bottega-base-lockdown: the phase 5 UDP 61536 listener already accepts
+# Casa, so this change needs no input-chain rule and no new
+# bottega_mikrotik_input_exceptions entry. This role reads the input chain to
+# prove it did not disturb it, and never writes to it.
+
+bottega_casa_peer_lan_list: LAN
+bottega_casa_peer_wan_list: WAN
+
+# The hub interface built by phase 5. Casa and the road-warrior share it, since
+# they share one listener -- which is why every rule below is scoped by
+# src-address/address-list and never by in-interface alone.
+bottega_casa_peer_wg_interface: wg-hub
+bottega_casa_peer_wg_port: 61536
+bottega_casa_peer_wg_mtu: 1412
+
+# Mirror of the "Bottega (hub, listens)" row of the wireguard.md AllowedIPs
+# table: Casa's overlay /32 plus the LAN behind it.
+bottega_casa_peer_overlay_address: 10.99.0.2
+bottega_casa_peer_casa_lan: 192.168.90.0/24
+bottega_casa_peer_allowed_addresses:
+  - 10.99.0.2/32
+  - 192.168.90.0/24
+
+# Casa's wg-casa public key. Read off the Casa router at run time and passed in
+# by casa-spoke.yml. A public key is not a secret, so it is carried as a plain
+# fact and Casa needs no SOPS file (specs/network/wireguard.md "Key custody").
+bottega_casa_peer_public_key: ""
+
+# The lab-VLAN address list phase 5 already maintains. Reused, never rebuilt --
+# this role adds no entry to it and asserts its contents are unchanged.
+bottega_casa_peer_lab_vlan_list: bottega-lab-vlans
+
+# What that list must contain, from specs/network/topology.md. Declared rather
+# than read, so the assertions below compare the router against the spec instead
+# of against itself.
+bottega_casa_peer_expected_lab_vlans:
+  - 10.10.0.0/24
+  - 10.20.0.0/24
+  - 10.30.0.0/24
+
+# Sources allowed to reach the lab from the Casa peer. Both entries are needed:
+# 10.99.0.2 is the Casa router itself, 192.168.90.0/24 is everything behind it.
+# Scoping on the router's overlay address alone would silently drop traffic from
+# every actual Casa host and fail the topology.md "a host on Casa's LAN can
+# reach a host on Bottega's VLAN 30" criterion.
+bottega_casa_peer_source_list: casa-networks
+bottega_casa_peer_source_addresses:
+  - 10.99.0.2/32
+  - 192.168.90.0/24
+
+# The phase 5 road-warrior. Its client profile already carries Casa's LAN in
+# AllowedIPs, so without a hub forward rule that route is inert.
+bottega_casa_peer_roadwarrior_address: 10.99.0.11
+bottega_casa_peer_allow_roadwarrior_to_casa: true
+
+# Operator gate.
+bottega_casa_peer_router_recovery_confirmed: false

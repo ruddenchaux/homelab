@@ -1,0 +1,83 @@
+---
+# Step 2 of the Safe Application order in specs/sites/casa-phase-1-spoke.md,
+# applied to the Bottega hub over the road-warrior tunnel.
+#
+# Everything here is additive. Nothing in this file touches the input chain, the
+# base-lockdown exceptions, the wg-hub interface, the road-warrior peer, or the
+# phase 5 MSS clamp -- that clamp already covers egress on wg-hub, so a second
+# one for Casa would be a duplicate, not a fix.
+#
+# Create-only-if-absent; preflight has already refused on drift.
+
+# Order matters: the peer and the address-list entries must exist before the
+# rules that reference them, or RouterOS rejects the rule as ordinary command
+# output that community.routeros.command does not surface as a failure.
+- name: Add the Bottega hub peer for Casa
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard peers add
+        interface="{{ bottega_casa_peer_wg_interface }}"
+        public-key="{{ bottega_casa_peer_public_key }}"
+        allowed-address="{{ bottega_casa_peer_allowed_addresses | join(',') }}"
+        comment="{{ bottega_casa_peer_comment }}"
+  when: (bottega_casa_peer_counts['peer'] | int) == 0
+
+- name: Add the Bottega Casa source-address-list entries
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall address-list add
+        list="{{ bottega_casa_peer_source_list }}"
+        address="{{ item }}"
+        comment="{{ bottega_casa_peer_source_list_comment }}"
+  loop: "{{ bottega_casa_peer_missing_sources }}"
+  loop_control:
+    label: "{{ item }}"
+
+# Both routes are owned static routes for the same reason phase 5's
+# road-warrior route is: the hub's tunnel address is a /32, so nothing is
+# connected, and RouterOS does not turn a peer's allowed-address into a route on
+# this build. Without the 192.168.90.0/24 entry the lab->Casa accept rule below
+# matches traffic the router then has nowhere to send.
+- name: Add the Bottega routes toward Casa
+  community.routeros.command:
+    commands:
+      - >-
+        /ip route add
+        dst-address="{{ item }}"
+        gateway="{{ bottega_casa_peer_wg_interface }}"
+        comment="{{ bottega_casa_peer_route_comment }}"
+  loop: "{{ bottega_casa_peer_missing_routes }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Add the Bottega Casa forward rules
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter add
+        chain=forward
+        action=accept
+        {{ item.args }}
+        comment="{{ item.comment }}"
+  loop: "{{ bottega_casa_peer_forward_rules }}"
+  loop_control:
+    label: "{{ item.comment }}"
+  when: >-
+    'count=0' in (bottega_casa_peer_forward_state[item.comment] |
+    default(['count=0']))
+
+# Placement is read back and corrected one rule at a time: each move renumbers
+# everything after it, so the ordering has to be recomputed in between.
+# loop_var is renamed: read-forward-order.yml loops over the whole forward chain
+# with its own `item`, which would otherwise shadow this one halfway through.
+- name: Place each owned Casa accept before the first forward drop
+  ansible.builtin.include_tasks: place-forward-rule.yml
+  loop: "{{ bottega_casa_peer_forward_rules }}"
+  loop_control:
+    loop_var: casa_rule
+    label: "{{ casa_rule.comment }}"
+
+- name: Re-read owned Bottega Casa-peer objects
+  ansible.builtin.include_tasks: read-owned-rules.yml

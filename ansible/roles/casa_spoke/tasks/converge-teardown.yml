@@ -1,0 +1,245 @@
+---
+# Steps 3 and 4 of the Safe Application order.
+#
+# Runs only after the tunnel to Bottega has handshaked, so the administrative
+# path this teardown does *not* depend on is already proven. Preflight has
+# already refused if any of these objects looks different from the audited
+# shape, so every removal here is of something already confirmed to be both
+# obsolete and unused.
+#
+# Each removal is a `remove [find where ...]` guarded by the count read in the
+# audit: RouterOS treats removing an empty find as a no-op, but gating on the
+# count is what makes the run report changes honestly instead of always
+# reporting "changed".
+
+# --- The VPS relay's Casa end ------------------------------------------------
+# Peer first, then the rules that name the interface, then the address, then the
+# interface itself: RouterOS will not remove an interface that other objects
+# still reference. The Hetzner host and the public jellyfin A record are a
+# separate change (MIGRATION.md) -- this only kills the Casa end.
+- name: Remove the Casa VPS-relay peer
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard peers remove
+        [find where interface="{{ casa_spoke_legacy_wg_interface }}"]
+  when: (casa_spoke_audit['vps-peers'] | int) > 0
+
+- name: Remove the Casa VPS-relay forward rules
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter remove
+        [find where chain=forward
+        and in-interface="{{ casa_spoke_legacy_wg_interface }}"]
+  when: (casa_spoke_audit['vps-forward-rules'] | int) > 0
+
+- name: Remove the Casa VPS-relay tunnel address
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address remove
+        [find where interface="{{ casa_spoke_legacy_wg_interface }}"]
+  when: (casa_spoke_audit['vps-address'] | int) > 0
+
+- name: Remove the Casa VPS-relay WireGuard interface
+  community.routeros.command:
+    commands:
+      - >-
+        /interface wireguard remove
+        [find where name="{{ casa_spoke_legacy_wg_interface }}"]
+  when: (casa_spoke_audit['vps-interface'] | int) > 0
+
+# --- The lab VLANs -----------------------------------------------------------
+# These moved to Bottega with the lab. Removing them locally is not tidying: as
+# long as this router has a connected route for 10.10/10.20/10.30, that route
+# shadows the tunnel route to Bottega's real VLANs, which is precisely the
+# "no subnet on both routing tables" failure AGENTS.md #2 exists to prevent.
+#
+# Order within each VLAN mirrors the dependency chain: list membership, then
+# address, then the interface, then the bridge-VLAN entry.
+- name: Remove the Casa lab-VLAN LAN-list memberships
+  community.routeros.command:
+    commands:
+      - >-
+        /interface list member remove
+        [find where list="{{ casa_spoke_lan_list }}"
+        and interface="{{ item.interface }}"]
+  loop: "{{ casa_spoke_legacy_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  when: >-
+    'lan-member=1' in (casa_spoke_vlan_audit_raw.results |
+    selectattr('item.id', 'equalto', item.id) | map(attribute='stdout_lines') |
+    first | map('last') | map('trim') | list)
+
+- name: Remove the Casa lab-VLAN addresses
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address remove
+        [find where interface="{{ item.interface }}"]
+  loop: "{{ casa_spoke_legacy_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  when: >-
+    'address=1' in (casa_spoke_vlan_audit_raw.results |
+    selectattr('item.id', 'equalto', item.id) | map(attribute='stdout_lines') |
+    first | map('last') | map('trim') | list)
+
+- name: Remove the Casa lab-VLAN interfaces
+  community.routeros.command:
+    commands:
+      - >-
+        /interface vlan remove
+        [find where name="{{ item.interface }}"]
+  loop: "{{ casa_spoke_legacy_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  when: >-
+    'interface=1' in (casa_spoke_vlan_audit_raw.results |
+    selectattr('item.id', 'equalto', item.id) | map(attribute='stdout_lines') |
+    first | map('last') | map('trim') | list)
+
+- name: Remove the Casa lab-VLAN bridge-VLAN entries
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge vlan remove
+        [find where vlan-ids={{ item.id }} and !dynamic]
+  loop: "{{ casa_spoke_legacy_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }}"
+  when: >-
+    'bridge-vlan=1' in (casa_spoke_vlan_audit_raw.results |
+    selectattr('item.id', 'equalto', item.id) | map(attribute='stdout_lines') |
+    first | map('last') | map('trim') | list)
+
+# Deleting the VLANs strands the old Proxmox trunk port: it is set to admit only
+# tagged frames and now has no tagged VLAN left to carry, so anything plugged
+# into it would be dropped silently. Returning it to the defconf access-port
+# setting puts it back in line with ether2-ether8 and sfp1.
+- name: Return the stranded Casa trunk port to an access port
+  community.routeros.command:
+    commands:
+      - >-
+        /interface bridge port set
+        [find where interface="{{ casa_spoke_trunk_port }}"
+        and bridge="{{ casa_spoke_bridge }}"]
+        frame-types=admit-all
+  when:
+    - casa_spoke_reset_trunk_port | bool
+    - casa_spoke_audit['trunk-port-frame-types'] not in ['admit-all', 'absent']
+
+# --- Guest-wifi cruft --------------------------------------------------------
+# The 10.10.50.0/24 experiment. Its address is already INVALID (the interface it
+# was bound to is gone), and its firewall/NAT/DHCP entries reference a subnet
+# that no longer exists anywhere.
+- name: Remove the Casa guest-wifi forward drop
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall filter remove
+        [find where chain=forward
+        and src-address="{{ casa_spoke_legacy_guest_subnet }}"]
+  when: (casa_spoke_audit['guest-forward-rules'] | int) > 0
+
+- name: Remove the Casa guest-wifi masquerade
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall nat remove
+        [find where chain=srcnat
+        and src-address="{{ casa_spoke_legacy_guest_subnet }}"]
+  when: (casa_spoke_audit['guest-masquerade'] | int) > 0
+
+- name: Remove the Casa guest-wifi dhcp-network
+  community.routeros.command:
+    commands:
+      - >-
+        /ip dhcp-server network remove
+        [find where address="{{ casa_spoke_legacy_guest_subnet }}"]
+  when: (casa_spoke_audit['guest-dhcp-network'] | int) > 0
+
+- name: Remove the Casa guest-wifi address
+  community.routeros.command:
+    commands:
+      - >-
+        /ip address remove
+        [find where address="{{ casa_spoke_legacy_guest_address }}"]
+  when: (casa_spoke_audit['guest-address'] | int) > 0
+
+# --- Hardening that does not touch the operator's own session ----------------
+# None of these can lock out this change's own operator: Ansible drives the
+# router over ssh and winbox stays up as the fallback, so unlike the /ip service
+# address restriction they do not have to wait for the cutover. Doing it here
+# means they still land even if the renumber is deferred to a later run.
+# Webfig-over-HTTPS users lose 443 here and move to www on 8080 or Winbox.
+- name: Disable the unused Casa management services
+  community.routeros.command:
+    commands:
+      - >-
+        /ip service set
+        [find where name="{{ item }}" and !dynamic]
+        disabled=yes
+  loop: "{{ casa_spoke_disabled_services }}"
+  loop_control:
+    label: "{{ item }}"
+  when: not (casa_spoke_disabled_services_ok | bool)
+
+- name: Re-read the live Casa router state after the teardown
+  ansible.builtin.include_tasks: read-audit.yml
+
+- name: Assert every obsolete Casa object is gone
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['vps-interface'] | int) == 0
+      - (casa_spoke_audit['vps-address'] | int) == 0
+      - (casa_spoke_audit['vps-peers'] | int) == 0
+      - (casa_spoke_audit['vps-forward-rules'] | int) == 0
+      - (casa_spoke_audit['guest-address'] | int) == 0
+      - (casa_spoke_audit['guest-dhcp-network'] | int) == 0
+      - (casa_spoke_audit['guest-masquerade'] | int) == 0
+      - (casa_spoke_audit['guest-forward-rules'] | int) == 0
+    quiet: true
+    fail_msg: >-
+      An obsolete wg-vps or guest-wifi object survived the teardown. The tunnel
+      is already up, so this router is still reachable from Bottega -- resolve
+      the leftovers by hand before allowing the cutover to renumber the LAN.
+
+- name: Assert every Casa lab VLAN is gone
+  ansible.builtin.assert:
+    that:
+      - "'interface=0' in _properties"
+      - "'address=0' in _properties"
+      - "'lan-member=0' in _properties"
+      - "'bridge-vlan=0' in _properties"
+    quiet: true
+    fail_msg: >-
+      Lab VLAN {{ item.item.id }} ({{ item.item.interface }}) survived the
+      teardown: {{ _properties | join(', ') }}. While it exists, its connected
+      route shadows the tunnel route to Bottega's real VLAN of the same number
+      (AGENTS.md #2).
+  vars:
+    _properties: "{{ item.stdout_lines | map('last') | map('trim') | list }}"
+  loop: "{{ casa_spoke_vlan_audit_raw.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+# The AdGuard container and the defconf/WAN masquerade are explicitly out of
+# scope; asserting it here is what turns "we did not mean to touch it" into
+# "we verified we did not".
+- name: Assert the Casa teardown left AdGuard and WAN egress untouched
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['container-address'] | int) == 1
+      - (casa_spoke_audit['container-masquerade'] | int) == 1
+      - (casa_spoke_audit['defconf-masquerade'] | int) == 1
+      - (casa_spoke_audit['wan-member-count'] | int) == 1
+      - casa_spoke_audit['input-last-action'] == 'drop'
+      - casa_spoke_audit['input-last-list'] == ('!' ~ casa_spoke_lan_list)
+    quiet: true
+    fail_msg: >-
+      The teardown disturbed something it was meant to leave alone: the AdGuard
+      container network, its masquerade, the defconf WAN masquerade, the WAN
+      list, or the defconf input tail.

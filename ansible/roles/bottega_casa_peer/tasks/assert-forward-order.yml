@@ -1,0 +1,19 @@
+---
+- name: Select the Casa forward rule to check
+  ansible.builtin.set_fact:
+    bottega_casa_peer_order_comment: "{{ casa_rule.comment }}"
+
+- name: Read the Bottega forward-chain order for this rule
+  ansible.builtin.include_tasks: read-forward-order.yml
+
+- name: Assert the owned Casa accept precedes the first forward drop
+  ansible.builtin.assert:
+    that:
+      - >-
+        (bottega_casa_peer_drop_count | int) == 0 or
+        (bottega_casa_peer_order_ok | bool)
+    quiet: true
+    fail_msg: >-
+      "{{ bottega_casa_peer_order_comment }}" sits after an enabled forward
+      drop, so the traffic it is meant to accept is dropped before it is
+      reached. The rule reads correctly and does nothing.

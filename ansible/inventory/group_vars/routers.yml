@@ -1,0 +1,15 @@
+---
+# Connection settings shared by every RouterOS host, at both sites. Nothing
+# site-specific belongs here: Bottega's declared state is in mikrotik.yml and
+# Casa's in casa.yml, so granting or changing one site's variables can never
+# reach into the other (AGENTS.md #1, applied to config as well as secrets).
+ansible_connection: ansible.netcommon.network_cli
+ansible_network_os: community.routeros.routeros
+ansible_user: admin
+ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+
+# The audit reads issue several dozen commands in one task, and the default 30s
+# is close enough to that to fail intermittently -- as a bare "timed out" that
+# looks like an unreachable router rather than a slow one. Casa is also reached
+# over a Starlink-backed tunnel from Bottega, where round-trips are ~45ms.
+ansible_command_timeout: 90

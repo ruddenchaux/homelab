@@ -1,0 +1,88 @@
+---
+# Ownership markers. The casa-phase1- prefix is shared with the Casa side
+# (casa_spoke) because both halves are one change; the objects living on
+# Bottega are named for what they do there.
+bottega_casa_peer_comment: casa-phase1-hub-peer
+bottega_casa_peer_route_comment: casa-phase1-hub-route
+bottega_casa_peer_source_list_comment: casa-phase1-casa-networks
+bottega_casa_peer_fwd_to_lab_comment: casa-phase1-fwd-casa-to-lab
+bottega_casa_peer_fwd_to_casa_comment: casa-phase1-fwd-lab-to-casa
+bottega_casa_peer_fwd_roadwarrior_comment: casa-phase1-fwd-roadwarrior-to-casa
+
+# Routes this role owns, one per allowed-address entry.
+#
+# Phase 5 established empirically that RouterOS does not derive a route from a
+# peer's allowed-address on this build, and the hub address is a /32, so no
+# connected route covers anything either. The overlay /32 is the same case phase
+# 5 already handles for the road-warrior. Casa's LAN is the new one, and without
+# it the "Home Assistant at Bottega reaches devices at Casa" use case has an
+# accept rule but nowhere to send the packets -- specs/sites/casa-phase-1-spoke.md
+# lists only the /32, which is not sufficient on its own.
+bottega_casa_peer_routes: "{{ bottega_casa_peer_allowed_addresses }}"
+
+# Forward rules this role owns.
+#
+# `args` is what gets added; `expect` is every matcher read back afterwards,
+# including the ones that must stay EMPTY. Asserting on the empty ones is the
+# point: a stray dst-address would silently narrow the grant, and a stray
+# in-interface-list would silently widen it, and neither shows up if you only
+# check the fields you meant to set.
+#
+# Every rule is scoped to wg-hub *and* to an address or address list, never to
+# the interface alone: Casa and the road-warrior terminate on the same
+# interface, so in-interface cannot tell them apart
+# (specs/network/wireguard.md).
+bottega_casa_peer_forward_rules: >-
+  {{
+  [
+    {
+      'comment': bottega_casa_peer_fwd_to_lab_comment,
+      'purpose': 'Casa router and Casa LAN -> Bottega lab VLANs',
+      'args': 'in-interface=' ~ bottega_casa_peer_wg_interface ~
+              ' src-address-list=' ~ bottega_casa_peer_source_list ~
+              ' dst-address-list=' ~ bottega_casa_peer_lab_vlan_list,
+      'expect': [
+        'in-interface=' ~ bottega_casa_peer_wg_interface,
+        'src-address-list=' ~ bottega_casa_peer_source_list,
+        'dst-address-list=' ~ bottega_casa_peer_lab_vlan_list,
+        'out-interface=',
+        'src-address=',
+        'dst-address='
+      ]
+    },
+    {
+      'comment': bottega_casa_peer_fwd_to_casa_comment,
+      'purpose': 'Bottega lab VLANs -> Casa LAN (Home Assistant use case)',
+      'args': 'out-interface=' ~ bottega_casa_peer_wg_interface ~
+              ' src-address-list=' ~ bottega_casa_peer_lab_vlan_list ~
+              ' dst-address=' ~ bottega_casa_peer_casa_lan,
+      'expect': [
+        'out-interface=' ~ bottega_casa_peer_wg_interface,
+        'src-address-list=' ~ bottega_casa_peer_lab_vlan_list,
+        'dst-address=' ~ bottega_casa_peer_casa_lan,
+        'in-interface=',
+        'src-address=',
+        'dst-address-list='
+      ]
+    }
+  ]
+  + (
+    [
+      {
+        'comment': bottega_casa_peer_fwd_roadwarrior_comment,
+        'purpose': 'road-warrior -> Casa LAN, through the hub',
+        'args': 'in-interface=' ~ bottega_casa_peer_wg_interface ~
+                ' src-address=' ~ bottega_casa_peer_roadwarrior_address ~
+                ' dst-address=' ~ bottega_casa_peer_casa_lan,
+        'expect': [
+          'in-interface=' ~ bottega_casa_peer_wg_interface,
+          'src-address=' ~ bottega_casa_peer_roadwarrior_address,
+          'dst-address=' ~ bottega_casa_peer_casa_lan,
+          'out-interface=',
+          'src-address-list=',
+          'dst-address-list='
+        ]
+      }
+    ] if (bottega_casa_peer_allow_roadwarrior_to_casa | bool) else []
+  )
+  }}

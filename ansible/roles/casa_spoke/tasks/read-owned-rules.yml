@@ -1,0 +1,300 @@
+---
+# Strict read-back of everything this role owns on the Casa router, in the
+# bottega_phase5 idiom: count first, read exact properties only for objects that
+# exist exactly once, then compare against the declared shape. Callers use the
+# `*_ok` facts both to refuse on drift (preflight) and to prove convergence
+# (validate); the counts drive "create only if absent" in converge.
+- name: Count owned Casa spoke objects
+  community.routeros.command:
+    commands:
+      - ':put ("interface=" .
+        [:len [/interface wireguard find where
+        name="{{ casa_spoke_wg_interface }}"]])'
+      - ':put ("address=" .
+        [:len [/ip address find where
+        comment="{{ casa_spoke_wg_address_comment }}"]])'
+      - ':put ("lan-member=" .
+        [:len [/interface list member find where list="{{ casa_spoke_lan_list }}"
+        and interface="{{ casa_spoke_wg_interface }}"]])'
+      - ':put ("wan-member=" .
+        [:len [/interface list member find where list="{{ casa_spoke_wan_list }}"
+        and interface="{{ casa_spoke_wg_interface }}"]])'
+      - ':put ("peer=" .
+        [:len [/interface wireguard peers find where
+        comment="{{ casa_spoke_peer_comment }}"]])'
+      - ':put ("mangle=" .
+        [:len [/ip firewall mangle find where
+        comment="{{ casa_spoke_mangle_comment }}"]])'
+      - ':put ("route=" .
+        [:len [/ip route find where
+        comment="{{ casa_spoke_route_comment }}"]])'
+      # Counted apart from the total: a static route can exist and still be
+      # inactive because a connected route for the same prefix shadows it --
+      # exactly what the lab VLANs do until they are torn down. "Present" and
+      # "in use" are different questions and validate asks both.
+      - ':local n 0;
+        :foreach r in=[/ip route find where
+        comment="{{ casa_spoke_route_comment }}"] do={
+        :if ([/ip route get $r active]) do={ :set n ($n + 1) } };
+        :put ("route-active=" . $n)'
+  register: casa_spoke_counts_raw
+  changed_when: false
+
+- name: Record owned Casa spoke object counts
+  ansible.builtin.set_fact:
+    casa_spoke_counts: "{{ dict(_pairs) }}"
+  vars:
+    _pairs: >-
+      {{ casa_spoke_counts_raw.stdout_lines | map('last') | map('trim') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list }}
+
+# listen-port is deliberately not read back. Casa dials out from behind CGNAT,
+# so nothing ever connects to its source port; RouterOS picks one and no spec
+# pins a value, so asserting on it would only manufacture drift.
+- name: Read owned Casa spoke WireGuard interface properties
+  community.routeros.command:
+    commands:
+      - ':put ("disabled=" . [/interface wireguard get
+        [find where name="{{ casa_spoke_wg_interface }}"] disabled])'
+      - ':put ("name=" . [/interface wireguard get
+        [find where name="{{ casa_spoke_wg_interface }}"] name])'
+      - ':put ("mtu=" . [/interface wireguard get
+        [find where name="{{ casa_spoke_wg_interface }}"] mtu])'
+      - ':put ("comment=" . [/interface wireguard get
+        [find where name="{{ casa_spoke_wg_interface }}"] comment])'
+      # Read back, never written: RouterOS generates the private key on
+      # interface creation and it never leaves this router. Only the public key
+      # is taken off it, for the hub-side peer -- and a public key is not a
+      # secret, which is why Casa has no SOPS file at all
+      # (specs/network/wireguard.md "Key custody").
+      - ':put ("public-key=" . [/interface wireguard get
+        [find where name="{{ casa_spoke_wg_interface }}"] public-key])'
+  register: casa_spoke_interface_properties
+  changed_when: false
+  when: (casa_spoke_counts['interface'] | int) == 1
+
+- name: Read owned Casa spoke tunnel address properties
+  community.routeros.command:
+    commands:
+      - ':put ("disabled=" . [/ip address get
+        [find where comment="{{ casa_spoke_wg_address_comment }}"] disabled])'
+      - ':put ("address=" . [/ip address get
+        [find where comment="{{ casa_spoke_wg_address_comment }}"] address])'
+      - ':put ("interface=" . [/ip address get
+        [find where comment="{{ casa_spoke_wg_address_comment }}"] interface])'
+  register: casa_spoke_address_properties
+  changed_when: false
+  when: (casa_spoke_counts['address'] | int) == 1
+
+# The mirror image of the hub's peer: this side carries the endpoint and the
+# keepalive, because this is the side behind CGNAT that has to dial out and hold
+# the NAT mapping open. allowed-address is compared as a set -- RouterOS returns
+# it in whatever order it likes.
+- name: Read owned Casa spoke peer properties
+  community.routeros.command:
+    commands:
+      - ':put ("disabled=" . [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"] disabled])'
+      - ':put ("interface=" . [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"] interface])'
+      - ':put ("public-key=" . [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"] public-key])'
+      - ':put ("endpoint-address=" . [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"]
+        endpoint-address])'
+      - ':put ("endpoint-port=" . [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"] endpoint-port])'
+      - ':put ("persistent-keepalive=" . [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"]
+        persistent-keepalive])'
+      # One short line per entry, deliberately. RouterOS hard-wraps console
+      # output at 80 columns with no continuation marker on output lines, so a
+      # single `:put` of this list comes back split mid-CIDR and unparseable.
+      # (`:put` of an array also repeats the prefix and joins with ";", which is
+      # not the comma-separated string it looks like on `print`.)
+      - ':foreach a in=[/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"] allowed-address]
+        do={ :put ("allowed-address=" . $a) }'
+      # Empty until the hub has this router as a peer too. WireGuard never
+      # negotiates, so a one-sided config is silent, not an error -- this is
+      # the only evidence that both ends actually agree.
+      - ':put ("last-handshake=" . [:tostr [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"]
+        last-handshake]])'
+  register: casa_spoke_peer_properties
+  changed_when: false
+  when: (casa_spoke_counts['peer'] | int) == 1
+
+- name: Read owned Casa spoke MSS-clamp properties
+  community.routeros.command:
+    commands:
+      - ':put ("disabled=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] disabled])'
+      - ':put ("chain=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] chain])'
+      - ':put ("action=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] action])'
+      - ':put ("new-mss=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] new-mss])'
+      - ':put ("protocol=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] protocol])'
+      - ':put ("tcp-flags=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] tcp-flags])'
+      - ':put ("out-interface=" . [/ip firewall mangle get
+        [find where comment="{{ casa_spoke_mangle_comment }}"] out-interface])'
+  register: casa_spoke_mangle_properties
+  changed_when: false
+  when: (casa_spoke_counts['mangle'] | int) == 1
+
+# The /32 tunnel address leaves RouterOS no connected route for anything behind
+# the hub, and phase 5 established empirically that it does not derive one from
+# the peer's allowed-address either. These static routes are therefore owned
+# objects, not something RouterOS maintains -- one per AllowedIPs entry.
+#
+# Not `print terse`: a terse route row is well over 80 columns and RouterOS
+# wraps it mid-value, so `dst-address=` and `gateway=` cannot be recovered
+# reliably. One short synthesised line per route instead.
+- name: Read owned Casa spoke routes
+  community.routeros.command:
+    commands:
+      - ':foreach r in=[/ip route find where
+        comment="{{ casa_spoke_route_comment }}"] do={
+        :put ("route=" . [/ip route get $r dst-address] . "|" .
+        [:tostr [/ip route get $r gateway]]) }'
+  register: casa_spoke_route_entries
+  changed_when: false
+
+# Read RouterOS-side rather than by parsing `print terse`, both because the
+# `address` property is a list and because `find where name=...` alone matches
+# the dynamic per-session rows too.
+- name: Read the Casa /ip service state this role hardens
+  community.routeros.command:
+    commands: "{{ _disabled_reads + _restricted_reads }}"
+  vars:
+    _disabled_reads: >-
+      {{ casa_spoke_disabled_services | map('regex_replace', '^(.*)$',
+      ':put ("disabled-\1=" . [:tostr [/ip service get
+      [find where name="\1" and !dynamic] disabled]])') | list }}
+    _restricted_reads: >-
+      {{ casa_spoke_restricted_services | map('regex_replace', '^(.*)$',
+      ':put ("address-\1=" . [:tostr [/ip service get
+      [find where name="\1" and !dynamic] address]])') | list }}
+  register: casa_spoke_service_properties
+  changed_when: false
+
+- name: Record exact owned Casa spoke object state
+  ansible.builtin.set_fact:
+    casa_spoke_interface_ok: >-
+      {{ ((casa_spoke_counts['interface'] | int) == 1) and
+      (_interface['disabled'] | default('') == 'false') and
+      (_interface['name'] | default('') == casa_spoke_wg_interface) and
+      ((_interface['mtu'] | default('0') | int) == (casa_spoke_wg_mtu | int)) and
+      (_interface['comment'] | default('') ==
+      casa_spoke_wg_interface_comment) and
+      ((_interface['public-key'] | default('') | length) == 44) }}
+    casa_spoke_public_key: "{{ _interface['public-key'] | default('') }}"
+    casa_spoke_address_ok: >-
+      {{ ((casa_spoke_counts['address'] | int) == 1) and
+      (_address['disabled'] | default('') == 'false') and
+      (_address['address'] | default('') == casa_spoke_wg_address) and
+      (_address['interface'] | default('') == casa_spoke_wg_interface) }}
+    casa_spoke_lists_ok: >-
+      {{ ((casa_spoke_counts['lan-member'] | int) == 1) and
+      ((casa_spoke_counts['wan-member'] | int) == 0) }}
+    casa_spoke_peer_ok: >-
+      {{ ((casa_spoke_counts['peer'] | int) == 1) and
+      (_peer['disabled'] | default('') == 'false') and
+      (_peer['interface'] | default('') == casa_spoke_wg_interface) and
+      (_peer['public-key'] | default('') == casa_spoke_hub_public_key) and
+      (_peer['endpoint-address'] | default('') == casa_spoke_hub_endpoint) and
+      ((_peer['endpoint-port'] | default('0') | int) ==
+      (casa_spoke_hub_port | int)) and
+      (_peer['persistent-keepalive'] | default('') == _expected_keepalive) and
+      ((_peer_allowed | sort) ==
+      (casa_spoke_hub_allowed_addresses | sort)) }}
+    casa_spoke_peer_handshake: "{{ _peer['last-handshake'] | default('') }}"
+    casa_spoke_mangle_ok: >-
+      {{ ((casa_spoke_counts['mangle'] | int) == 1) and
+      (_mangle['disabled'] | default('') == 'false') and
+      (_mangle['chain'] | default('') == 'forward') and
+      (_mangle['action'] | default('') == 'change-mss') and
+      (_mangle['new-mss'] | default('') == 'clamp-to-pmtu') and
+      (_mangle['protocol'] | default('') == 'tcp') and
+      (_mangle['tcp-flags'] | default('') == 'syn') and
+      (_mangle['out-interface'] | default('') == casa_spoke_wg_interface) }}
+    casa_spoke_routes_ok: >-
+      {{ ((casa_spoke_counts['route'] | int) ==
+      (casa_spoke_hub_allowed_addresses | length)) and
+      ((_actual_routes | sort) == (casa_spoke_hub_allowed_addresses | sort)) and
+      ((_route_gateways | unique) == [casa_spoke_wg_interface]) }}
+    casa_spoke_routes_active: >-
+      {{ (casa_spoke_counts['route-active'] | int) ==
+      (casa_spoke_hub_allowed_addresses | length) }}
+    casa_spoke_missing_routes: >-
+      {{ casa_spoke_hub_allowed_addresses | difference(_actual_routes) }}
+    casa_spoke_extra_routes: >-
+      {{ _actual_routes | difference(casa_spoke_hub_allowed_addresses) }}
+    casa_spoke_service_addresses: "{{ _service_addresses }}"
+    casa_spoke_disabled_services_ok: >-
+      {{ (_disabled_flags | unique) == ['true'] }}
+    casa_spoke_restricted_services_ok: >-
+      {{ (_address_sets | unique) == [casa_spoke_management_subnets | sort] }}
+  vars:
+    # Flatten every line of every command and keep only well-formed `key=value`
+    # output. This is deliberately not `map('last')`: RouterOS echoes each
+    # command back (wrapped, prefixed with "<") before its output, and hard-wraps
+    # output itself at 80 columns, so "the last line" is a fragment whenever a
+    # value is long. Echo lines start with ":" or "<" and wrap tails start with
+    # the character the split fell on, so anchoring on a lowercase key name
+    # rejects all three. Every read below is built to emit short lines anyway;
+    # this is the second line of defence, not the first.
+    _interface: >-
+      {{ dict(casa_spoke_interface_properties.stdout_lines | default([]) |
+      flatten | map('trim') | select('match', '^[a-z][a-z0-9-]*=') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list) }}
+    _address: >-
+      {{ dict(casa_spoke_address_properties.stdout_lines | default([]) |
+      flatten | map('trim') | select('match', '^[a-z][a-z0-9-]*=') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list) }}
+    _peer: >-
+      {{ dict(casa_spoke_peer_properties.stdout_lines | default([]) |
+      flatten | map('trim') | select('match', '^[a-z][a-z0-9-]*=') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list) }}
+    _mangle: >-
+      {{ dict(casa_spoke_mangle_properties.stdout_lines | default([]) |
+      flatten | map('trim') | select('match', '^[a-z][a-z0-9-]*=') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list) }}
+    _service: >-
+      {{ dict(casa_spoke_service_properties.stdout_lines | default([]) |
+      flatten | map('trim') | select('match', '^[a-z][a-z0-9-]*=') |
+      map('regex_findall', '^([^=]+)=(.*)$') | map('first') | list) }}
+    # allowed-address is read one entry per line, so it cannot live in the dict
+    # above -- the key repeats and dict() would keep only the last.
+    _peer_allowed: >-
+      {{ casa_spoke_peer_properties.stdout_lines | default([]) | flatten |
+      map('trim') | select('match', '^allowed-address=.+$') |
+      map('regex_replace', '^allowed-address=', '') | list }}
+    _expected_keepalive: >-
+      {{ '%02d:%02d:%02d' | format(0, 0, casa_spoke_keepalive_seconds | int) }}
+    _route_pairs: >-
+      {{ casa_spoke_route_entries.stdout_lines | default([]) | flatten |
+      map('trim') | select('match', '^route=.+\|.*$') |
+      map('regex_replace', '^route=', '') | list }}
+    _actual_routes: "{{ _route_pairs | map('split', '|') | map('first') | list }}"
+    _route_gateways: "{{ _route_pairs | map('split', '|') | map('last') | list }}"
+    _disabled_flags: >-
+      {{ casa_spoke_disabled_services |
+      map('regex_replace', '^(.*)$', 'disabled-\1') |
+      map('extract', _service) | list }}
+    _service_addresses: >-
+      {{ dict(casa_spoke_restricted_services | zip(casa_spoke_restricted_services
+      | map('regex_replace', '^(.*)$', 'address-\1') |
+      map('extract', _service) | list)) }}
+    # Every restricted service must carry exactly the declared management
+    # subnets, compared as a set: RouterOS keeps the order it was given, but
+    # nothing promises it will. `;` is normalised to `,` first because `:tostr`
+    # of a list property joins with a semicolon, whatever separator the value was
+    # set with -- the same quirk as the peer's allowed-address.
+    _address_sets: >-
+      {{ _service_addresses.values() | map('regex_replace', ';', ',') |
+      map('split', ',') | map('sort') | list }}

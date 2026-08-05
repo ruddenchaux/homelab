@@ -69,6 +69,7 @@ broker — see `sites/casa.md`).
 | Bottega VLAN 20 (trusted) | `10.20.0.0/24`, gw `10.20.0.1` |
 | Bottega VLAN 30 (kubernetes) | `10.30.0.0/24`, gw `10.30.0.1` |
 | Casa LAN | `192.168.90.0/24`, gw `192.168.90.1` — flat, renumbered from its prior range |
+| Casa container network | `10.10.20.0/24`, gw `10.10.20.1` — the `containers` bridge carrying AdGuardHome (`10.10.20.2`), Casa's local DNS. Router-local and masqueraded; **not** carried over the tunnel and not in any peer's AllowedIPs. Listed here so it is never reused for a Bottega VLAN — note it does **not** overlap Bottega's `10.10.0.0/24`, which covers only `10.10.0.0`–`10.10.0.255` |
 | WireGuard overlay (whole VPN) | `10.99.0.0/24` |
 | — Bottega (hub) | `10.99.0.1/32` |
 | — Casa (spoke) | `10.99.0.2/32` |

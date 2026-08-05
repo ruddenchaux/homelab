@@ -1,0 +1,91 @@
+---
+# Entry point for the second Casa play of casa-spoke.yml, run after the Bottega
+# hub has been given this router's peer: confirm the tunnel actually works, then
+# tear down what the tunnel replaces, then cut over.
+
+# In a single-machine run the hub learned this router's key only seconds ago, in
+# the immediately preceding play. Casa dials out once per keepalive interval, so
+# the first handshake can legitimately still be pending when this play starts --
+# asserting straight away would fail on a race rather than on a fault. Poll
+# instead, and let the assert below produce the diagnostic if it never lands.
+# Errors are ignored deliberately: the peer may not exist at all yet, which is a
+# real condition for the assert to report, not something to fail on here.
+- name: Wait for the Casa-to-Bottega handshake to land
+  community.routeros.command:
+    commands:
+      - ':put ("last-handshake=" . [:tostr [/interface wireguard peers get
+        [find where comment="{{ casa_spoke_peer_comment }}"] last-handshake]])'
+  register: casa_spoke_handshake_poll
+  changed_when: false
+  until: >-
+    casa_spoke_handshake_poll.stdout_lines | default([[]]) | map('last') |
+    map('trim') | select('match', '^last-handshake=.+$') | list | length > 0
+  retries: "{{ casa_spoke_handshake_retries }}"
+  delay: "{{ casa_spoke_handshake_delay_seconds }}"
+  ignore_errors: true
+
+- name: Re-read owned Casa spoke objects before tearing anything down
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Read the live Casa router state before tearing anything down
+  ansible.builtin.include_tasks: read-audit.yml
+
+# The gate for the whole teardown. wg-vps is a working path into this site and
+# the lab VLANs are live interfaces; removing them is only safe once the thing
+# that replaces them is demonstrably up, and for WireGuard "demonstrably up"
+# means a handshake, not a matching-looking config.
+- name: Require a live Casa-to-Bottega handshake before the teardown
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_peer_ok
+      - casa_spoke_peer_handshake | length > 0
+    quiet: true
+    fail_msg: >-
+      The wg-casa peer has not handshaked with the Bottega hub
+      ({{ casa_spoke_hub_endpoint }}:{{ casa_spoke_hub_port }}), so the tunnel
+      that is meant to replace wg-vps is not carrying traffic. Nothing has been
+      torn down. Confirm the hub carries this router's public key
+      ({{ casa_spoke_public_key }}) with allowed-address
+      10.99.0.2/32,{{ casa_spoke_lan_subnet }}, then re-run.
+
+- name: Require an explicit confirmation before the Casa teardown
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_teardown_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      The tunnel to Bottega is up. The next step permanently removes the
+      wg-vps tunnel, lab VLANs {{ casa_spoke_legacy_vlans |
+      map(attribute='id') | join('/') }} and the guest-wifi leftovers from this
+      router. Re-run with -e casa_spoke_teardown_confirmed=true to proceed.
+      Nothing has been torn down.
+  vars:
+    # Surviving VLAN objects count as "there is something to tear down" too, not
+    # just wg-vps and the guest address. A run that found those two already gone
+    # would otherwise delete three live interfaces without ever asking.
+    _vlan_objects_remain: >-
+      {{ casa_spoke_vlan_audit_raw.results | map(attribute='stdout_lines') |
+      map('map', 'last') | map('map', 'trim') | flatten |
+      select('search', '^(interface|address|lan-member|bridge-vlan)=[1-9]') |
+      list | length > 0 }}
+  when: >-
+    (casa_spoke_audit['vps-interface'] | int) > 0 or
+    (casa_spoke_audit['vps-peers'] | int) > 0 or
+    (casa_spoke_audit['vps-forward-rules'] | int) > 0 or
+    (casa_spoke_audit['guest-address'] | int) > 0 or
+    (casa_spoke_audit['guest-dhcp-network'] | int) > 0 or
+    (casa_spoke_audit['guest-masquerade'] | int) > 0 or
+    (_vlan_objects_remain | bool)
+
+- name: Tear down the obsolete Casa objects
+  ansible.builtin.include_tasks: converge-teardown.yml
+
+- name: Cut the Casa LAN over to its new addressing
+  ansible.builtin.include_tasks: converge-cutover.yml
+
+# After the cutover, never before: a reservation on the new subnet is only
+# useful once the router actually answers there. On the run that arms the
+# cutover this is skipped and lands on the step 7 re-run instead.
+- name: Move the Casa static DHCP reservations onto the new LAN
+  ansible.builtin.include_tasks: converge-reservations.yml
+  when: casa_spoke_renumber_applied | bool

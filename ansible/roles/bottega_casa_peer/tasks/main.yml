@@ -1,0 +1,9 @@
+---
+- name: Run Bottega Casa-peer preflight checks
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Converge the Bottega hub-side Casa peer
+  ansible.builtin.include_tasks: converge.yml
+
+- name: Validate the Bottega hub-side Casa peer
+  ansible.builtin.include_tasks: validate.yml

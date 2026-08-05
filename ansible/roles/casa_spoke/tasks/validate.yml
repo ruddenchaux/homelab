@@ -1,0 +1,193 @@
+---
+# Step 7. Runs against the fully converged router -- i.e. on the re-run after
+# the cutover, reached at 192.168.90.1. Everything asserted here is read fresh;
+# nothing is inferred from what converge believed it did.
+- name: Read the final Casa spoke owned objects
+  ansible.builtin.include_tasks: read-owned-rules.yml
+
+- name: Read the final live Casa router state
+  ansible.builtin.include_tasks: read-audit.yml
+
+- name: Assert every owned Casa spoke object is exact and enabled
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_interface_ok
+      - casa_spoke_address_ok
+      - casa_spoke_lists_ok
+      - casa_spoke_peer_ok
+      - casa_spoke_mangle_ok
+      - casa_spoke_routes_ok
+    quiet: true
+    fail_msg: >-
+      Strict read-back of the owned Casa spoke objects failed: the wg-casa
+      interface, tunnel address, LAN-only membership, Bottega peer, MSS clamp,
+      or tunnel routes did not converge.
+
+# WireGuard never negotiates: each end's config is independent and a mismatch is
+# silent. A recent handshake is the only evidence that Casa's peer block and
+# Bottega's actually agree -- rule inspection on one side proves nothing.
+- name: Assert the Casa tunnel to Bottega has handshaked
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_peer_handshake | length > 0
+    quiet: true
+    fail_msg: >-
+      The Casa peer shows no handshake with the Bottega hub. Check that the hub
+      side carries this router's public key
+      ({{ casa_spoke_public_key }}) and that
+      {{ casa_spoke_hub_endpoint }}:{{ casa_spoke_hub_port }} is reachable.
+
+# The tunnel routes exist (asserted above) *and* nothing shadows them. A static
+# route sitting inactive behind a leftover connected route is the exact failure
+# AGENTS.md #2 describes, and it is invisible unless "active" is asked
+# separately from "present".
+- name: Assert every Casa tunnel route is active
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_routes_active
+    quiet: true
+    fail_msg: >-
+      Only {{ casa_spoke_counts['route-active'] }} of
+      {{ casa_spoke_hub_allowed_addresses | length }} tunnel routes are active.
+      An inactive one means a connected route for the same prefix still exists
+      on this router and is shadowing the path to Bottega (AGENTS.md #2).
+
+- name: Assert no obsolete Casa object remains
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['vps-interface'] | int) == 0
+      - (casa_spoke_audit['vps-address'] | int) == 0
+      - (casa_spoke_audit['vps-peers'] | int) == 0
+      - (casa_spoke_audit['vps-forward-rules'] | int) == 0
+      - (casa_spoke_audit['guest-address'] | int) == 0
+      - (casa_spoke_audit['guest-dhcp-network'] | int) == 0
+      - (casa_spoke_audit['guest-masquerade'] | int) == 0
+      - (casa_spoke_audit['guest-forward-rules'] | int) == 0
+    quiet: true
+    fail_msg: >-
+      A wg-vps or guest-wifi object is still present on the Casa router.
+
+- name: Assert every Casa lab VLAN is absent
+  ansible.builtin.assert:
+    that:
+      - "'interface=0' in _properties"
+      - "'address=0' in _properties"
+      - "'lan-member=0' in _properties"
+      - "'bridge-vlan=0' in _properties"
+    quiet: true
+    fail_msg: >-
+      Lab VLAN {{ item.item.id }} ({{ item.item.interface }}) is still present:
+      {{ _properties | join(', ') }}.
+  vars:
+    _properties: "{{ item.stdout_lines | map('last') | map('trim') | list }}"
+  loop: "{{ casa_spoke_vlan_audit_raw.results }}"
+  loop_control:
+    label: "VLAN {{ item.item.id }}"
+
+- name: Assert the Casa LAN renumber is complete
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['lan-target'] | int) == 1
+      - (casa_spoke_audit['lan-legacy'] | int) == 0
+      - (casa_spoke_audit['bridge-address-count'] | int) == 1
+      - (casa_spoke_audit['pool-target'] | int) == 1
+      - (casa_spoke_audit['dhcp-network-target'] | int) == 1
+      - (casa_spoke_audit['adguard-dstnat-target'] | int) == 1
+      - (casa_spoke_audit['adguard-dstnat-legacy'] | int) == 0
+    quiet: true
+    fail_msg: >-
+      The Casa LAN renumber to {{ casa_spoke_lan_subnet }} is incomplete:
+      address {{ casa_spoke_audit['lan-target'] }}, pool
+      {{ casa_spoke_audit['pool-target'] }}, dhcp-network
+      {{ casa_spoke_audit['dhcp-network-target'] }}, AdGuard dst-nat
+      {{ casa_spoke_audit['adguard-dstnat-target'] }}.
+
+# AGENTS.md #5, both halves: the services that should be off are off, and the
+# ones that stay on answer only to the flat LAN and to Bottega over the tunnel.
+# Neither subnet is reachable from Casa's WAN, which is CGNAT and carries no
+# inbound configuration at all.
+- name: Assert Casa router management is scoped to the declared subnets only
+  ansible.builtin.assert:
+    that:
+      - casa_spoke_disabled_services_ok
+      - casa_spoke_restricted_services_ok
+      - (casa_spoke_audit['wan-member-count'] | int) == 1
+      - (casa_spoke_audit['dstnat-rule-count'] | int) == 1
+      - casa_spoke_audit['input-last-action'] == 'drop'
+      - casa_spoke_audit['input-last-list'] == ('!' ~ casa_spoke_lan_list)
+    quiet: true
+    fail_msg: >-
+      Casa management hardening did not converge:
+      {{ casa_spoke_disabled_services | join('/') }} disabled =
+      {{ casa_spoke_disabled_services_ok }}, service addresses =
+      {{ casa_spoke_service_addresses }}, expected exactly
+      {{ casa_spoke_management_subnets | join(',') }} on each of
+      {{ casa_spoke_restricted_services | join('/') }} (AGENTS.md #5).
+
+# The renumber is not complete until the reservations follow it. A reservation
+# left on the old subnet hands its device an address no interface owns, so the
+# device drops off the network entirely -- silently, and without appearing in
+# ARP, which is what makes it worth asserting rather than eyeballing.
+- name: Assert every Casa static DHCP reservation is on the renumbered LAN
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_reservations['correct-' ~ item.mac] | int) == 1
+    quiet: true
+    fail_msg: >-
+      The static DHCP reservation for {{ item.hostname }} ({{ item.mac }}) is
+      not at {{ item.address }}: reservation present =
+      {{ casa_spoke_reservations['present-' ~ item.mac] }}, at the declared
+      address = {{ casa_spoke_reservations['correct-' ~ item.mac] }}. A
+      reservation still pointing at {{ casa_spoke_legacy_lan_subnet }} strands
+      the device on a subnet this router no longer has.
+  loop: "{{ casa_spoke_dhcp_reservations }}"
+  loop_control:
+    label: "{{ item.hostname }}"
+
+- name: Assert no Casa reservation remains for hardware that left the site
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_reservations['legacy-' ~ item.mac] | int) == 0
+    quiet: true
+    fail_msg: >-
+      A static DHCP reservation for {{ item.hostname }} ({{ item.mac }}) is
+      still present. That hardware moved to Bottega and takes its address from
+      Bottega's DHCP; the Casa entry matches nothing on this wire.
+  loop: "{{ casa_spoke_legacy_reservations }}"
+  loop_control:
+    label: "{{ item.hostname }}"
+
+- name: Assert AdGuard and WAN egress survived the change untouched
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['container-address'] | int) == 1
+      - (casa_spoke_audit['container-masquerade'] | int) == 1
+      - (casa_spoke_audit['defconf-masquerade'] | int) == 1
+    quiet: true
+    fail_msg: >-
+      The AdGuard container network ({{ casa_spoke_container_subnet }}), its
+      masquerade, or the defconf WAN masquerade did not survive the change.
+      AdGuard stays at Casa as local DNS and is explicitly out of scope.
+
+- name: Assert no Casa cutover job is left armed
+  ansible.builtin.assert:
+    that:
+      - (casa_spoke_audit['cutover-scheduler'] | int) == 0
+      - (casa_spoke_audit['cutover-script'] | int) == 0
+    quiet: true
+    fail_msg: >-
+      A "{{ casa_spoke_cutover_script_name }}" script or scheduler is still on
+      the router after convergence. The script renumbers the LAN unattended and
+      must not be left behind.
+
+- name: Report the converged Casa spoke
+  ansible.builtin.debug:
+    msg:
+      - "Casa spoke converged."
+      - "wg-casa public key (hub-side peer input, not a secret):
+         {{ casa_spoke_public_key }}"
+      - "Last handshake with Bottega: {{ casa_spoke_peer_handshake }}"
+      - "Remaining acceptance checks are live connectivity, not rule
+         inspection: reach a Bottega VLAN 30 host from a Casa LAN host and back,
+         and confirm the tunnel re-establishes by itself after a Casa reboot
+         (specs/sites/casa-phase-1-spoke.md)."

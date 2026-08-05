@@ -1,0 +1,66 @@
+---
+# Adapted from bottega_phase5/tasks/read-forward-order.yml. Same reasoning: an
+# accept placed after an enabled drop is shadowed by it, so placement is part of
+# the rule's meaning and has to be read back, not assumed.
+#
+# Recomputed for one comment at a time (`bottega_casa_peer_order_comment`),
+# because every move renumbers the rules after it and a cached ordering would be
+# stale by the second move.
+- name: Count Bottega forward-chain rules
+  community.routeros.command:
+    commands:
+      - /ip firewall filter print count-only where chain=forward
+  register: bottega_casa_peer_forward_count
+  changed_when: false
+
+- name: Read Bottega forward-chain ordering properties
+  community.routeros.command:
+    commands:
+      - ':put ("id=" .
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}])'
+      - ':put ("disabled=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        disabled])'
+      - ':put ("comment=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        comment])'
+      - ':put ("action=" . [/ip firewall filter get
+        [:pick [/ip firewall filter find where chain=forward] {{ item }}]
+        action])'
+  loop: >-
+    {{ range(0, bottega_casa_peer_forward_count.stdout_lines[0] |
+    last | trim | int) | list }}
+  loop_control:
+    label: "forward rule {{ item }}"
+  register: bottega_casa_peer_forward_order_raw
+  changed_when: false
+
+- name: Initialize the Bottega forward-chain order readback
+  ansible.builtin.set_fact:
+    bottega_casa_peer_seen_owned: false
+    bottega_casa_peer_order_ok: false
+    bottega_casa_peer_drop_count: 0
+    bottega_casa_peer_first_drop_id: ""
+
+- name: Derive the Bottega forward-rule placement
+  ansible.builtin.set_fact:
+    bottega_casa_peer_order_ok: >-
+      {{ bottega_casa_peer_order_ok or
+      (_is_drop and bottega_casa_peer_seen_owned) }}
+    bottega_casa_peer_drop_count: >-
+      {{ (bottega_casa_peer_drop_count | int) + (1 if _is_drop else 0) }}
+    bottega_casa_peer_seen_owned: >-
+      {{ bottega_casa_peer_seen_owned or _is_owned }}
+    bottega_casa_peer_first_drop_id: >-
+      {{ (_properties[0] | regex_replace('^id=', ''))
+      if (_is_drop and bottega_casa_peer_first_drop_id | length == 0)
+      else bottega_casa_peer_first_drop_id }}
+  vars:
+    _properties: "{{ item.stdout_lines | map('last') | map('trim') | list }}"
+    _is_owned: >-
+      {{ ('comment=' ~ bottega_casa_peer_order_comment) in _properties }}
+    _is_drop: >-
+      {{ 'disabled=false' in _properties and 'action=drop' in _properties }}
+  loop: "{{ bottega_casa_peer_forward_order_raw.results }}"
+  loop_control:
+    label: "forward rule {{ item.item }}"

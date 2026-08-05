@@ -1,0 +1,170 @@
+---
+# Implements specs/sites/casa-phase-1-spoke.md.
+#
+# Every address here is quoted from specs/network/topology.md "Site-to-site
+# addressing" and specs/network/wireguard.md -- no value is derived or invented
+# locally, and preflight re-asserts the fixed ones before touching the router.
+
+casa_spoke_lan_list: LAN
+casa_spoke_wan_list: WAN
+casa_spoke_bridge: bridge
+casa_spoke_wan_interface: ether1
+
+# --- Tunnel: Casa (spoke) dials out to Bottega (hub) --------------------------
+casa_spoke_wg_interface: wg-casa
+casa_spoke_wg_mtu: 1412
+casa_spoke_wg_address: 10.99.0.2/32
+casa_spoke_overlay_subnet: 10.99.0.0/24
+casa_spoke_hub_endpoint: 145.11.24.43
+casa_spoke_hub_port: 61536
+# Casa sits behind Starlink CGNAT, so it holds the mapping open itself.
+casa_spoke_keepalive_seconds: 25
+
+# What Casa accepts from -- and routes to -- the Bottega peer. Mirror of the
+# "Casa (spoke, dials out)" row of the wireguard.md AllowedIPs table.
+casa_spoke_hub_allowed_addresses:
+  - 10.99.0.0/24
+  - 10.10.0.0/24
+  - 10.20.0.0/24
+  - 10.30.0.0/24
+
+# Bottega's wg-hub public key. Read off the hub at run time by
+# bottega_casa_peer/tasks/read-hub-key.yml and passed in by casa-spoke.yml;
+# never stored, because it is not a secret and the hub is the authority for it.
+casa_spoke_hub_public_key: ""
+
+# --- LAN renumber: 192.168.88.0/24 -> 192.168.90.0/24 -------------------------
+casa_spoke_lan_subnet: 192.168.90.0/24
+casa_spoke_lan_gateway: 192.168.90.1
+casa_spoke_lan_gateway_address: 192.168.90.1/24
+casa_spoke_dhcp_pool_name: default-dhcp
+casa_spoke_dhcp_pool_ranges: 192.168.90.10-192.168.90.254
+
+# Static DHCP reservations, matched by MAC and re-addressed onto the new subnet.
+#
+# These are the reason this section exists at all: the renumber moves the bridge
+# address, the pool, the dhcp-network and the AdGuard dst-nat, but a reservation
+# keeps handing its device the *old* address. The device then sits on a subnet
+# no router interface owns -- reachable by nothing, and invisible in ARP -- which
+# is exactly what happened to emonpi and openevse on the first cutover.
+#
+# Addresses are below `casa_spoke_dhcp_pool_ranges` (which starts at .10) so a
+# dynamic lease can never be handed out on top of a reservation. Keeping the old
+# host part would have collided: .247 was already leased to another device.
+#
+# Reservations rather than pool addresses because Home Assistant at Bottega has
+# to address these by IP -- mDNS/SSDP discovery does not cross an L3 WireGuard
+# link (specs/network/wireguard.md).
+casa_spoke_dhcp_reservations:
+  - mac: "E4:5F:01:D5:49:77"
+    address: 192.168.90.5
+    hostname: emonpi
+  - mac: "94:B5:55:A0:5F:50"
+    address: 192.168.90.6
+    hostname: openevse-5f50
+
+# Reservations for hardware that left with the lab. The R740xd's iDRAC now gets
+# its address from Bottega's DHCP; the Casa entry matches nothing on this wire.
+casa_spoke_legacy_reservations:
+  - mac: "4C:D9:8F:70:49:1C"
+    hostname: idrac-H3L6FW2
+
+# The values this role expects to find in place beforehand. Preflight refuses
+# to run if the router does not actually look like this, so a re-numbered or
+# hand-edited router is never silently re-written.
+casa_spoke_legacy_lan_subnet: 192.168.88.0/24
+casa_spoke_legacy_lan_gateway: 192.168.88.1
+casa_spoke_legacy_lan_gateway_address: 192.168.88.1/24
+casa_spoke_legacy_dhcp_pool_ranges: 192.168.88.10-192.168.88.254
+
+# --- Kept untouched ----------------------------------------------------------
+# AdGuardHome runs as a RouterOS container on its own bridge. Its subnet does
+# not overlap anything at Bottega, so it survives the renumber unchanged; only
+# the dst-nat that publishes its web UI on the router's LAN address moves.
+casa_spoke_container_bridge: containers
+casa_spoke_container_subnet: 10.10.20.0/24
+casa_spoke_adguard_address: 10.10.20.2
+casa_spoke_adguard_web_port: 80
+
+# --- Obsolete objects torn down ----------------------------------------------
+# The VPS relay's Casa end. The Hetzner host itself and the public
+# jellyfin.ruddenchaux.xyz A record are a separate change (MIGRATION.md).
+casa_spoke_legacy_wg_interface: wg-vps
+casa_spoke_legacy_wg_address: 10.100.0.2/30
+
+# The lab VLANs left with the lab. Casa can only route these to Bottega once no
+# local interface shadows them (AGENTS.md #2).
+casa_spoke_legacy_vlans:
+  - id: 10
+    interface: vlan10-management
+    address: 10.10.0.1/24
+  - id: 20
+    interface: vlan20-trusted-lan
+    address: 10.20.0.1/24
+  - id: 30
+    interface: vlan30-kubernetes
+    address: 10.30.0.1/24
+
+# Leftovers from the abandoned guest-wifi experiment.
+casa_spoke_legacy_guest_subnet: 10.10.50.0/24
+casa_spoke_legacy_guest_address: 10.10.50.1/24
+
+# Removing VLANs 10/20/30 strands the old Proxmox trunk port: it is set to
+# admit only tagged frames and would have no tagged VLAN left to carry.
+# Returning it to the defconf access-port setting keeps it usable.
+casa_spoke_trunk_port: ether6
+casa_spoke_reset_trunk_port: true
+
+# --- /ip service hardening ---------------------------------------------------
+# Mirrors Bottega's posture in mikrotik-bottega-base-lockdown: the two sites are
+# the same hardware running the same RouterOS, and there is no reason for the
+# spoke to expose a broader admin surface than the hub. Anything not needed is
+# turned off rather than merely address-restricted -- `www-ssl` and
+# `reverse-proxy` both listen on 443 with no source restriction on this router
+# today, which is the single widest gap the audit found. Nothing in this repo
+# speaks the RouterOS API (Ansible drives both routers over SSH), so `api` and
+# `api-ssl` are disabled rather than restricted, as at Bottega.
+casa_spoke_disabled_services:
+  - ftp
+  - telnet
+  - api
+  - api-ssl
+  - www-ssl
+  # Bottega treats this one as optional because it is absent on some RouterOS
+  # builds; it is present on this router, verified against the live config.
+  - reverse-proxy
+casa_spoke_restricted_services:
+  - www
+  - ssh
+  - winbox
+
+# Casa admin is reachable from the flat LAN and from Bottega over the tunnel,
+# never from WAN (AGENTS.md #5). Casa has no inbound WAN configuration at all.
+casa_spoke_management_subnets:
+  - 192.168.90.0/24
+  - 10.99.0.0/24
+
+# --- Operator gates ----------------------------------------------------------
+# Pass these explicitly; the role refuses to touch the router otherwise.
+casa_spoke_router_export_confirmed: false
+casa_spoke_operator_onsite_confirmed: false
+
+# Gates the teardown of wg-vps, the lab VLANs and the guest cruft.
+casa_spoke_teardown_confirmed: false
+
+# How long the teardown gate waits for the first handshake before giving up and
+# letting the assert report it. Two keepalive intervals plus slack: Casa redials
+# every casa_spoke_keepalive_seconds, so anything longer than that is a fault,
+# not a race.
+casa_spoke_handshake_retries: 6
+casa_spoke_handshake_delay_seconds: 10
+
+# Gates the step that drops the operator's own session: the LAN renumber plus
+# the /ip service restriction. See tasks/converge-cutover.yml for why the two
+# must land together.
+casa_spoke_cutover_confirmed: false
+casa_spoke_cutover_delay_seconds: 20
+
+# Characters per line when reading the cutover script back for verification.
+# Must leave room for the "src=" prefix inside RouterOS's 80-column console wrap.
+casa_spoke_cutover_readback_chunk: 60
