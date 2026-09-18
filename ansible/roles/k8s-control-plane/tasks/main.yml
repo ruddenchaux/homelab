@@ -101,3 +101,59 @@
 - name: Store join command as fact
   ansible.builtin.set_fact:
     k8s_join_command: "{{ join_command_output.stdout }}"
+
+# Expose control-plane metrics to Prometheus.
+#
+# kubeadm binds these endpoints to 127.0.0.1, so a Prometheus pod can never
+# reach them. kube-prometheus-stack reads "cannot scrape" as "component down"
+# and fires etcdMembersDown, etcdInsufficientMembers and four TargetDown
+# alerts permanently — noise that trained us to ignore a critical alert while
+# 17 certificates quietly expired.
+#
+# Editing a static pod manifest makes kubelet restart that component. etcd
+# restarting briefly interrupts the API server on a single-control-plane
+# cluster, so these run one at a time.
+- name: Bind etcd metrics to all interfaces
+  become: true
+  ansible.builtin.replace:
+    path: /etc/kubernetes/manifests/etcd.yaml
+    regexp: '--listen-metrics-urls=http://127\.0\.0\.1:2381'
+    replace: '--listen-metrics-urls=http://0.0.0.0:2381'
+  tags: [control-plane-metrics]
+
+- name: Bind scheduler and controller-manager metrics to all interfaces
+  become: true
+  ansible.builtin.replace:
+    path: "/etc/kubernetes/manifests/{{ item }}"
+    regexp: '--bind-address=127\.0\.0\.1'
+    replace: '--bind-address=0.0.0.0'
+  loop:
+    - kube-controller-manager.yaml
+    - kube-scheduler.yaml
+  tags: [control-plane-metrics]
+
+- name: Read current kube-proxy config
+  become: false
+  ansible.builtin.command: kubectl -n kube-system get cm kube-proxy -o jsonpath={.data.config\.conf}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: kube_proxy_config
+  changed_when: false
+  tags: [control-plane-metrics]
+
+- name: Bind kube-proxy metrics to all interfaces
+  become: false
+  when: '''metricsBindAddress: "0.0.0.0:10249"'' not in kube_proxy_config.stdout'
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl -n kube-system get cm kube-proxy -o yaml
+      | sed 's|metricsBindAddress: .*|metricsBindAddress: "0.0.0.0:10249"|'
+      | kubectl apply -f -
+    executable: /bin/bash
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: kube_proxy_patch
+  changed_when: "'configured' in kube_proxy_patch.stdout"
+  notify: Restart kube-proxy
+  tags: [control-plane-metrics]

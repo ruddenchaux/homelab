@@ -1,0 +1,7 @@
+---
+- name: Restart kube-proxy
+  become: false
+  ansible.builtin.command: kubectl -n kube-system rollout restart daemonset/kube-proxy
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: true
