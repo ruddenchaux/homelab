@@ -83,7 +83,7 @@
     component "[WireGuard wg-vps]\n 10.100.0.2/24" as wg_mt #FFF9C4
     component "[Bridge VLAN filtering]\n trunk: ether6\n tagged: VLAN 10 / 20 / 30" as bridge #E8F5E9
     component "[Firewall]\n fw-wg-vps-fwd\n wg-vps → vlan30" as mt_fw #FFECB3
-    component "[DHCP servers]\n VLAN 10/20/30\n dns-server: 10.10.20.2" as dhcp #E8F5E9
+    component "[DNS resolver]\n static: ruddenchaux.xyz\n → 10.30.0.200 (match-subdomain)\n allow-remote-requests" as mt_dns #E8F5E9
   }
 
   wg_vps <-right-> wg_mt : "WireGuard tunnel\n10.100.0.1 ↔ 10.100.0.2"
@@ -99,11 +99,6 @@
       component "[ZFS mirror — SSD]\n rpool (boot + OS)\n 2× 960 GB SAS SSD" as zfs_ssd #F3E8FF
       component "[ZFS mirror — HDD]\n datapool (/datapool)\n 2× 4 TB SAS HDD\n lz4 + atime=off" as zfs_hdd #F3E8FF
       component "[iDRAC 9]\n out-of-band management" as idrac #F3E8FF
-    }
-
-    node "AdGuardHome\n10.10.20.2" as adguard {
-      component "[Wildcard rewrite]\n *.ruddenchaux.xyz\n → 10.30.0.200 (Traefik)" as dns_rewrite #D7E8FA
-      component "[Upstream DNS]\n Starlink 198.54.100.58/59" as dns_up
     }
   }
 
@@ -150,7 +145,7 @@
 
       component "[ArgoCD]\n GitOps — app-of-apps\n argocd.ruddenchaux.xyz\n OIDC via Authentik" as argocd #E8F5E9
 
-      component "[CoreDNS]\n forwards ruddenchaux.xyz\n → AdGuardHome (10.10.20.2)" as coredns #D7E8FA
+      component "[CoreDNS]\n forwards ruddenchaux.xyz\n → MikroTik (10.30.0.1)" as coredns #D7E8FA
 
       component "[local-path-provisioner]\n default StorageClass\n /data/local-path-provisioner\n (worker HDD disks)" as storage #F3E8FF
     }
@@ -172,8 +167,8 @@
   ' KEY FLOWS
   ' ─────────────────────────────────────────────────────────────
   ' DNS resolution
-  adguard --> traefik : "*.ruddenchaux.xyz\n→ 10.30.0.200"
-  coredns --> adguard : "forward ruddenchaux.xyz"
+  mt_dns --> traefik : "*.ruddenchaux.xyz\n→ 10.30.0.200"
+  coredns --> mt_dns : "forward ruddenchaux.xyz"
 
   ' Ingress flow
   traefik --> authentik : ForwardAuth\ncheck
@@ -208,7 +203,7 @@
 
 | VLAN | Name | Subnet | Gateway | Purpose |
 |------|------|--------|---------|---------|
-| 10 | Management | `10.10.0.0/24` | `10.10.0.1` | Proxmox, iDRAC, AdGuardHome |
+| 10 | Management | `10.10.0.0/24` | `10.10.0.1` | Proxmox, iDRAC |
 | 20 | Trusted LAN | `10.20.0.0/24` | `10.20.0.1` | Personal devices, dev-box |
 | 30 | Kubernetes | `10.30.0.0/24` | `10.30.0.1` | All k8s VMs + pods |
 | — | WireGuard | `10.100.0.0/24` | — | VPS ↔ MikroTik tunnel + VPN clients |
@@ -219,7 +214,6 @@
 |------|----|-------|
 | MikroTik router | `192.168.88.1` | Default untagged + VLAN gateways |
 | Proxmox | `10.10.0.2` | Web UI at `https://10.10.0.2:8006` |
-| AdGuardHome | `10.10.20.2` | DNS for all VLANs |
 | k8s-ctrl-01 | `10.30.0.10` | kubeadm control plane |
 | k8s-worker-01 | `10.30.0.11` | Media stack pinned here |
 | k8s-worker-02 | `10.30.0.12` | |
@@ -247,7 +241,7 @@ Browser
 
 ```
 Browser (VLAN 20 device)
-  → DNS: grafana.ruddenchaux.xyz → 10.30.0.200 (AdGuardHome wildcard)
+  → DNS: grafana.ruddenchaux.xyz → 10.30.0.200 (MikroTik static, match-subdomain)
   → Traefik (10.30.0.200:443) — TLS termination
   → Authentik ForwardAuth check (redirect to auth.ruddenchaux.xyz if unauthenticated)
   → Grafana pod

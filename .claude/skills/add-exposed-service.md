@@ -30,7 +30,7 @@ strategy are decisions, not implementation details.
    "Important Notes"). Otherwise attach the standard
    `authentik-authentik-auth@kubernetescrd` middleware.
 6. **DNS**:
-   - Internal-only: nothing to do — AdGuardHome's wildcard
+   - Internal-only: nothing to do — the MikroTik static entry
      (`*.ruddenchaux.xyz → Traefik LB IP`) already covers it. This is
      split-DNS: no public record needed.
    - Public: add a Cloudflare A record pointing at Bottega's static IP (not the

@@ -153,7 +153,7 @@ kubernetes/
     media/                          # Servarr media stack (Radarr, Sonarr, Lidarr, Readarr, Prowlarr,
                                     #   Bazarr, qBittorrent+Gluetun VPN, NZBGet, Jellyfin, Seerr,
                                     #   FlareSolverr, Recyclarr CronJob)
-    coredns/                        # CoreDNS ConfigMap override (forward ruddenchaux.xyz → AdGuardHome)
+    coredns/                        # CoreDNS ConfigMap override (forward ruddenchaux.xyz → MikroTik)
     metrics-server/                 # Kubernetes metrics-server
 ```
 
@@ -196,7 +196,7 @@ kubernetes/
 
 Internal-only (no ingress): Prometheus, FlareSolverr, Recyclarr (CronJob).
 
-Internal services resolve via AdGuardHome wildcard (`*.ruddenchaux.xyz → 10.30.0.200`), no Cloudflare DNS record needed.
+Internal services resolve via the MikroTik static entry (`ruddenchaux.xyz → 10.30.0.200`, `match-subdomain=yes`), no Cloudflare DNS record needed.
 Jellyfin has a real Cloudflare A record → VPS IP (`89.167.62.126`) for public internet access via WireGuard relay.
 
 ## Prerequisites

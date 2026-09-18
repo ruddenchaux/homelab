@@ -17,7 +17,7 @@ vpn_homelab_cidrs:
 
 # DNS pushed to the client.
 # Using Cloudflare so it works for both internal (*.ruddenchaux.xyz via public DNS) and internet.
-# Change to 10.20.0.1 (MikroTik VLAN20 GW → AdGuardHome) if you want ad-blocking on VPN.
+# Change to 10.20.0.1 (MikroTik VLAN20 GW) to resolve internal names via split DNS.
 vpn_dns: "1.1.1.1"
 
 # VPS public IP — provided via secrets.sops.yml (vps_public_ip)

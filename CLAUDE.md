@@ -94,7 +94,9 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
    - VLAN 30 (Kubernetes): 10.30.0.0/24 — k8s VMs
    - MikroTik bridge VLAN filtering, trunk on ether6, VLAN interfaces in LAN firewall list
    - Proxmox VLAN-aware bridge (vmbr0), management on vmbr0.10
-   - DNS: Proxmox → MikroTik GW → AdGuardHome (10.10.20.2)
+   - DNS: Proxmox → MikroTik GW (10.10.0.1), which serves split-horizon
+     `ruddenchaux.xyz` → 10.30.0.200. (Originally AdGuardHome at 10.10.20.2;
+     that host is Casa-side and unreachable from Bottega.)
 3. **Packer: Create VM template** — `packer/debian-13/`
    - Debian 13 netinst automated install via preseed
    - cloud-init + qemu-guest-agent installed

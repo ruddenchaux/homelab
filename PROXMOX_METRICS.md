@@ -31,7 +31,7 @@ ansible-playbook ansible/playbooks/proxmox-metrics.yml
 3. Creates the `proxmox` bucket with 90d retention if missing
 
 **Play 2** — runs on `proxmox`:
-1. Sets Proxmox node DNS to AdGuardHome (see DNS section below)
+1. Sets Proxmox node DNS to the MikroTik VLAN 10 gateway (see DNS section below)
 2. Creates (or updates) the `influxdb-homelab` metric server via `pvesh`
 
 ### Role defaults (`ansible/roles/proxmox-influxdb-metrics/defaults/main.yml`)
@@ -49,21 +49,27 @@ ansible-playbook ansible/playbooks/proxmox-metrics.yml
 
 ### DNS: Proxmox cannot resolve internal hostnames by default
 
-Proxmox was configured with `dns1=10.10.0.1` (MikroTik VLAN 10 gateway).
-MikroTik's own DNS resolver uses Starlink as upstream — it has no knowledge of
-the AdGuardHome wildcard (`*.ruddenchaux.xyz → 10.30.0.200`).
+Proxmox uses a statically configured resolver, so it does not pick up DNS
+settings from DHCP. Without the step below it cannot resolve
+`influxdb.ruddenchaux.xyz` and `pvestatd` logs a metrics send failure every
+20 seconds.
 
-DHCP clients on managed VLANs receive `10.10.20.2` (AdGuardHome) directly as
-their DNS server, but Proxmox uses a statically configured DNS and therefore
-missed this.
-
-**Fix**: the role updates Proxmox DNS to point directly at AdGuardHome:
+**Fix**: the role points Proxmox DNS at the MikroTik gateway on VLAN 10, which
+serves split-horizon DNS for the domain (`ruddenchaux.xyz → 10.30.0.200`,
+`match-subdomain=yes`) and recurses for everything else:
 
 ```bash
-pvesh set /nodes/pve01/dns --dns1 10.10.20.2 --search ruddenchaux.xyz
+pvesh set /nodes/pve01/dns --dns1 10.10.0.1 --search ruddenchaux.xyz
 ```
 
-The `--search` parameter is required; the call fails without it.
+The `--search` parameter is required; the call fails without it. The resolver
+is configurable via `proxmox_dns_server` / `proxmox_dns_search` in the role
+defaults.
+
+> **History**: this previously pointed at AdGuardHome (`10.10.20.2`). That host
+> is at Casa and unreachable from Bottega, which on 2026-09-18 left the Proxmox
+> host with no working DNS at all — internal names, the Debian repos and the
+> InfluxDB metrics push all failed.
 
 ### k8s node DNS has the same problem
 
@@ -74,7 +80,7 @@ k8s nodes also have `nameserver 10.30.0.1` (MikroTik VLAN 30 gateway) in
 **Workaround for Ansible tasks**: use `kubectl exec` into the InfluxDB pod and
 run the `influx` CLI there instead of making HTTP calls to the ingress hostname
 from the Ansible host. The pod's DNS goes through CoreDNS which is correctly
-configured to forward `ruddenchaux.xyz` to AdGuardHome.
+configured to forward `ruddenchaux.xyz` to the MikroTik gateway (10.30.0.1).
 
 ### InfluxDB is a StatefulSet, not a Deployment
 
