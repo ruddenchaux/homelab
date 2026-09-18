@@ -1,9 +1,9 @@
 ---
-- name: Set Proxmox DNS to AdGuardHome for internal name resolution
+- name: Set Proxmox DNS for internal name resolution
   ansible.builtin.command: >-
     pvesh set /nodes/{{ ansible_hostname }}/dns
-    --dns1 10.10.20.2
-    --search ruddenchaux.xyz
+    --dns1 {{ proxmox_dns_server }}
+    --search {{ proxmox_dns_search }}
   changed_when: true
 
 - name: Check if InfluxDB metrics server is configured

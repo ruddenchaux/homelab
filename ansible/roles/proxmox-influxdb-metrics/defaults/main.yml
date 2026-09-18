@@ -1,4 +1,12 @@
 ---
+# DNS resolver for the Proxmox host. Points at the MikroTik gateway on VLAN 10,
+# which serves split-horizon DNS (ruddenchaux.xyz -> 10.30.0.200) and recurses
+# for everything else. Previously 10.10.20.2 (AdGuardHome), which lives at Casa
+# and is unreachable from Bottega — that left the host with no working DNS at
+# all, so it could not even reach the Debian repos.
+proxmox_dns_server: "10.10.0.1"
+proxmox_dns_search: "ruddenchaux.xyz"
+
 influxdb_metrics_id: "influxdb-homelab"
 influxdb_metrics_server: "influxdb.ruddenchaux.xyz"
 influxdb_metrics_port: 443
