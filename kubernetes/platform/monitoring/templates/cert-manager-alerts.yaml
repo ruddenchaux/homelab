@@ -25,7 +25,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 14 days"
+            summary: "Certificate {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}} expires in under 14 days"
             description: >-
               Renewal should have completed at 30 days. Check
               `kubectl get challenge -A` and the cert-manager controller logs.
@@ -36,7 +36,7 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 3 days"
+            summary: "Certificate {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}} expires in under 3 days"
             description: >-
               Imminent TLS outage for this service. Clients will refuse the
               connection once it expires.
@@ -48,7 +48,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} has not been Ready for 1h"
+            summary: "Certificate {{`{{ $labels.namespace }}`}}/{{`{{ $labels.name }}`}} has not been Ready for 1h"
             description: >-
               Issuance or renewal is failing. Note cert-manager backs off up to
               32h after repeated failures; clear it with a status patch of
