@@ -3,4 +3,12 @@ cert-manager:
     enabled: true
     keep: true
 
+  # DNS-01 self-check must resolve via public recursive nameservers.
+  # The cluster resolver forwards ruddenchaux.xyz to AdGuardHome, which is
+  # split-horizon (wildcard -> Traefik LB) and cannot answer the SOA lookup
+  # for _acme-challenge records, so the propagation check returns SERVFAIL.
+  # Let's Encrypt queries public DNS anyway, so check against the same view.
+  dns01RecursiveNameservers: "1.1.1.1:53,8.8.8.8:53"
+  dns01RecursiveNameserversOnly: true
+
 acmeEmail: "f.r.dainelli@gmail.com"
