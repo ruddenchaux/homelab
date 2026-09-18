@@ -91,5 +91,5 @@ flaresolverr:
 
 # Recyclarr (TRaSH Guides auto-sync)
 recyclarr:
-  image: ghcr.io/recyclarr/recyclarr:7.5.2
+  image: ghcr.io/recyclarr/recyclarr:8.7.2
   schedule: "@daily"

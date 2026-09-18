@@ -8,22 +8,47 @@ metadata:
     app.kubernetes.io/name: recyclarr
 data:
   recyclarr.yml: |
+    # Config schema v8. The granular `include:` templates this used to reference
+    # (sonarr-quality-definition-series, radarr-quality-definition-movie, ...)
+    # were removed upstream — the recyclarr-configs repo now ships only whole
+    # templates under <service>/templates/, with no includes/ directory at all.
+    # The settings below are inlined from the official `web-1080p` (Sonarr) and
+    # `hd-bluray-web` (Radarr) templates, which cover exactly what the three
+    # includes did: quality definition, quality profile, and custom formats.
+    #
+    # Instance names are deliberately unchanged: recyclarr keys its custom-format
+    # cache per instance, and renaming one makes it treat existing CFs as unknown
+    # and create duplicates.
     sonarr:
       tv-hd:
         base_url: http://sonarr.media.svc.cluster.local:{{ .Values.sonarr.port }}
         api_key: !env_var SONARR_API_KEY
-        include:
-          - template: sonarr-quality-definition-series
-          - template: sonarr-v4-quality-profile-web-1080p
-          - template: sonarr-v4-custom-formats-web-1080p
+        quality_definition:
+          type: series
+        quality_profiles:
+          - trash_id: 72dae194fc92bf828f32cde7744e51a1  # WEB-1080p
+            reset_unmatched_scores:
+              enabled: true
+        custom_format_groups:
+          add:
+            - trash_id: 158188097a58d7687dee647e04af0da3  # [Optional] Golden Rule HD
+            - trash_id: 74aff4168620ed49dcc67e92b2c2a5b4  # [Optional] Language Profiles
+            - trash_id: 85fae4a2294965b75710ef2989c850eb  # [Streaming Services] HD/UHD boost
+            - trash_id: 59c3af66780d08332fdc64e68297098f  # [Unwanted] Unwanted Formats
     radarr:
       movies-hd:
         base_url: http://radarr.media.svc.cluster.local:{{ .Values.radarr.port }}
         api_key: !env_var RADARR_API_KEY
-        include:
-          - template: radarr-quality-definition-movie
-          - template: radarr-quality-profile-hd-bluray-web
-          - template: radarr-custom-formats-hd-bluray-web
+        quality_definition:
+          type: movie
+        quality_profiles:
+          - trash_id: d1d67249d3890e49bc12e275d989a7e9  # HD Bluray + WEB
+            reset_unmatched_scores:
+              enabled: true
+        custom_format_groups:
+          add:
+            - trash_id: f8bf8eab4617f12dfdbd16303d8da245  # [Optional] Golden Rule HD
+            - trash_id: a3ac6af01d78e4f21fcb75f601ac96df  # [Unwanted] Unwanted Formats
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
