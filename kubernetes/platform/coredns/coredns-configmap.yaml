@@ -1,9 +1,13 @@
 ---
-# Patch CoreDNS to forward *.ruddenchaux.xyz queries to AdGuardHome (10.10.20.2).
-# This allows all pods to resolve internal services via the wildcard rewrite
-# (*.ruddenchaux.xyz → 10.30.0.200 / Traefik LB) configured in AdGuardHome.
-# Without this, pods use MikroTik → Starlink DNS which returns NXDOMAIN for
-# internal-only hostnames, breaking OIDC discovery for Immich and similar services.
+# Patch CoreDNS to forward *.ruddenchaux.xyz queries to the Bottega router
+# (10.30.0.1), which serves split-horizon DNS via the phase-4 static entry
+# `ruddenchaux.xyz -> 10.30.0.200` with match-subdomain=yes.
+# Without this, pods fall back to public DNS, which returns NXDOMAIN for
+# internal-only hostnames and breaks OIDC discovery (Ghostfolio, Immich, ...).
+#
+# Previously this forwarded to AdGuardHome (10.10.20.2), which lives at Casa
+# and is not reachable from Bottega. After the site move every internal lookup
+# timed out, crash-looping Ghostfolio on Authentik OIDC discovery.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -36,6 +40,6 @@ data:
     }
     ruddenchaux.xyz:53 {
         errors
-        forward . 10.10.20.2
+        forward . 10.30.0.1
         cache 30
     }
