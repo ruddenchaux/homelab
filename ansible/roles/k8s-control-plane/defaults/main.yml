@@ -1,5 +1,18 @@
 ---
-k8s_pod_cidr: "10.244.0.0/16"
-k8s_service_cidr: "10.96.0.0/12"
-k8s_api_advertise_address: "{{ ansible_host }}"
-cilium_version: "1.19.0"
+# Metrics bindings persisted into the kubeadm ClusterConfiguration so that
+# `kubeadm upgrade` regenerates the static pod manifests with them intact.
+# kubeadm v1beta4 expects extraArgs as a list of name/value pairs.
+k8s_control_plane_metrics_args:
+  controllerManager:
+    extraArgs:
+      - name: bind-address
+        value: 0.0.0.0
+  scheduler:
+    extraArgs:
+      - name: bind-address
+        value: 0.0.0.0
+  etcd:
+    local:
+      extraArgs:
+        - name: listen-metrics-urls
+          value: http://0.0.0.0:2381

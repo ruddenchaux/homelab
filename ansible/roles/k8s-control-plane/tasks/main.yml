@@ -132,9 +132,12 @@
     - kube-scheduler.yaml
   tags: [control-plane-metrics]
 
+# Read as plain YAML rather than jsonpath: a jsonpath key containing a dot
+# needs a backslash escape, and the backslash does not survive the trip
+# through Ansible's argument parsing, silently yielding an empty string.
 - name: Read current kube-proxy config
   become: false
-  ansible.builtin.command: kubectl -n kube-system get cm kube-proxy -o jsonpath={.data.config\.conf}
+  ansible.builtin.command: kubectl -n kube-system get cm kube-proxy -o yaml
   environment:
     KUBECONFIG: /home/debian/.kube/config
   register: kube_proxy_config
@@ -156,4 +159,57 @@
   register: kube_proxy_patch
   changed_when: "'configured' in kube_proxy_patch.stdout"
   notify: Restart kube-proxy
+  tags: [control-plane-metrics]
+
+# Make the metrics bindings survive `kubeadm upgrade`.
+#
+# The flags above live in static pod manifests, which kubeadm regenerates from
+# the ClusterConfiguration stored in the kubeadm-config ConfigMap. Without the
+# extraArgs below, the next upgrade silently reverts them to 127.0.0.1 and the
+# false-positive alerts come back.
+#
+# v1beta4 takes extraArgs as a list of name/value pairs, not a map.
+- name: Read kubeadm ClusterConfiguration
+  become: false
+  ansible.builtin.command: kubectl -n kube-system get cm kubeadm-config -o jsonpath={.data.ClusterConfiguration}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: kubeadm_cluster_config_raw
+  changed_when: false
+  tags: [control-plane-metrics]
+
+- name: Compute desired ClusterConfiguration
+  ansible.builtin.set_fact:
+    kubeadm_config_current: "{{ kubeadm_cluster_config_raw.stdout | from_yaml }}"
+    kubeadm_config_desired: "{{ kubeadm_cluster_config_raw.stdout | from_yaml | combine(k8s_control_plane_metrics_args, recursive=true) }}"
+  tags: [control-plane-metrics]
+
+- name: Write kubeadm-config patch
+  become: false
+  when: kubeadm_config_desired != kubeadm_config_current
+  changed_when: false
+  ansible.builtin.copy:
+    dest: /tmp/kubeadm-config-patch.json
+    mode: "0600"
+    content: "{{ {'data': {'ClusterConfiguration': kubeadm_config_desired | to_nice_yaml(indent=2)}} | to_json }}"
+  tags: [control-plane-metrics]
+
+- name: Persist metrics bindings into kubeadm ClusterConfiguration
+  become: false
+  when: kubeadm_config_desired != kubeadm_config_current
+  ansible.builtin.command: >-
+    kubectl -n kube-system patch cm kubeadm-config
+    --type merge --patch-file /tmp/kubeadm-config-patch.json
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: kubeadm_config_patch
+  changed_when: "'patched' in kubeadm_config_patch.stdout"
+  tags: [control-plane-metrics]
+
+- name: Remove kubeadm-config patch file
+  become: false
+  changed_when: false
+  ansible.builtin.file:
+    path: /tmp/kubeadm-config-patch.json
+    state: absent
   tags: [control-plane-metrics]
