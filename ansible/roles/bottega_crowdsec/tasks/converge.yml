@@ -1,0 +1,131 @@
+---
+# RAM-backed disk for the downloaded list: a fetch every 10 minutes must not
+# wear the 512 MB NAND. Address-list entries with a timeout are dynamic and
+# are never written to flash either.
+- name: Add the tmpfs disk for the blocklist download
+  community.routeros.command:
+    commands:
+      - >-
+        /disk add type=tmpfs
+        tmpfs-max-size={{ bottega_crowdsec_tmpfs_size }}
+        slot={{ bottega_crowdsec_tmpfs_slot }}
+  when: (bottega_crowdsec_counts.tmpfs | int) == 0
+
+- name: Install the pinned Let's Encrypt roots
+  ansible.builtin.include_tasks: ca-root.yml
+  loop: "{{ bottega_crowdsec_ca_roots }}"
+  loop_control:
+    loop_var: bottega_crowdsec_ca
+    label: "{{ bottega_crowdsec_ca.name }}"
+
+- name: Render the sync script
+  ansible.builtin.set_fact:
+    _bottega_crowdsec_body: "{{ lookup('ansible.builtin.template', 'sync.rsc.j2') }}"
+  no_log: true
+
+# The first line carries a hash of the body, so drift is detected by reading
+# back a short prefix (full readback is unreliable: 80-column wrapping).
+- name: Build the escaped sync script source
+  ansible.builtin.set_fact:
+    bottega_crowdsec_marker: >-
+      # {{ bottega_crowdsec_script_name }} sha1={{ (_bottega_crowdsec_body | hash('sha1'))[:16] }}
+    # to_json yields RouterOS's own \" \\ \n escapes (the body is ASCII);
+    # $ and ? still need a backslash, or RouterOS would expand variables and
+    # the CLI would open inline help.
+    _bottega_crowdsec_source_escaped: >-
+      {{ ('# ' ~ bottega_crowdsec_script_name ~ ' sha1='
+          ~ (_bottega_crowdsec_body | hash('sha1'))[:16] ~ _nl ~ _bottega_crowdsec_body)
+         | to_json | regex_replace('^"|"$', '')
+         | replace('$', _bs ~ '$') | replace('?', _bs ~ '?') }}
+  vars:
+    _bs: "\\"
+    _nl: "\n"
+  no_log: true
+
+- name: Read the installed sync script marker
+  community.routeros.command:
+    commands:
+      - >-
+        :put [:pick [/system script get
+        [find where name={{ bottega_crowdsec_script_name }}] source]
+        0 {{ bottega_crowdsec_marker | length }}]
+  register: bottega_crowdsec_script_marker
+  changed_when: false
+  when: (bottega_crowdsec_counts.script | int) == 1
+
+- name: Add the sync script
+  community.routeros.command:
+    commands:
+      - >-
+        /system script add name={{ bottega_crowdsec_script_name }}
+        policy={{ bottega_crowdsec_policy }} dont-require-permissions=no
+        source="{{ _bottega_crowdsec_source_escaped }}"
+  when: (bottega_crowdsec_counts.script | int) == 0
+  no_log: true
+
+- name: Update the sync script when its marker drifted
+  community.routeros.command:
+    commands:
+      - >-
+        /system script set [find where name={{ bottega_crowdsec_script_name }}]
+        policy={{ bottega_crowdsec_policy }} dont-require-permissions=no
+        source="{{ _bottega_crowdsec_source_escaped }}"
+  when:
+    - (bottega_crowdsec_counts.script | int) == 1
+    - (bottega_crowdsec_script_marker.stdout_lines[0] | last | trim) != (bottega_crowdsec_marker | trim)
+  no_log: true
+
+- name: Add the sync scheduler
+  community.routeros.command:
+    commands:
+      - >-
+        /system scheduler add name={{ bottega_crowdsec_scheduler_name }}
+        start-time=startup interval={{ bottega_crowdsec_sync_interval }}
+        policy={{ bottega_crowdsec_policy }}
+        on-event="/system script run {{ bottega_crowdsec_script_name }}"
+  when: (bottega_crowdsec_counts.scheduler | int) == 0
+
+- name: Normalize the sync scheduler
+  community.routeros.command:
+    commands:
+      - >-
+        /system scheduler set [find where name={{ bottega_crowdsec_scheduler_name }}]
+        disabled=no start-time=startup interval={{ bottega_crowdsec_sync_interval }}
+        policy={{ bottega_crowdsec_policy }}
+        on-event="/system script run {{ bottega_crowdsec_script_name }}"
+  when: (bottega_crowdsec_counts.scheduler | int) == 1
+  changed_when: false
+
+# TCP only: the only forwarded WAN service is TCP 443, and dropping UDP would
+# also cut WireGuard 61536 — the road-warrior way back in if a shared mobile
+# CGNAT address ever lands on the list. raw/prerouting runs before conntrack
+# and the filter chains, so the base-lockdown input chain is untouched.
+- name: Add the raw drop rules for both address lists
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall raw add chain=prerouting action=drop
+        in-interface-list={{ bottega_crowdsec_wan_list }} protocol=tcp
+        src-address-list={{ item.list }} comment="{{ item.comment }}"
+  loop:
+    - { list: "{{ bottega_crowdsec_list_a }}", comment: "{{ bottega_crowdsec_raw_comment_a }}", count: "{{ bottega_crowdsec_counts.raw_a }}" }
+    - { list: "{{ bottega_crowdsec_list_b }}", comment: "{{ bottega_crowdsec_raw_comment_b }}", count: "{{ bottega_crowdsec_counts.raw_b }}" }
+  loop_control:
+    label: "{{ item.comment }}"
+  when: (item.count | int) == 0
+
+- name: Normalize the raw drop rules
+  community.routeros.command:
+    commands:
+      - >-
+        /ip firewall raw set [find where comment="{{ item.comment }}"]
+        disabled=no chain=prerouting action=drop
+        in-interface-list={{ bottega_crowdsec_wan_list }} protocol=tcp
+        src-address-list={{ item.list }}
+  loop:
+    - { list: "{{ bottega_crowdsec_list_a }}", comment: "{{ bottega_crowdsec_raw_comment_a }}", count: "{{ bottega_crowdsec_counts.raw_a }}" }
+    - { list: "{{ bottega_crowdsec_list_b }}", comment: "{{ bottega_crowdsec_raw_comment_b }}", count: "{{ bottega_crowdsec_counts.raw_b }}" }
+  loop_control:
+    label: "{{ item.comment }}"
+  when: (item.count | int) == 1
+  changed_when: false

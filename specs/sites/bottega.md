@@ -217,6 +217,7 @@ phases of the same router.
 | 3 | VLANs and R740xd uplink | nothing — VLANs 10/20/30 are local; no WAN rule changes |
 | 4 | dst-nat / public TCP `443` | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
 | 5 | WireGuard UDP `61536` (`bottega-phase-5-wireguard.md`) | + UDP `61536`, an input-chain accept inserted before the final drop |
+| 6 | CrowdSec blocklist (`specs/services/crowdsec.md`) | unchanged — TCP `443` + UDP `61536`; listed sources are dropped on WAN TCP in `raw` |
 
 The acceptance script must be phase-aware: "nothing answers on WAN" is the
 correct result at phases 1–3, relaxing to "only TCP `443`" at phase 4 and

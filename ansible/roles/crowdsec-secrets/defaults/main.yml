@@ -1,0 +1,6 @@
+---
+crowdsec_namespace: "crowdsec"
+crowdsec_secret_name: "crowdsec-keys"
+# Copy of the Traefik bouncer key, mounted by the Traefik pods.
+crowdsec_traefik_namespace: "traefik"
+crowdsec_traefik_secret_name: "crowdsec-bouncer"

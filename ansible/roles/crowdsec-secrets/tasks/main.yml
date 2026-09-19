@@ -1,0 +1,121 @@
+---
+# Create the crowdsec namespace and the crowdsec-keys secret consumed by the
+# crowdsec chart (secrets.externalSecret), the blocklist-mirror, and the
+# Traefik bouncer. Generated keys are kept across runs; the SOPS-sourced
+# values (enroll key, mirror password) are re-applied every run.
+
+- name: Require provisioned Bottega CrowdSec secrets
+  ansible.builtin.assert:
+    that:
+      - _crowdsec_sops.bottega_crowdsec_enroll_key is defined
+      - _crowdsec_sops.bottega_crowdsec_enroll_key | length >= 20
+      - _crowdsec_sops.bottega_crowdsec_mirror_password is defined
+      - _crowdsec_sops.bottega_crowdsec_mirror_password | length >= 32
+    quiet: true
+    fail_msg: >-
+      Add bottega_crowdsec_enroll_key (from app.crowdsec.net → Security
+      Engines → Enroll) and bottega_crowdsec_mirror_password (>= 32 chars) to
+      ansible/secrets/bottega.sops.yml; see the header of
+      ansible/playbooks/crowdsec-secrets.yml. Nothing was changed.
+  vars:
+    _crowdsec_sops: "{{ ansible_facts['crowdsec_bottega_secrets'] | default({}) }}"
+  no_log: true
+
+- name: Create crowdsec namespace
+  become: false
+  ansible.builtin.command: kubectl create namespace {{ crowdsec_namespace }}
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: crowdsec_ns
+  changed_when: "'created' in crowdsec_ns.stdout"
+  failed_when: crowdsec_ns.rc != 0 and 'already exists' not in crowdsec_ns.stderr
+
+- name: Read existing crowdsec-keys secret
+  become: false
+  ansible.builtin.command: >-
+    kubectl get secret {{ crowdsec_secret_name }}
+    -n {{ crowdsec_namespace }} -o json
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: crowdsec_secret_existing
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Generate any missing CrowdSec keys
+  become: false
+  ansible.builtin.command: openssl rand -hex {{ item.bytes }}
+  loop:
+    - { key: csLapiSecret, bytes: 48 }
+    - { key: registrationToken, bytes: 32 }
+    - { key: bouncerKeyTraefik, bytes: 32 }
+    - { key: bouncerKeyMirror, bytes: 32 }
+  loop_control:
+    label: "{{ item.key }}"
+  register: crowdsec_generated
+  changed_when: false
+  no_log: true
+
+- name: Resolve CrowdSec secret data (existing keys win over generated ones)
+  ansible.builtin.set_fact:
+    crowdsec_secret_data: >-
+      {{
+        dict(crowdsec_generated.results
+             | map(attribute='item.key')
+             | zip(crowdsec_generated.results | map(attribute='stdout')))
+        | combine(_existing)
+        | combine({
+            'enrollKey': _sops.bottega_crowdsec_enroll_key,
+            'mirrorPassword': _sops.bottega_crowdsec_mirror_password
+          })
+      }}
+  vars:
+    _sops: "{{ ansible_facts['crowdsec_bottega_secrets'] }}"
+    _existing_raw: >-
+      {{ (crowdsec_secret_existing.stdout | from_json).data | default({})
+         if (crowdsec_secret_existing.rc | int) == 0 else {} }}
+    _existing: >-
+      {{ dict(_existing_raw.keys() | list
+              | zip(_existing_raw.values() | map('b64decode') | list)) }}
+  no_log: true
+
+- name: Apply crowdsec-keys secret
+  become: false
+  ansible.builtin.command:
+    cmd: kubectl apply -f -
+    stdin: "{{ _manifest | to_json }}"
+  vars:
+    _manifest:
+      apiVersion: v1
+      kind: Secret
+      type: Opaque
+      metadata:
+        name: "{{ crowdsec_secret_name }}"
+        namespace: "{{ crowdsec_namespace }}"
+      stringData: "{{ crowdsec_secret_data }}"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: crowdsec_secret_apply
+  changed_when: "'unchanged' not in crowdsec_secret_apply.stdout"
+  no_log: true
+
+- name: Apply the Traefik bouncer key secret
+  become: false
+  ansible.builtin.command:
+    cmd: kubectl apply -f -
+    stdin: "{{ _manifest | to_json }}"
+  vars:
+    _manifest:
+      apiVersion: v1
+      kind: Secret
+      type: Opaque
+      metadata:
+        name: "{{ crowdsec_traefik_secret_name }}"
+        namespace: "{{ crowdsec_traefik_namespace }}"
+      stringData:
+        lapi-key: "{{ crowdsec_secret_data.bouncerKeyTraefik }}"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: crowdsec_traefik_secret_apply
+  changed_when: "'unchanged' not in crowdsec_traefik_secret_apply.stdout"
+  no_log: true

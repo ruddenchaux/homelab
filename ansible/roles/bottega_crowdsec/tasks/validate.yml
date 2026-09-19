@@ -1,0 +1,62 @@
+---
+- name: Run one sync now (the full list can take minutes on the router CPU)
+  community.routeros.command:
+    commands:
+      - /system script run {{ bottega_crowdsec_script_name }}
+  vars:
+    ansible_command_timeout: 900
+  changed_when: false
+
+- name: Read back Bottega CrowdSec state
+  community.routeros.command:
+    commands:
+      - ':global bottegaCrowdsecLastSync; :put $bottegaCrowdsecLastSync'
+      - >-
+        :put [:pick [/system script get
+        [find where name={{ bottega_crowdsec_script_name }}] source]
+        0 {{ bottega_crowdsec_marker | length }}]
+      - /system scheduler print count-only where name={{ bottega_crowdsec_scheduler_name }} disabled=no interval={{ bottega_crowdsec_sync_interval }}
+      - >-
+        /ip firewall raw print count-only where
+        comment="{{ bottega_crowdsec_raw_comment_a }}" disabled=no chain=prerouting
+        action=drop in-interface-list={{ bottega_crowdsec_wan_list }} protocol=tcp
+        src-address-list={{ bottega_crowdsec_list_a }}
+      - >-
+        /ip firewall raw print count-only where
+        comment="{{ bottega_crowdsec_raw_comment_b }}" disabled=no chain=prerouting
+        action=drop in-interface-list={{ bottega_crowdsec_wan_list }} protocol=tcp
+        src-address-list={{ bottega_crowdsec_list_b }}
+      - /ip firewall filter print count-only where chain=input
+      - /disk print count-only where slot={{ bottega_crowdsec_tmpfs_slot }}
+      - >-
+        :put ([:len [/ip firewall address-list find where list={{ bottega_crowdsec_list_a }}]]
+        + [:len [/ip firewall address-list find where list={{ bottega_crowdsec_list_b }}]])
+  register: bottega_crowdsec_readback
+  changed_when: false
+
+- name: Require the exact Bottega CrowdSec end state
+  ansible.builtin.assert:
+    that:
+      - (_rb[0] | last | trim).startswith('ok ')
+      - (_rb[1] | last | trim) == (bottega_crowdsec_marker | trim)
+      - (_rb[2] | last | trim | int) == 1
+      - (_rb[3] | last | trim | int) == 1
+      - (_rb[4] | last | trim | int) == 1
+      - (_rb[5] | last | trim | int) == (bottega_crowdsec_input_rule_count | int)
+      - (_rb[6] | last | trim | int) == 1
+    quiet: true
+    fail_msg: >-
+      CrowdSec router readback failed: last sync "{{ _rb[0] | last | trim }}"
+      (an "error" usually means the fetch failed: check `/log print where
+      message~"crowdsec"`, the mirror ingress allowlist, the pinned CA roots,
+      or the script policy {{ bottega_crowdsec_policy }}); or the script,
+      scheduler, raw rules, tmpfs disk, or the untouched input chain
+      ({{ bottega_crowdsec_input_rule_count }} rules) do not match.
+  vars:
+    _rb: "{{ bottega_crowdsec_readback.stdout_lines }}"
+
+- name: Report the synced entry count
+  ansible.builtin.debug:
+    msg: >-
+      {{ bottega_crowdsec_readback.stdout_lines[7] | last | trim }} CrowdSec
+      entries on the router ({{ bottega_crowdsec_readback.stdout_lines[0] | last | trim }}).

@@ -1,0 +1,53 @@
+:global bottegaCrowdsecRunning
+:global bottegaCrowdsecLastSync
+:if ($bottegaCrowdsecRunning != true) do={
+  :set bottegaCrowdsecRunning true
+  :do {
+    :local file "{{ bottega_crowdsec_tmpfs_slot }}/blocklist.txt"
+    /tool fetch url="{{ bottega_crowdsec_mirror_url }}" user="{{ bottega_crowdsec_mirror_user }}" password="{{ bottega_crowdsec_mirror_password }}" check-certificate=yes-without-crl dst-path=$file
+    :local size [/file get [find where name=$file] size]
+    :local target "{{ bottega_crowdsec_list_a }}"
+    :local other "{{ bottega_crowdsec_list_b }}"
+    :if ([:len [/ip firewall address-list find where list="{{ bottega_crowdsec_list_a }}"]] > 0) do={
+      :set target "{{ bottega_crowdsec_list_b }}"
+      :set other "{{ bottega_crowdsec_list_a }}"
+    }
+    /ip firewall address-list remove [find where list=$target]
+    :local offset 0
+    :local rest ""
+    :local added 0
+    :while ($offset < $size) do={
+      :local chunk ([/file read file=$file offset=$offset chunk-size={{ bottega_crowdsec_read_chunk }} as-value]->"data")
+      :set offset ($offset + {{ bottega_crowdsec_read_chunk }})
+      :local buf ($rest . $chunk)
+      :local start 0
+      :local nl [:find $buf "\n" -1]
+      :while ([:typeof $nl] = "num") do={
+        :local line [:pick $buf $start $nl]
+        # Valid IPv4 octets; ranges no wider than /16, so a bad decision
+        # (e.g. 0.0.0.0/0) can never blackhole all public TCP 443.
+        :if ($line ~ "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]{0,1}[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]{0,1}[0-9])(/(1[6-9]|2[0-9]|3[0-2])){0,1}\$") do={
+          :do { /ip firewall address-list add list=$target address=$line timeout={{ bottega_crowdsec_entry_timeout }} } on-error={}
+          :set added ($added + 1)
+        }
+        :set start ($nl + 1)
+        :local next [:find $buf "\n" $nl]
+        :if ([:typeof $next] = "num" && $next <= $nl) do={ :error "crowdsec-sync: parser did not advance" }
+        :set nl $next
+      }
+      :set rest [:pick $buf $start [:len $buf]]
+    }
+    /file remove [find where name=$file]
+    :if ($size > 0 && $added = 0) do={
+      /ip firewall address-list remove [find where list=$target]
+      :error "crowdsec-sync: non-empty response without a single IPv4 entry"
+    }
+    /ip firewall address-list remove [find where list=$other]
+    :set bottegaCrowdsecLastSync ("ok " . $added . " " . $target)
+    :log info ("crowdsec-sync: " . $added . " entries in " . $target)
+  } on-error={
+    :set bottegaCrowdsecLastSync "error"
+    :log warning "crowdsec-sync: sync failed, previous list kept"
+  }
+  :set bottegaCrowdsecRunning false
+}
