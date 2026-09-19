@@ -125,15 +125,21 @@ unless marked open.
 - [x] `cscli decisions add --ip <phone cellular IP> -d 5m` makes the phone
       get 403 from Traefik within 30 s. `cscli decisions delete --ip …`
       lifts it.
-- [ ] `cscli metrics` shows lines parsed for each of `jellyfin`,
-      `home-assistant`, `immich`, `authentik`. Only `traefik` has been seen
-      so far; the others need real login traffic (including a deliberate
-      failed login).
+- [x] A failed login from cellular on Jellyfin, Home Assistant, and Immich
+      is logged by each app with the client's public IP, parsed by its hub
+      parser, and poured into its brute-force scenario (`jellyfin-bf`,
+      `home-assistant-bf`, `immich-bf`).
 
 ## Open
 
-- `TODO(fact):` Jellyfin, Immich, and Home Assistant must log the real client
-  IP (from `X-Forwarded-For` sent by Traefik) for their brute-force scenarios
-  to trigger. If an app logs Traefik's pod IP instead, the whitelist drops
-  the event silently. Check each app's trusted-proxy setting against
-  `10.0.0.0/16` now that real IPs reach Traefik.
+- `TODO(decision):` Jellyfin's `KnownProxies = 10.0.0.0/16` was set by hand
+  in the UI (2026-09-19). It isn't in IaC yet: the `media-config` role can't
+  authenticate, because its default admin password no longer matches. Until
+  it is, a rebuilt Jellyfin logs Traefik's pod IP and its brute-force
+  detection silently stops. Jellyfin only reads `KnownProxies` at startup, so
+  a restart is needed after changing it.
+- Home Assistant (`trusted_proxies: 10.0.0.0/16` in its ConfigMap) and Immich
+  (trusts private proxies by default) log real IPs with no extra config.
+- Immich's SSO login (`oauthAutoLaunch`) doesn't work from outside the VPN:
+  `auth.ruddenchaux.xyz` has no public record. Its password endpoint is still
+  public, which is why `immich-bf` matters.
