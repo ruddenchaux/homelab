@@ -31,12 +31,6 @@ is therefore evaluated in the **forward** chain, needing a forward-accept rule,
 not an input-accept rule. The table groups them for readability; the
 implementation must not.
 
-Raw (prerouting, before connection tracking and every filter chain):
-
-| Match | Action | Notes |
-|-------|--------|-------|
-| `in-interface-list=WAN protocol=tcp src-address-list=crowdsec-a` / `crowdsec-b` | Drop | CrowdSec blocklist, pulled by the router every 10 min. See `specs/services/crowdsec.md`. **TCP only on purpose**: TCP `443` is the only forwarded service, and leaving UDP alone keeps WireGuard `61536` open as the way back in if a shared mobile CGNAT address is ever listed. It opens nothing, and the input chain is unchanged |
-
 Forward (traffic passing through the router):
 
 | From | To | Allow? | Notes |

@@ -33,11 +33,6 @@ crowdsec:
           secretKeyRef:
             name: crowdsec-keys
             key: bouncerKeyTraefik
-      - name: BOUNCER_KEY_mirror
-        valueFrom:
-          secretKeyRef:
-            name: crowdsec-keys
-            key: bouncerKeyMirror
       - name: ENROLL_KEY
         valueFrom:
           secretKeyRef:

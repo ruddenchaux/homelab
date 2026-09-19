@@ -1,6 +1,6 @@
 apiVersion: v2
 name: crowdsec
-description: CrowdSec engine (LAPI + agents) and blocklist-mirror umbrella chart
+description: CrowdSec engine (LAPI + agents) umbrella chart
 version: 0.1.0
 dependencies:
   - name: crowdsec

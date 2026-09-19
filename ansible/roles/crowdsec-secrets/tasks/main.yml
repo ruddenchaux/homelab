@@ -1,21 +1,18 @@
 ---
 # Create the crowdsec namespace and the crowdsec-keys secret consumed by the
-# crowdsec chart (secrets.externalSecret), the blocklist-mirror, and the
-# Traefik bouncer. Generated keys are kept across runs; the SOPS-sourced
-# values (enroll key, mirror password) are re-applied every run.
+# crowdsec chart (secrets.externalSecret) and the Traefik bouncer. Generated
+# keys are kept across runs; the SOPS-sourced enroll key is re-applied every
+# run.
 
 - name: Require provisioned Bottega CrowdSec secrets
   ansible.builtin.assert:
     that:
       - _crowdsec_sops.bottega_crowdsec_enroll_key is defined
       - _crowdsec_sops.bottega_crowdsec_enroll_key | length >= 20
-      - _crowdsec_sops.bottega_crowdsec_mirror_password is defined
-      - _crowdsec_sops.bottega_crowdsec_mirror_password | length >= 32
     quiet: true
     fail_msg: >-
       Add bottega_crowdsec_enroll_key (from app.crowdsec.net → Security
-      Engines → Enroll) and bottega_crowdsec_mirror_password (>= 32 chars) to
-      ansible/secrets/bottega.sops.yml; see the header of
+      Engines → Enroll) to ansible/secrets/bottega.sops.yml; see the header of
       ansible/playbooks/crowdsec-secrets.yml. Nothing was changed.
   vars:
     _crowdsec_sops: "{{ ansible_facts['crowdsec_bottega_secrets'] | default({}) }}"
@@ -49,7 +46,6 @@
     - { key: csLapiSecret, bytes: 48 }
     - { key: registrationToken, bytes: 32 }
     - { key: bouncerKeyTraefik, bytes: 32 }
-    - { key: bouncerKeyMirror, bytes: 32 }
   loop_control:
     label: "{{ item.key }}"
   register: crowdsec_generated
@@ -65,8 +61,7 @@
              | zip(crowdsec_generated.results | map(attribute='stdout')))
         | combine(_existing)
         | combine({
-            'enrollKey': _sops.bottega_crowdsec_enroll_key,
-            'mirrorPassword': _sops.bottega_crowdsec_mirror_password
+            'enrollKey': _sops.bottega_crowdsec_enroll_key
           })
       }}
   vars:

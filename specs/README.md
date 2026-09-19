@@ -53,8 +53,8 @@ running infrastructure
 - `sites/bottega-phase-5-wireguard.md` — the WireGuard hub on UDP `61536`, the
   road-warrior peer, and the declared input-exception model.
 - `services/_template.md` — template for specifying a newly-exposed service.
-- `services/crowdsec.md` — CrowdSec engine, Traefik bouncer, and the Bottega
-  router blocklist pull.
+- `services/crowdsec.md` — CrowdSec engine and Traefik bouncer (and why the
+  router doesn't enforce bans).
 - `observability/external-checks.md` — health checks that must run from
   outside the network.
 

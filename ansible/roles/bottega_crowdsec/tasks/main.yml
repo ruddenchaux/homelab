@@ -1,9 +1,0 @@
----
-- name: Run Bottega CrowdSec preflight checks
-  ansible.builtin.include_tasks: preflight.yml
-
-- name: Converge Bottega CrowdSec router enforcement
-  ansible.builtin.include_tasks: converge.yml
-
-- name: Validate Bottega CrowdSec router enforcement
-  ansible.builtin.include_tasks: validate.yml

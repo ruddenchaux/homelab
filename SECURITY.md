@@ -34,7 +34,7 @@ What they cannot do:
 | Measure | Details |
 |---|---|
 | Default-deny WAN | Only TCP `443` (forward) and UDP `61536` (input). `specs/sites/bottega.md` |
-| CrowdSec blocklist | `raw` prerouting drop of WAN TCP from `crowdsec-a`/`crowdsec-b`, pulled every 10 min. `specs/services/crowdsec.md` |
+| Device-mode `home` | `fetch`, `scheduler`, `container` etc. can only be re-enabled with physical access. `specs/sites/bottega.md` |
 
 ### Layer 2 — Kubernetes / Traefik
 
@@ -67,18 +67,8 @@ kubectl -n crowdsec exec deploy/crowdsec-lapi -- cscli bouncers list
 kubectl -n crowdsec exec ds/crowdsec-agent  -- cscli metrics
 ```
 
-Router side (unbans reach it on the next sync; entries also age out after 1 h):
-
-```
-:global bottegaCrowdsecLastSync; :put $bottegaCrowdsecLastSync
-/ip firewall address-list print count-only where list~"crowdsec"
-/log print where message~"crowdsec"
-```
-
-Emergency off switch: `/ip firewall raw disable [find where comment~"bottega-crowdsec"]`
-on the router. On the Traefik side, remove the
-`--entryPoints.websecure.http.middlewares` argument in
-`kubernetes/platform/traefik/values.yaml`.
+Emergency off switch: remove the `--entryPoints.websecure.http.middlewares`
+argument in `kubernetes/platform/traefik/values.yaml`.
 
 ---
 

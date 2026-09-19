@@ -1,6 +1,0 @@
----
-bottega_crowdsec_script_name: bottega-crowdsec-sync
-bottega_crowdsec_scheduler_name: bottega-crowdsec-sync
-bottega_crowdsec_policy: ftp,read,write,test
-bottega_crowdsec_raw_comment_a: bottega-crowdsec-raw-drop-a
-bottega_crowdsec_raw_comment_b: bottega-crowdsec-raw-drop-b

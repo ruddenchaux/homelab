@@ -28,6 +28,16 @@ MikroTik **hAP be3 Media** (`MA53UG+HbeH`), RouterOS v7.
 Source: official MikroTik user manual for hAP be³ Media (`help.mikrotik.com`,
 UM page 357302341) and the product specification page.
 
+**Device-mode is `home`** (RouterOS 7.23.2, read 2026-09-19): `fetch`,
+`scheduler`, `container`, `socks`, `proxy`, `sniffer`, `bandwidth-test`,
+`traffic-gen`, `email`, `zerotier` and `romon` are off. Turning any of them on
+needs `/system device-mode update …` plus a physical button press or power
+cycle at Bottega, so admin credentials alone can't. This is deliberate
+hardening for an internet-facing hub. Don't design anything that needs these
+features (a scheduled script, a download, a container) without weighing that
+cost. CrowdSec router enforcement was dropped for exactly this reason; see
+`specs/services/crowdsec.md`.
+
 Recorded as capability, **not designed here**:
 
 - ARM64 + container support means small always-on workloads (a DNS resolver,
@@ -217,7 +227,6 @@ phases of the same router.
 | 3 | VLANs and R740xd uplink | nothing — VLANs 10/20/30 are local; no WAN rule changes |
 | 4 | dst-nat / public TCP `443` | + TCP `443` — dst-nat in prerouting, then the **forward** chain, not an input exception |
 | 5 | WireGuard UDP `61536` (`bottega-phase-5-wireguard.md`) | + UDP `61536`, an input-chain accept inserted before the final drop |
-| 6 | CrowdSec blocklist (`specs/services/crowdsec.md`) | unchanged — TCP `443` + UDP `61536`; listed sources are dropped on WAN TCP in `raw` |
 
 The acceptance script must be phase-aware: "nothing answers on WAN" is the
 correct result at phases 1–3, relaxing to "only TCP `443`" at phase 4 and
