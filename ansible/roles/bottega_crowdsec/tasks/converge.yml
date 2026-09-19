@@ -8,7 +8,7 @@
       - >-
         /disk add type=tmpfs
         tmpfs-max-size={{ bottega_crowdsec_tmpfs_size }}
-        slot={{ bottega_crowdsec_tmpfs_slot }}
+        slot="{{ bottega_crowdsec_tmpfs_slot }}"
   when: (bottega_crowdsec_counts.tmpfs | int) == 0
 
 - name: Install the pinned Let's Encrypt roots
@@ -47,7 +47,7 @@
     commands:
       - >-
         :put [:pick [/system script get
-        [find where name={{ bottega_crowdsec_script_name }}] source]
+        [find where name="{{ bottega_crowdsec_script_name }}"] source]
         0 {{ bottega_crowdsec_marker | length }}]
   register: bottega_crowdsec_script_marker
   changed_when: false
@@ -67,7 +67,7 @@
   community.routeros.command:
     commands:
       - >-
-        /system script set [find where name={{ bottega_crowdsec_script_name }}]
+        /system script set [find where name="{{ bottega_crowdsec_script_name }}"]
         policy={{ bottega_crowdsec_policy }} dont-require-permissions=no
         source="{{ _bottega_crowdsec_source_escaped }}"
   when:
@@ -89,7 +89,7 @@
   community.routeros.command:
     commands:
       - >-
-        /system scheduler set [find where name={{ bottega_crowdsec_scheduler_name }}]
+        /system scheduler set [find where name="{{ bottega_crowdsec_scheduler_name }}"]
         disabled=no start-time=startup interval={{ bottega_crowdsec_sync_interval }}
         policy={{ bottega_crowdsec_policy }}
         on-event="/system script run {{ bottega_crowdsec_script_name }}"

@@ -13,24 +13,28 @@
       - ':global bottegaCrowdsecLastSync; :put $bottegaCrowdsecLastSync'
       - >-
         :put [:pick [/system script get
-        [find where name={{ bottega_crowdsec_script_name }}] source]
+        [find where name="{{ bottega_crowdsec_script_name }}"] source]
         0 {{ bottega_crowdsec_marker | length }}]
-      - /system scheduler print count-only where name={{ bottega_crowdsec_scheduler_name }} disabled=no interval={{ bottega_crowdsec_sync_interval }}
+      - /system scheduler print count-only where name="{{ bottega_crowdsec_scheduler_name }}"
+      - ':put ("disabled=" . [/system scheduler get [find where name="{{ bottega_crowdsec_scheduler_name }}"] disabled])'
+      - ':put ("on-event=" . [/system scheduler get [find where name="{{ bottega_crowdsec_scheduler_name }}"] on-event])'
+      - ':put ("disabled=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_a }}"] disabled])'
+      - ':put ("chain=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_a }}"] chain])'
+      - ':put ("action=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_a }}"] action])'
+      - ':put ("in-interface-list=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_a }}"] in-interface-list])'
+      - ':put ("protocol=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_a }}"] protocol])'
+      - ':put ("src-address-list=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_a }}"] src-address-list])'
+      - ':put ("disabled=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_b }}"] disabled])'
+      - ':put ("chain=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_b }}"] chain])'
+      - ':put ("action=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_b }}"] action])'
+      - ':put ("in-interface-list=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_b }}"] in-interface-list])'
+      - ':put ("protocol=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_b }}"] protocol])'
+      - ':put ("src-address-list=" . [/ip firewall raw get [find where comment="{{ bottega_crowdsec_raw_comment_b }}"] src-address-list])'
+      - /ip firewall filter print count-only where chain="input"
+      - /disk print count-only where slot="{{ bottega_crowdsec_tmpfs_slot }}"
       - >-
-        /ip firewall raw print count-only where
-        comment="{{ bottega_crowdsec_raw_comment_a }}" disabled=no chain=prerouting
-        action=drop in-interface-list={{ bottega_crowdsec_wan_list }} protocol=tcp
-        src-address-list={{ bottega_crowdsec_list_a }}
-      - >-
-        /ip firewall raw print count-only where
-        comment="{{ bottega_crowdsec_raw_comment_b }}" disabled=no chain=prerouting
-        action=drop in-interface-list={{ bottega_crowdsec_wan_list }} protocol=tcp
-        src-address-list={{ bottega_crowdsec_list_b }}
-      - /ip firewall filter print count-only where chain=input
-      - /disk print count-only where slot={{ bottega_crowdsec_tmpfs_slot }}
-      - >-
-        :put ([:len [/ip firewall address-list find where list={{ bottega_crowdsec_list_a }}]]
-        + [:len [/ip firewall address-list find where list={{ bottega_crowdsec_list_b }}]])
+        :put ([:len [/ip firewall address-list find where list="{{ bottega_crowdsec_list_a }}"]]
+        + [:len [/ip firewall address-list find where list="{{ bottega_crowdsec_list_b }}"]])
   register: bottega_crowdsec_readback
   changed_when: false
 
@@ -40,10 +44,12 @@
       - (_rb[0] | last | trim).startswith('ok ')
       - (_rb[1] | last | trim) == (bottega_crowdsec_marker | trim)
       - (_rb[2] | last | trim | int) == 1
-      - (_rb[3] | last | trim | int) == 1
-      - (_rb[4] | last | trim | int) == 1
-      - (_rb[5] | last | trim | int) == (bottega_crowdsec_input_rule_count | int)
-      - (_rb[6] | last | trim | int) == 1
+      - (_rb[3] | last | trim) == 'disabled=false'
+      - (_rb[4] | last | trim) == 'on-event=/system script run ' ~ bottega_crowdsec_script_name
+      - _rb[5:11] | map('last') | map('trim') | list == ['disabled=false', 'chain=prerouting', 'action=drop', 'in-interface-list=' ~ bottega_crowdsec_wan_list, 'protocol=tcp', 'src-address-list=' ~ bottega_crowdsec_list_a]
+      - _rb[11:17] | map('last') | map('trim') | list == ['disabled=false', 'chain=prerouting', 'action=drop', 'in-interface-list=' ~ bottega_crowdsec_wan_list, 'protocol=tcp', 'src-address-list=' ~ bottega_crowdsec_list_b]
+      - (_rb[17] | last | trim | int) == (bottega_crowdsec_input_rule_count | int)
+      - (_rb[18] | last | trim | int) == 1
     quiet: true
     fail_msg: >-
       CrowdSec router readback failed: last sync "{{ _rb[0] | last | trim }}"
@@ -52,11 +58,12 @@
       or the script policy {{ bottega_crowdsec_policy }}); or the script,
       scheduler, raw rules, tmpfs disk, or the untouched input chain
       ({{ bottega_crowdsec_input_rule_count }} rules) do not match.
+      Readback: {{ _rb | map('last') | map('trim') | list }}
   vars:
     _rb: "{{ bottega_crowdsec_readback.stdout_lines }}"
 
 - name: Report the synced entry count
   ansible.builtin.debug:
     msg: >-
-      {{ bottega_crowdsec_readback.stdout_lines[7] | last | trim }} CrowdSec
+      {{ bottega_crowdsec_readback.stdout_lines[19] | last | trim }} CrowdSec
       entries on the router ({{ bottega_crowdsec_readback.stdout_lines[0] | last | trim }}).

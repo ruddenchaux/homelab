@@ -56,5 +56,5 @@
     commands:
       - >-
         /certificate set [find where fingerprint="{{ bottega_crowdsec_ca.sha256 }}"]
-        name={{ bottega_crowdsec_ca.name }} trusted=yes
+        name="{{ bottega_crowdsec_ca.name }}" trusted=yes
   changed_when: false

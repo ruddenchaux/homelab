@@ -44,9 +44,9 @@
       - :put [/system resource get version]
       - >-
         /interface list member print count-only
-        where list={{ bottega_crowdsec_wan_list }} interface=pppoe-out1
+        where list="{{ bottega_crowdsec_wan_list }}" interface="pppoe-out1"
       - ':put [:resolve "{{ bottega_crowdsec_mirror_hostname }}"]'
-      - /ip firewall filter print count-only where chain=input
+      - /ip firewall filter print count-only where chain="input"
   register: bottega_crowdsec_prereq
   changed_when: false
 
@@ -74,9 +74,9 @@
 - name: Count owned Bottega CrowdSec objects
   community.routeros.command:
     commands:
-      - /disk print count-only where slot={{ bottega_crowdsec_tmpfs_slot }}
-      - /system script print count-only where name={{ bottega_crowdsec_script_name }}
-      - /system scheduler print count-only where name={{ bottega_crowdsec_scheduler_name }}
+      - /disk print count-only where slot="{{ bottega_crowdsec_tmpfs_slot }}"
+      - /system script print count-only where name="{{ bottega_crowdsec_script_name }}"
+      - /system scheduler print count-only where name="{{ bottega_crowdsec_scheduler_name }}"
       - /ip firewall raw print count-only where comment="{{ bottega_crowdsec_raw_comment_a }}"
       - /ip firewall raw print count-only where comment="{{ bottega_crowdsec_raw_comment_b }}"
   register: bottega_crowdsec_owned_counts
