@@ -1,6 +1,40 @@
 traefik:
+  # DaemonSet on every node, control plane included. The Service below uses
+  # externalTrafficPolicy: Local so Traefik sees real client IPs (CrowdSec
+  # needs them), and Cilium 1.19 L2 announcements ignore that policy: the
+  # 10.30.0.200 lease can land on any node, and a node without a Traefik pod
+  # drops the traffic. A pod on every node removes that failure mode.
+  # See specs/services/crowdsec.md.
+  deployment:
+    kind: DaemonSet
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
   service:
     type: LoadBalancer
+    spec:
+      externalTrafficPolicy: Local
+  logs:
+    access:
+      # Read by the CrowdSec agent (crowdsecurity/traefik collection).
+      enabled: true
+      format: json
+      fields:
+        headers:
+          defaultmode: drop
+          names:
+            User-Agent: keep
+  experimental:
+    plugins:
+      crowdsec-bouncer:
+        moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+        version: v1.7.1
+  # Bouncer API key, created by ansible/roles/crowdsec-secrets.
+  volumes:
+    - name: crowdsec-bouncer
+      mountPath: /etc/traefik/crowdsec
+      type: secret
   api:
     dashboard: true
   additionalArguments:
@@ -9,6 +43,8 @@ traefik:
     - "--entryPoints.web.http.redirections.entrypoint.permanent=true"
     - "--entryPoints.websecure.transport.respondingTimeouts.readTimeout=0"
     - "--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+    # CrowdSec bouncer on every websecure route, ahead of per-router middlewares.
+    - "--entryPoints.websecure.http.middlewares=traefik-crowdsec-bouncer@kubernetescrd"
   ingressRoute:
     dashboard:
       enabled: true

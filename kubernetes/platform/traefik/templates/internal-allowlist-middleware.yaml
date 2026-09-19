@@ -9,6 +9,7 @@ spec:
       - 10.0.0.0/16    # Cilium pod CIDR (source IP Traefik sees for in-cluster requests)
       - 10.10.0.0/24   # Management VLAN
       - 10.20.0.0/24   # Trusted LAN
-      - 10.30.0.0/24   # Kubernetes VLAN (also covers SNAT'd external traffic)
-      - 10.100.0.0/24  # WireGuard (VPS + road warrior clients)
+      - 10.30.0.0/24   # Kubernetes VLAN (real VLAN 30 clients only: the Service uses externalTrafficPolicy: Local, so public traffic is no longer SNAT'd into this range)
+      - 10.99.0.0/24   # Bottega WireGuard overlay (road warrior, Casa)
+      - 10.100.0.0/24  # Legacy VPS WireGuard (remove with the VPS decommission)
       - 192.168.88.0/24 # MikroTik default bridge

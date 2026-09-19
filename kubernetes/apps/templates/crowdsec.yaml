@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crowdsec
+  namespace: argocd
+  annotations:
+    # After cert-manager (1) and local-path (0); the secret comes from
+    # ansible/playbooks/crowdsec-secrets.yml, which must run first.
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.spec.repoURL }}
+    targetRevision: {{ .Values.spec.targetRevision }}
+    path: kubernetes/platform/crowdsec
+  destination:
+    server: {{ .Values.spec.destination.server }}
+    namespace: crowdsec
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

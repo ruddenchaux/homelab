@@ -2,31 +2,92 @@
 
 ## Threat model
 
-Public attack surface:
-- VPS (89.167.62.126): ports 80/443 (nginx TCP relay), 22 (SSH), 51820/udp (WireGuard)
-- All homelab internals are NOT directly exposed — nginx is a blind TCP passthrough to the
-  WireGuard tunnel. The VPS cannot inspect TLS payload or HTTP content.
-- Traefik handles TLS termination inside the cluster and routes to pods.
+Public attack surface (Bottega, static IP `145.11.24.43`, see
+`specs/network/firewall.md`):
+- TCP `443`: dst-nat to Traefik (`10.30.0.200`). Public hostnames are only
+  Jellyfin, Home Assistant, and Immich (`specs/network/dns-exposure.md`), but
+  any hostname Traefik serves can be reached by setting SNI/Host, so a missing
+  DNS record isn't an access control.
+- UDP `61536`: WireGuard hub. It's silent to unauthenticated packets.
+- Nothing else answers on WAN. Router management is LAN/VPN-only
+  (`AGENTS.md` #5).
 
 What attackers can do:
-- Scan and probe VPS ports 80/443 (hits nginx → WireGuard → Traefik)
-- Brute-force SSH on the VPS
-- Attempt to exploit vulnerabilities in unpatched VPS software
-- Send malicious traffic that reaches Traefik (mitigated by Authentik ForwardAuth)
+- Scan and probe TCP 443, and hit any Traefik route by SNI/Host.
+- Brute-force the three public apps, which use their own logins instead of
+  Authentik ForwardAuth.
+- Exploit vulnerabilities in Traefik or the public apps.
 
 What they cannot do:
-- Reach Proxmox, MikroTik, or any homelab VLAN directly (not routed from public internet)
-- Bypass Authentik — all services except Jellyfin, Seerr, NZBGet require SSO login
-- See hostnames or routes — nginx TCP stream is SNI-blind, Traefik does the routing internally
+- Reach Proxmox, MikroTik management, or any VLAN directly.
+- Pass `traefik-internal-allowlist` from the internet. Traefik sees the real
+  client IP (`externalTrafficPolicy: Local`), so internet sources are outside
+  the allowed ranges.
+- Bypass Authentik on ForwardAuth-protected services.
 
 ---
 
 ## Implemented security layers
 
-### Layer 1 — VPS hardening (Tier 1)
+### Layer 1 — Router (Bottega MikroTik)
 
-**Ansible role**: `ansible/roles/vps-hardening/`
-**Applied by**: `ansible/playbooks/vps-relay.yml` (Play 1)
+| Measure | Details |
+|---|---|
+| Default-deny WAN | Only TCP `443` (forward) and UDP `61536` (input). `specs/sites/bottega.md` |
+| CrowdSec blocklist | `raw` prerouting drop of WAN TCP from `crowdsec-a`/`crowdsec-b`, pulled every 10 min. `specs/services/crowdsec.md` |
+
+### Layer 2 — Kubernetes / Traefik
+
+| Measure | Tool | Status |
+|---|---|---|
+| Collaborative IPS + bouncer | CrowdSec (agents on every node, Traefik plugin on the `websecure` entrypoint, Console-enrolled) | Deployed — `specs/services/crowdsec.md` |
+| IP allowlist for internal services | `traefik-internal-allowlist` Middleware | Deployed (effective from the internet only since `externalTrafficPolicy: Local`) |
+| Rate limiting | Traefik Middleware | Planned |
+| WAF / virtual patching | CrowdSec AppSec | Planned, observe-only first |
+
+### Layer 3 — Application layer
+
+| Measure | Tool | Details |
+|---|---|---|
+| SSO authentication | Authentik | ForwardAuth on all services except those with built-in auth |
+| TLS everywhere | cert-manager + Let's Encrypt | DNS-01 challenge, Cloudflare |
+| Services with built-in auth | Jellyfin, Seerr, NZBGet, Immich, Home Assistant | ForwardAuth disabled, native login. CrowdSec parses Jellyfin/HA/Immich auth logs |
+
+---
+
+## CrowdSec operations
+
+```bash
+# All via the control plane
+ssh debian@10.30.0.10
+kubectl -n crowdsec exec deploy/crowdsec-lapi -- cscli decisions list
+kubectl -n crowdsec exec deploy/crowdsec-lapi -- cscli decisions delete --ip <ip>   # unban
+kubectl -n crowdsec exec deploy/crowdsec-lapi -- cscli alerts list
+kubectl -n crowdsec exec deploy/crowdsec-lapi -- cscli bouncers list
+kubectl -n crowdsec exec ds/crowdsec-agent  -- cscli metrics
+```
+
+Router side (unbans reach it on the next sync; entries also age out after 1 h):
+
+```
+:global bottegaCrowdsecLastSync; :put $bottegaCrowdsecLastSync
+/ip firewall address-list print count-only where list~"crowdsec"
+/log print where message~"crowdsec"
+```
+
+Emergency off switch: `/ip firewall raw disable [find where comment~"bottega-crowdsec"]`
+on the router. On the Traefik side, remove the
+`--entryPoints.websecure.http.middlewares` argument in
+`kubernetes/platform/traefik/values.yaml`.
+
+---
+
+## Legacy — VPS hardening
+
+Applies only while the Hetzner VPS still exists (see `MIGRATION.md`).
+
+**Ansible role**: `ansible/roles/vps-hardening/`, applied by
+`ansible/playbooks/vps-relay.yml` (Play 1; `--tags hardening` for hardening only).
 
 | Measure | Tool | Details |
 |---|---|---|
@@ -34,66 +95,14 @@ What they cannot do:
 | SSH brute force protection | fail2ban | Ban IP after 5 failed SSH attempts in 10 min, for 1 hour. |
 | Automatic security patches | unattended-upgrades | Daily security-only upgrades, auto-reboot at 03:00 if needed. |
 
-### Layer 2 — Kubernetes / Traefik (planned — Tier 2)
-
-| Measure | Tool | Status |
-|---|---|---|
-| Rate limiting | Traefik Middleware | Planned |
-| IP allowlist for internal services | Traefik Middleware | Planned |
-| Collaborative IPS + Traefik bouncer | CrowdSec | Planned |
-
-### Layer 3 — Application layer (deployed)
-
-| Measure | Tool | Details |
-|---|---|---|
-| SSO authentication | Authentik | ForwardAuth on all services except those with built-in auth |
-| TLS everywhere | cert-manager + Let's Encrypt | DNS-01 challenge, Cloudflare |
-| Services with built-in auth | Jellyfin, Seerr, NZBGet | ForwardAuth disabled, native login |
-
----
-
-## Running the hardening playbook
-
-The VPS hardening role runs automatically as part of `vps-relay.yml`:
-
 ```bash
-ansible-playbook ansible/playbooks/vps-relay.yml
-```
-
-To run hardening only (without reconfiguring WireGuard/nginx):
-
-```bash
-ansible-playbook ansible/playbooks/vps-relay.yml --tags hardening
-```
-
----
-
-## Monitoring fail2ban
-
-```bash
-# SSH into VPS, then:
-sudo fail2ban-client status sshd       # banned IPs
+sudo fail2ban-client status sshd            # banned IPs
 sudo fail2ban-client set sshd unbanip <ip>  # unban manually
-sudo journalctl -u fail2ban -f         # live log
 ```
 
 ---
 
-## Future hardening (Tier 2 — CrowdSec + Traefik)
-
-CrowdSec is a collaborative IPS. The recommended architecture:
-
-```
-Internet → VPS nginx (CrowdSec agent parses logs)
-                    ↓ WireGuard
-           Traefik (CrowdSec bouncer blocks IPs before hitting apps)
-```
-
-Steps when implementing:
-1. Install CrowdSec agent on VPS (`crowdsec` package)
-2. Install CrowdSec Traefik bouncer in k8s (Helm chart: `crowdsec/crowdsec`)
-3. Add `crowdsec-traefik-bouncer` middleware globally in Traefik
-4. Enroll VPS in CrowdSec console (free tier) for community blocklists
+## Future hardening
 
 **Traefik rate limiting** (add to `kubernetes/platform/traefik/`):
 ```yaml
@@ -106,20 +115,4 @@ spec:
   rateLimit:
     average: 100
     burst: 50
-```
-
-**Traefik IP allowlist for internal-only services** (ArgoCD, Grafana, Hubble):
-```yaml
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: internal-only
-  namespace: traefik
-spec:
-  ipAllowList:
-    sourceRange:
-      - 10.10.0.0/24   # Management VLAN
-      - 10.20.0.0/24   # Trusted LAN
-      - 10.30.0.0/24   # Kubernetes VLAN
-      - 10.100.0.0/24  # WireGuard clients (road warrior VPN)
 ```

@@ -1,0 +1,107 @@
+# Implements specs/services/crowdsec.md.
+crowdsec:
+  container_runtime: containerd
+
+  # Owned by ansible/roles/crowdsec-secrets. The chart would otherwise generate
+  # these with `lookup`, which returns nothing under ArgoCD's `helm template`,
+  # so the secret would be regenerated on every sync.
+  secrets:
+    externalSecret:
+      name: crowdsec-keys
+
+  config:
+    parsers:
+      s02-enrich:
+        # Never raise alerts for our own networks: VLANs, pods, the WireGuard
+        # overlay, the MikroTik bridge, Casa, and Bottega's own public IP.
+        homelab-whitelist.yaml: |
+          name: homelab/whitelist
+          description: "Never ban homelab-internal sources"
+          whitelist:
+            reason: "homelab internal networks"
+            cidr:
+              - 10.0.0.0/8
+              - 192.168.0.0/16
+            ip:
+              - 145.11.24.43
+
+  lapi:
+    env:
+      # Bouncers are pre-registered from these keys on every LAPI start.
+      - name: BOUNCER_KEY_traefik
+        valueFrom:
+          secretKeyRef:
+            name: crowdsec-keys
+            key: bouncerKeyTraefik
+      - name: BOUNCER_KEY_mirror
+        valueFrom:
+          secretKeyRef:
+            name: crowdsec-keys
+            key: bouncerKeyMirror
+      - name: ENROLL_KEY
+        valueFrom:
+          secretKeyRef:
+            name: crowdsec-keys
+            key: enrollKey
+      - name: ENROLL_INSTANCE_NAME
+        value: bottega-k8s
+      - name: ENROLL_TAGS
+        value: k8s bottega
+    persistentVolume:
+      data:
+        enabled: true
+        storageClassName: local-path
+        size: 1Gi
+      config:
+        enabled: true
+        storageClassName: local-path
+        size: 100Mi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+  agent:
+    # Traefik runs on every node, control plane included, so the agent must too.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # program must match each hub parser's filter on evt.Parsed.program.
+    acquisition:
+      - namespace: traefik
+        podName: traefik-*
+        program: traefik
+      - namespace: media
+        podName: jellyfin-*
+        program: jellyfin
+      - namespace: home-assistant
+        podName: home-assistant-*
+        program: home-assistant
+      - namespace: immich
+        podName: immich-server-*
+        program: immich
+      - namespace: authentik
+        podName: authentik-server-*
+        program: authentik
+    env:
+      - name: COLLECTIONS
+        value: >-
+          crowdsecurity/traefik
+          crowdsecurity/base-http-scenarios
+          crowdsecurity/http-cve
+          crowdsecurity/whitelist-good-actors
+          LePresidente/jellyfin
+          crowdsecurity/home-assistant
+          gauth-fr/immich
+          firix/authentik
+      - name: PARSERS
+        value: crowdsecurity/whitelists
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
