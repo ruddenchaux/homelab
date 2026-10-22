@@ -1,3 +1,4 @@
 ---
 paperless_namespace: "paperless"
 paperless_secret_name: "paperless-secrets"
+paperless_gmail_secret_name: "paperless-gmail-oauth"

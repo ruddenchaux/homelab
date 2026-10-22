@@ -1,0 +1,18 @@
+---
+# Declare Paperless-ngx mail rules for the Gmail OAuth mail account.
+#
+# Order:
+#   1. ansible-playbook ansible/playbooks/paperless-secrets.yml (OAuth client)
+#   2. Push manifests, wait for ArgoCD to roll out Paperless
+#   3. One-time consent: https://paperless.ruddenchaux.xyz/mail → Add account
+#      → Connect Gmail Account → approve → enter the address and save
+#   4. ansible-playbook ansible/playbooks/paperless-mail-rules.yml \
+#        -e paperless_gmail_address=you@gmail.com
+#
+# Rules live in roles/paperless-mail-rules/defaults/main.yml; re-runs are
+# idempotent (changed only when a declared field differs).
+
+- name: Configure Paperless-ngx mail rules
+  hosts: k8s_control_plane
+  roles:
+    - role: paperless-mail-rules

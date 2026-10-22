@@ -66,3 +66,40 @@
   ansible.builtin.debug:
     msg: "Secret {{ paperless_secret_name }} already exists — skipping generation"
   when: paperless_secret_check.rc == 0
+
+# Gmail OAuth client for mail accounts. Re-applied every run so a rotated
+# client in SOPS reaches the cluster.
+- name: Require provisioned Paperless Gmail OAuth client
+  ansible.builtin.assert:
+    that:
+      - _paperless_sops.bottega_paperless_gmail_client_id is defined
+      - _paperless_sops.bottega_paperless_gmail_client_id | length > 0
+      - _paperless_sops.bottega_paperless_gmail_client_secret is defined
+      - _paperless_sops.bottega_paperless_gmail_client_secret | length > 0
+    quiet: true
+    fail_msg: >-
+      Add bottega_paperless_gmail_client_id and
+      bottega_paperless_gmail_client_secret to ansible/secrets/bottega.sops.yml;
+      see the header of ansible/playbooks/paperless-secrets.yml.
+  vars:
+    _paperless_sops: "{{ ansible_facts['paperless_bottega_secrets'] | default({}) }}"
+  no_log: true
+
+- name: Apply paperless-gmail-oauth secret
+  become: false
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    kubectl create secret generic {{ paperless_gmail_secret_name }}
+    -n {{ paperless_namespace }}
+    --from-literal=PAPERLESS_GMAIL_OAUTH_CLIENT_ID={{ _sops.bottega_paperless_gmail_client_id | quote }}
+    --from-literal=PAPERLESS_GMAIL_OAUTH_CLIENT_SECRET={{ _sops.bottega_paperless_gmail_client_secret | quote }}
+    --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  vars:
+    _sops: "{{ ansible_facts['paperless_bottega_secrets'] }}"
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: paperless_gmail_secret
+  changed_when: "'unchanged' not in paperless_gmail_secret.stdout"
+  no_log: true

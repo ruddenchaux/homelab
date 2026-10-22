@@ -62,6 +62,20 @@ spec:
                   key: PAPERLESS_ADMIN_PASSWORD
             - name: PAPERLESS_ADMIN_MAIL
               value: admin@ruddenchaux.xyz
+            # Gmail OAuth for mail accounts (callback built from PAPERLESS_URL).
+            # Optional: without the secret the "Connect Gmail" button is hidden.
+            - name: PAPERLESS_GMAIL_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-gmail-oauth
+                  key: PAPERLESS_GMAIL_OAUTH_CLIENT_ID
+                  optional: true
+            - name: PAPERLESS_GMAIL_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-gmail-oauth
+                  key: PAPERLESS_GMAIL_OAUTH_CLIENT_SECRET
+                  optional: true
             - name: PAPERLESS_TIME_ZONE
               value: Europe/Rome
             - name: PAPERLESS_OCR_LANGUAGE

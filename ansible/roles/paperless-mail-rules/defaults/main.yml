@@ -1,0 +1,28 @@
+---
+paperless_namespace: "paperless"
+paperless_service: "paperless"
+paperless_service_port: 8000
+paperless_pf_port: 19800
+paperless_url: "http://127.0.0.1:{{ paperless_pf_port }}"
+paperless_admin_user: "admin"
+
+# Gmail address of the mail account created by the one-time OAuth consent in
+# the UI. Not a secret, but not committed either: pass it with
+#   -e paperless_gmail_address=you@gmail.com
+paperless_gmail_address: ""
+
+# Declared mail rules, upserted by name. Rules not listed here are left alone.
+# Enums (paperless_mail.models.MailRule):
+#   attachment_type    1 = attachments only, 2 = include inline
+#   consumption_scope  1 = attachments only, 2 = .eml only, 3 = .eml + attachments
+#   action             1 = delete, 2 = move, 3 = mark read, 4 = flag, 5 = tag
+# Gmail labels are IMAP folders; create both labels in Gmail first.
+paperless_mail_rules:
+  - name: gmail-paperless-label
+    order: 0
+    folder: Paperless
+    maximum_age: 30
+    attachment_type: 1
+    consumption_scope: 1
+    action: 2
+    action_parameter: Paperless/Done

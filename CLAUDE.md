@@ -72,6 +72,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
   - Shared 400Gi `media-library` PVC at `/data/media`, per-service 2Gi config PVCs
   - All services on Homepage dashboard, most behind ForwardAuth (except Jellyfin, Seerr, NZBGet which have built-in auth)
 - Ghostfolio (portfolio tracker) at portfolio.ruddenchaux.xyz — PostgreSQL + Redis, Authentik ForwardAuth. Degiro imports via dickwolff/Export-To-Ghostfolio. See `GHOSTFOLIO.md` for import workflow, dashboard-crash diagnosis, and in-kind-transfer handling.
+- Paperless-ngx Gmail OAuth: client id/secret in `ansible/secrets/bottega.sops.yml` → `paperless-gmail-oauth` Secret (`paperless-secrets.yml`) → env. Google redirect URI `https://paperless.ruddenchaux.xyz/api/oauth/callback/`. Account is connected once via UI consent; mail rules as code in `ansible/roles/paperless-mail-rules/` (`paperless-mail-rules.yml -e paperless_gmail_address=…`).
 - Public internet access via VPS relay + client VPN (Hetzner CX22, 89.167.62.126)
   - `jellyfin.ruddenchaux.xyz` A record → VPS IP (grey-cloud, DNS-only), nginx TCP stream → WireGuard tunnel → MikroTik → Traefik
   - nginx is a generic blind TCP passthrough — any service gets IPv4 access just by adding an A record pointing to the VPS

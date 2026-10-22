@@ -1,0 +1,119 @@
+---
+# Declare Paperless-ngx mail rules for the Gmail account via the REST API.
+# The mail account itself comes from the interactive OAuth consent in the UI;
+# this role only finds it and attaches rules to it.
+
+- name: Require the Gmail address
+  ansible.builtin.assert:
+    that: paperless_gmail_address | length > 0
+    quiet: true
+    fail_msg: "Pass -e paperless_gmail_address=you@gmail.com"
+
+- name: Wait for Paperless to be ready
+  become: false
+  ansible.builtin.command: >-
+    kubectl rollout status deployment/{{ paperless_service }}
+    -n {{ paperless_namespace }} --timeout=300s
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  changed_when: false
+
+- name: Read Paperless admin password
+  become: false
+  ansible.builtin.shell: >-
+    kubectl get secret paperless-secrets -n {{ paperless_namespace }}
+    -o jsonpath='{.data.PAPERLESS_ADMIN_PASSWORD}' | base64 -d
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: paperless_admin_password
+  changed_when: false
+  no_log: true
+
+- name: Start port-forward to Paperless
+  become: false
+  ansible.builtin.shell: >-
+    nohup kubectl port-forward svc/{{ paperless_service }}
+    -n {{ paperless_namespace }}
+    {{ paperless_pf_port }}:{{ paperless_service_port }}
+    > /dev/null 2>&1 &
+    echo $!
+  environment:
+    KUBECONFIG: /home/debian/.kube/config
+  register: paperless_pf_pid
+  changed_when: false
+
+- name: Configure mail rules
+  block:
+    - name: Wait for port-forward
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ paperless_pf_port }}"
+        timeout: 30
+
+    - name: Get mail accounts
+      ansible.builtin.uri:
+        url: "{{ paperless_url }}/api/mail_accounts/?page_size=1000"
+        url_username: "{{ paperless_admin_user }}"
+        url_password: "{{ paperless_admin_password.stdout }}"
+        force_basic_auth: true
+        return_content: true
+      register: paperless_mail_accounts
+      no_log: true
+
+    - name: Find the Gmail mail account
+      ansible.builtin.set_fact:
+        paperless_gmail_account: >-
+          {{ paperless_mail_accounts.json.results
+             | selectattr('username', 'equalto', paperless_gmail_address)
+             | first | default({}) }}
+
+    - name: Require the Gmail account to be connected
+      ansible.builtin.assert:
+        that: paperless_gmail_account.id is defined
+        quiet: true
+        fail_msg: >-
+          No mail account for {{ paperless_gmail_address }}. Connect it first:
+          https://paperless.ruddenchaux.xyz/mail → Add account → Connect Gmail
+          Account, then enter the address and save.
+
+    - name: Get mail rules
+      ansible.builtin.uri:
+        url: "{{ paperless_url }}/api/mail_rules/?page_size=1000"
+        url_username: "{{ paperless_admin_user }}"
+        url_password: "{{ paperless_admin_password.stdout }}"
+        force_basic_auth: true
+        return_content: true
+      register: paperless_existing_rules
+      no_log: true
+
+    - name: Upsert mail rules
+      ansible.builtin.uri:
+        url: >-
+          {{ paperless_url }}/api/mail_rules/{{
+             (_existing.id ~ '/') if _existing else '' }}
+        method: "{{ 'PATCH' if _existing else 'POST' }}"
+        url_username: "{{ paperless_admin_user }}"
+        url_password: "{{ paperless_admin_password.stdout }}"
+        force_basic_auth: true
+        body_format: json
+        body: "{{ _desired }}"
+        status_code: [200, 201]
+      loop: "{{ paperless_mail_rules }}"
+      loop_control:
+        label: "{{ item.name }}"
+      vars:
+        _desired: "{{ item | combine({'account': paperless_gmail_account.id}) }}"
+        _existing: >-
+          {{ paperless_existing_rules.json.results
+             | selectattr('name', 'equalto', item.name)
+             | first | default({}) }}
+      # Skip rules whose declared fields already match.
+      when: not _existing or (_existing | combine(_desired)) != _existing
+      changed_when: true
+
+  always:
+    - name: Stop port-forward
+      become: false
+      ansible.builtin.command: "kill {{ paperless_pf_pid.stdout }}"
+      changed_when: false
+      failed_when: false
