@@ -102,7 +102,11 @@
       loop_control:
         label: "{{ item.name }}"
       vars:
-        _desired: "{{ item | combine({'account': paperless_gmail_account.id}) }}"
+        # assign_tags is always sent: 2.14.7's create() hits UnboundLocalError
+        # (HTTP 500) when the key is absent.
+        _desired: >-
+          {{ item | combine({'account': paperless_gmail_account.id,
+                             'assign_tags': item.assign_tags | default([])}) }}
         _existing: >-
           {{ paperless_existing_rules.json.results
              | selectattr('name', 'equalto', item.name)
