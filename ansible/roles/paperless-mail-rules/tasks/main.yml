@@ -1,5 +1,5 @@
 ---
-# Declare Paperless-ngx mail rules for the Gmail account via the REST API.
+# Declare Paperless-ngx mail rules (and the inbox tag) via the REST API.
 # The mail account itself comes from the interactive OAuth consent in the UI;
 # this role only finds it and attaches rules to it.
 
@@ -49,6 +49,40 @@
         host: 127.0.0.1
         port: "{{ paperless_pf_port }}"
         timeout: 30
+
+    - name: Get inbox tag
+      ansible.builtin.uri:
+        url: "{{ paperless_url }}/api/tags/?name__iexact={{ paperless_inbox_tag | urlencode }}"
+        url_username: "{{ paperless_admin_user }}"
+        url_password: "{{ paperless_admin_password.stdout }}"
+        force_basic_auth: true
+        return_content: true
+      register: paperless_inbox_tag_existing
+      no_log: true
+
+    # matching_algorithm 0 = none: added only through is_inbox_tag, never by
+    # the auto-matcher.
+    - name: Upsert inbox tag
+      ansible.builtin.uri:
+        url: >-
+          {{ paperless_url }}/api/tags/{{
+             (_existing.id ~ '/') if _existing else '' }}
+        method: "{{ 'PATCH' if _existing else 'POST' }}"
+        url_username: "{{ paperless_admin_user }}"
+        url_password: "{{ paperless_admin_password.stdout }}"
+        force_basic_auth: true
+        body_format: json
+        body: "{{ _desired }}"
+        status_code: [200, 201]
+      vars:
+        _desired:
+          name: "{{ paperless_inbox_tag }}"
+          is_inbox_tag: true
+          matching_algorithm: 0
+        _existing: "{{ paperless_inbox_tag_existing.json.results | first | default({}) }}"
+      when: not _existing or (_existing | combine(_desired)) != _existing
+      changed_when: true
+      no_log: true
 
     - name: Get mail accounts
       ansible.builtin.uri:

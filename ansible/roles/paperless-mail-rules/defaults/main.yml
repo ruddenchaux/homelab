@@ -11,11 +11,16 @@ paperless_admin_user: "admin"
 #   -e paperless_gmail_address=you@gmail.com
 paperless_gmail_address: ""
 
+# Inbox tag: Paperless adds it to every newly consumed document (mail or
+# not) so new arrivals form a "to review" list; remove it once checked.
+paperless_inbox_tag: "inbox"
+
 # Declared mail rules, upserted by name. Rules not listed here are left alone.
 # Enums (paperless_mail.models.MailRule):
 #   attachment_type    1 = attachments only, 2 = include inline
 #   consumption_scope  1 = attachments only, 2 = .eml only, 3 = .eml + attachments
 #   action             1 = delete, 2 = move, 3 = mark read, 4 = flag, 5 = tag
+#   assign_title_from  1 = mail subject, 2 = attachment filename, 3 = none
 # Gmail labels are IMAP folders; create both labels in Gmail first.
 paperless_mail_rules:
   - name: gmail-paperless-label
@@ -26,3 +31,4 @@ paperless_mail_rules:
     consumption_scope: 1
     action: 2
     action_parameter: Paperless/Done
+    assign_title_from: 2
