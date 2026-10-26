@@ -31,7 +31,7 @@ Building a professional homelab with Infrastructure as Code. The owner is a soft
 
 - All firmware updated (iDRAC 7.00.00.183, BIOS 2.25.0, H740p 51.16.0-5150, Broadcom NIC 23.3/23.3.1, CPLD 1.1.4)
 - H740p in eHBA mode, 4 disks as Non-RAID
-- Proxmox VE 9.1.5 (Debian Trixie) installed on ZFS mirror (2x SSD), kernel 6.17.2-1-pve
+- Proxmox VE 9.1.5 (Debian Trixie) installed on ZFS mirror (2x SSD), kernel 6.17.9-1-pve
 - Enterprise repos disabled, no-subscription repos enabled (PVE + Ceph Squid)
 - ZFS datapool mirror created on 2x 4TB HDDs, mounted at /datapool, registered as Proxmox storage backend
 - SSH hardened (PermitRootLogin=prohibit-password, PasswordAuthentication=no, PubkeyAuthentication=yes)

@@ -76,6 +76,9 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 0
+      # A failed run is otherwise kept until the next failure, and keeps
+      # KubeJobFailed firing long after later runs succeed.
+      ttlSecondsAfterFinished: 604800
       template:
         metadata:
           labels:
