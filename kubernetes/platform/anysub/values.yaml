@@ -12,7 +12,6 @@ images:
   worker: ghcr.io/ruddenchaux/anysub-worker:cpu-95b7915-vad
   redis: docker.io/valkey/valkey:8-alpine
   mariadb: docker.io/library/mariadb:11
-  libretranslate: docker.io/libretranslate/libretranslate:latest
 
 storage:
   storageClass: local-path
@@ -22,21 +21,12 @@ storage:
     size: 10Gi
   mariadb:
     size: 5Gi
-  libretranslate:
-    size: 10Gi
 
 # Whisper backend
 whisper:
   models: large-v3        # comma-separated; preloaded at worker startup
   threads: "18"           # one socket on Xeon Gold 6140
   device: cpu             # int8 quantization auto-selected when device=cpu
-
-# LibreTranslate
-libretranslate:
-  enabled: true
-  loadOnly: en,it,es,fr,de
-  disableWebUi: "True"
-  updateModels: "True"
 
 # Resource budgets
 resources:
@@ -52,6 +42,3 @@ resources:
   mariadb:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 1Gi }
-  libretranslate:
-    requests: { cpu: 200m, memory: 512Mi }
-    limits:   { cpu: "2",  memory: 2Gi }

@@ -12,7 +12,6 @@ Single-namespace Helm chart (`anysub`):
 |---|---|---|
 | `anysub` Deployment | 3 containers in 1 Pod: `web`, `worker`, `redis` | Web UI on `:1337`; queue worker; in-pod Asynq Redis |
 | `mariadb` Deployment | 1 | Anysub metadata store |
-| `libretranslate` Deployment | 1 | Optional translation backend |
 
 The `web` and `worker` containers share the same image (a Go binary compiled
 into `pluja/whisperx-api:cpu`). They share the Pod because

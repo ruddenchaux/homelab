@@ -55,24 +55,3 @@ spec:
   resources:
     requests:
       storage: {{ .Values.storage.mariadb.size }}
-{{- if .Values.libretranslate.enabled }}
----
-# LibreTranslate downloads ~5 Gi of language models on first start.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: libretranslate
-  namespace: anysub
-  annotations:
-    argocd.argoproj.io/sync-options: Delete=false
-  labels:
-    {{- include "anysub.selectorLabels" "libretranslate" | nindent 4 }}
-    {{- include "anysub.labels" . | nindent 4 }}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: {{ .Values.storage.storageClass }}
-  resources:
-    requests:
-      storage: {{ .Values.storage.libretranslate.size }}
-{{- end }}

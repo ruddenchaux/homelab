@@ -85,8 +85,6 @@ spec:
               value: 127.0.0.1:6379
             - name: AS_WX_API_HOST
               value: http://127.0.0.1:8000
-            - name: LIBRETRANSLATE_ENDPOINT
-              value: libretranslate:5000
             - name: WHISPER_HF_TOKEN
               valueFrom:
                 secretKeyRef:
