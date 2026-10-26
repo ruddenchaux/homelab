@@ -1,5 +1,5 @@
 ---
-# Telegram bot credentials for Alertmanager. Mounted by the Alertmanager pod
+# Telegram bot token for Alertmanager. Mounted by the Alertmanager pod
 # (alertmanagerSpec.secrets), so it must exist before the monitoring chart
 # syncs. Re-applied every run so a rotated token in SOPS reaches the cluster.
 
@@ -12,17 +12,15 @@
   changed_when: "'created' in alertmanager_ns.stdout"
   failed_when: alertmanager_ns.rc != 0 and 'already exists' not in alertmanager_ns.stderr
 
-- name: Require provisioned Telegram bot credentials
+- name: Require provisioned Telegram bot token
   ansible.builtin.assert:
     that:
       - _alertmanager_sops.bottega_alertmanager_telegram_bot_token is defined
       - _alertmanager_sops.bottega_alertmanager_telegram_bot_token | length > 0
-      - _alertmanager_sops.bottega_alertmanager_telegram_chat_id is defined
-      - _alertmanager_sops.bottega_alertmanager_telegram_chat_id | string | length > 0
     quiet: true
     fail_msg: >-
-      Add bottega_alertmanager_telegram_bot_token and
-      bottega_alertmanager_telegram_chat_id to ansible/secrets/bottega.sops.yml;
+      Add bottega_alertmanager_telegram_bot_token to
+      ansible/secrets/bottega.sops.yml;
       see the header of ansible/playbooks/alertmanager-secrets.yml.
   vars:
     _alertmanager_sops: "{{ ansible_facts['alertmanager_bottega_secrets'] | default({}) }}"
@@ -35,7 +33,6 @@
     kubectl create secret generic {{ alertmanager_telegram_secret_name }}
     -n {{ alertmanager_namespace }}
     --from-literal=bot_token={{ _sops.bottega_alertmanager_telegram_bot_token | quote }}
-    --from-literal=chat_id={{ _sops.bottega_alertmanager_telegram_chat_id | string | quote }}
     --dry-run=client -o yaml | kubectl apply -f -
   args:
     executable: /bin/bash

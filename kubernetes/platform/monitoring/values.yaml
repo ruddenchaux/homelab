@@ -82,7 +82,9 @@ kube-prometheus-stack:
         - name: telegram
           telegram_configs:
             - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
-              chat_id_file: /etc/alertmanager/secrets/alertmanager-telegram/chat_id
+              # prometheus-operator v0.88 rejects chat_id_file; the ID alone
+              # can't send anything without the bot token.
+              chat_id: 776709656
               send_resolved: true
   prometheus-node-exporter:
     extraArgs:
