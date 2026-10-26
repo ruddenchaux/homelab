@@ -1,0 +1,6 @@
+---
+# Bound to the management address only (VLAN 10); Prometheus scrapes it from
+# the cluster. Never 0.0.0.0, so it is not reachable on any other bridge.
+proxmox_node_exporter_listen: "10.10.0.2:9100"
+proxmox_node_exporter_textfile_dir: "/var/lib/prometheus/node-exporter"
+proxmox_zpool_metrics_interval: "1min"

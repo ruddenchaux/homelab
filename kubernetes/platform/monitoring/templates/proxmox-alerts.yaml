@@ -1,0 +1,74 @@
+# Alerts for the Proxmox host and its ZFS pools.
+#
+# datapool backs every worker's thin-provisioned local-path disk (4 x 3.1T on
+# a 3.6T pool), so the guests can't see it filling. ZFS slows sharply above
+# ~80% and a full pool stalls every VM writing to it.
+#
+# Metrics come from ansible/playbooks/proxmox-node-exporter.yml. The
+# `release: monitoring` label is required by kube-prometheus-stack's
+# ruleSelector.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: proxmox-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: proxmox
+      rules:
+        - alert: ZpoolCapacityHigh
+          expr: zpool_allocated_bytes / zpool_size_bytes > 0.80
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "zpool {{`{{ $labels.pool }}`}} is {{`{{ $value | humanizePercentage }}`}} full"
+            description: >-
+              ZFS performance degrades above 80%. Free space (prune media,
+              trim guests) or add capacity before it reaches 90%.
+
+        - alert: ZpoolCapacityCritical
+          expr: zpool_allocated_bytes / zpool_size_bytes > 0.90
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "zpool {{`{{ $labels.pool }}`}} is {{`{{ $value | humanizePercentage }}`}} full"
+            description: >-
+              A full pool stalls every VM disk on it. Act now.
+
+        # Fires weeks ahead of the thresholds when media keeps growing.
+        - alert: ZpoolFillingUp
+          expr: predict_linear(zpool_allocated_bytes[7d], 30 * 24 * 3600) > 0.90 * zpool_size_bytes
+          for: 6h
+          labels:
+            severity: warning
+          annotations:
+            summary: "zpool {{`{{ $labels.pool }}`}} will pass 90% within 30 days at the current rate"
+            description: >-
+              Linear prediction from the last 7 days of allocation.
+
+        - alert: ZpoolUnhealthy
+          expr: zpool_healthy == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "zpool {{`{{ $labels.pool }}`}} health is {{`{{ $labels.health }}`}}"
+            description: >-
+              Check `zpool status -v {{`{{ $labels.pool }}`}}` on pve01. The
+              mirror has no redundancy left until the faulted disk is replaced.
+
+        # Meta-alert: every rule above is silent while this fires.
+        - alert: ProxmoxMetricsMissing
+          expr: up{job="proxmox"} == 0 or absent(up{job="proxmox"}) or absent(zpool_size_bytes)
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Proxmox host metrics are not being scraped"
+            description: >-
+              The zpool alerts cannot fire. Check prometheus-node-exporter and
+              zpool-metrics.timer on pve01.

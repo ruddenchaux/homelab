@@ -1,0 +1,11 @@
+---
+# Expose Proxmox host + zpool metrics to the cluster Prometheus.
+# Scrape job and alerts: kubernetes/platform/monitoring/.
+#
+# Usage:
+#   ansible-playbook ansible/playbooks/proxmox-node-exporter.yml
+
+- name: Install node_exporter on Proxmox
+  hosts: proxmox
+  roles:
+    - proxmox-node-exporter

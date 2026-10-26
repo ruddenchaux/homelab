@@ -118,3 +118,17 @@ ssh root@10.10.0.2 'pvesh get /nodes/pve01/dns'
 
 Metrics appear in Proxmox UI under **Datacenter → Metric Server** with status
 `active` once the first data point is sent (within ~60s of creation).
+
+## Prometheus: node_exporter + zpool alerts
+
+Separately from the InfluxDB push above, `ansible/playbooks/proxmox-node-exporter.yml`
+installs `prometheus-node-exporter` on pve01 (bound to `10.10.0.2:9100` only,
+installed without recommends) and a `zpool-metrics.timer` that writes
+`zpool_size_bytes`, `zpool_allocated_bytes`, `zpool_free_bytes` and
+`zpool_healthy` to the textfile collector every minute.
+
+Prometheus scrapes it as job `proxmox` (`additionalScrapeConfigs` in
+`kubernetes/platform/monitoring/values.yaml`). Alerts in
+`kubernetes/platform/monitoring/templates/proxmox-alerts.yaml`: capacity
+>80% / >90%, 30-day fill prediction, pool not ONLINE, and a meta-alert when
+the metrics are missing. They reach Telegram through Alertmanager.

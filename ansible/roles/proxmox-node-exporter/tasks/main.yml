@@ -1,0 +1,56 @@
+---
+# Host metrics for Prometheus, plus zpool capacity/health via the textfile
+# collector (node_exporter's zfs collector reports no pool size). Feeds the
+# ZpoolCapacity* alerts in kubernetes/platform/monitoring/templates/proxmox-alerts.yaml.
+
+- name: Install prometheus-node-exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    # Recommends pull in IPMI/SNMP tooling and upgrade util-linux on the
+    # hypervisor; host upgrades are done deliberately, not as a side effect.
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure prometheus-node-exporter arguments
+  ansible.builtin.template:
+    src: prometheus-node-exporter.default.j2
+    dest: /etc/default/prometheus-node-exporter
+    mode: "0644"
+  notify: Restart prometheus-node-exporter
+
+- name: Deploy zpool-metrics script
+  ansible.builtin.template:
+    src: zpool-metrics.sh.j2
+    dest: /usr/local/bin/zpool-metrics.sh
+    mode: "0755"
+
+- name: Deploy zpool-metrics systemd service
+  ansible.builtin.template:
+    src: zpool-metrics.service.j2
+    dest: /etc/systemd/system/zpool-metrics.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy zpool-metrics systemd timer
+  ansible.builtin.template:
+    src: zpool-metrics.timer.j2
+    dest: /etc/systemd/system/zpool-metrics.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start prometheus-node-exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+
+- name: Enable and start zpool-metrics timer
+  ansible.builtin.systemd:
+    name: zpool-metrics.timer
+    enabled: true
+    state: started

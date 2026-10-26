@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic zpool metrics for node_exporter
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ proxmox_zpool_metrics_interval }}
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

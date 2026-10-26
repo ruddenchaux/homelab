@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+
+OUT="{{ proxmox_node_exporter_textfile_dir }}/zpool.prom"
+TMP="${OUT}.tmp"
+
+{
+  echo "# HELP zpool_size_bytes Total pool size."
+  echo "# TYPE zpool_size_bytes gauge"
+  echo "# HELP zpool_allocated_bytes Space allocated in the pool."
+  echo "# TYPE zpool_allocated_bytes gauge"
+  echo "# HELP zpool_free_bytes Free space in the pool."
+  echo "# TYPE zpool_free_bytes gauge"
+  echo "# HELP zpool_healthy 1 if the pool health is ONLINE, else 0."
+  echo "# TYPE zpool_healthy gauge"
+  zpool list -Hp -o name,size,alloc,free,health | while IFS=$'\t' read -r name size alloc free health; do
+    echo "zpool_size_bytes{pool=\"${name}\"} ${size}"
+    echo "zpool_allocated_bytes{pool=\"${name}\"} ${alloc}"
+    echo "zpool_free_bytes{pool=\"${name}\"} ${free}"
+    echo "zpool_healthy{pool=\"${name}\",health=\"${health}\"} $([ "$health" = ONLINE ] && echo 1 || echo 0)"
+  done
+} > "$TMP"
+
+mv "$TMP" "$OUT"

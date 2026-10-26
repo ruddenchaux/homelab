@@ -59,6 +59,14 @@ kube-prometheus-stack:
   prometheus:
     prometheusSpec:
       retention: 15d
+      # Proxmox host node_exporter (ansible/playbooks/proxmox-node-exporter.yml),
+      # including zpool capacity/health from its textfile collector.
+      additionalScrapeConfigs:
+        - job_name: proxmox
+          static_configs:
+            - targets: ["10.10.0.2:9100"]
+              labels:
+                instance: pve01
   alertmanager:
     alertmanagerSpec:
       # Created by ansible/playbooks/alertmanager-secrets.yml from the Bottega
