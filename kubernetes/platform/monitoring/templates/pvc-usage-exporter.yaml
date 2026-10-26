@@ -57,8 +57,10 @@ spec:
             requests:
               cpu: 10m
               memory: 16Mi
+            # du over a large PVC tree (worker-02) charges dentry/inode cache
+            # to this cgroup; 64Mi OOMKilled it every scan.
             limits:
-              memory: 64Mi
+              memory: 256Mi
       volumes:
         - name: script
           configMap:

@@ -67,6 +67,13 @@ kubectl -n crowdsec exec deploy/crowdsec-lapi -- cscli bouncers list
 kubectl -n crowdsec exec ds/crowdsec-agent  -- cscli metrics
 ```
 
+Agents stuck in `Init` with `403 … user 'crowdsec-agent-xxx' already exist`
+(seen after a node reboot): LAPI auto-deletes machines that stop
+heartbeating for 60 min (`agents_autodelete` in
+`kubernetes/platform/crowdsec/values.yaml`), so they recover on their own. To
+recover immediately, `cscli machines delete <name>` on the LAPI, then delete
+the agent pods.
+
 Emergency off switch: remove the `--entryPoints.websecure.http.middlewares`
 argument in `kubernetes/platform/traefik/values.yaml`.
 

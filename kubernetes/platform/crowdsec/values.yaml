@@ -10,6 +10,27 @@ crowdsec:
       name: crowdsec-keys
 
   config:
+    # Replaces the chart's default string, so auto_registration is restated
+    # verbatim. Agents register under their pod name; after a node reboot the
+    # same pod re-runs `cscli lapi register`, gets 403 "user already exist",
+    # and stays stuck in Init. agents_autodelete flushes machines that stopped
+    # heartbeating, so the restarted pod can register again (chart README).
+    config.yaml.local: |
+      api:
+        server:
+          auto_registration:
+            enabled: true
+            token: "${REGISTRATION_TOKEN}"
+            allowed_ranges:
+              - "127.0.0.1/32"
+              - "192.168.0.0/16"
+              - "10.0.0.0/8"
+              - "172.16.0.0/12"
+      db_config:
+        flush:
+          agents_autodelete:
+            cert: 60m
+            login_password: 60m
     parsers:
       s02-enrich:
         # Never raise alerts for our own networks: VLANs, pods, the WireGuard
