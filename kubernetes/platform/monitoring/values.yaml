@@ -59,6 +59,31 @@ kube-prometheus-stack:
   prometheus:
     prometheusSpec:
       retention: 15d
+  alertmanager:
+    alertmanagerSpec:
+      # Created by ansible/playbooks/alertmanager-secrets.yml from the Bottega
+      # SOPS file; mounted at /etc/alertmanager/secrets/<name>/.
+      secrets:
+        - alertmanager-telegram
+    # Merged over the chart default config; route.routes and receivers are
+    # lists, so they replace the defaults and are restated in full.
+    config:
+      route:
+        receiver: telegram
+        routes:
+          - receiver: "null"
+            matchers:
+              - alertname = "Watchdog"
+          - receiver: "null"
+            matchers:
+              - alertname = "InfoInhibitor"
+      receivers:
+        - name: "null"
+        - name: telegram
+          telegram_configs:
+            - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot_token
+              chat_id_file: /etc/alertmanager/secrets/alertmanager-telegram/chat_id
+              send_resolved: true
   prometheus-node-exporter:
     extraArgs:
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)

@@ -1,0 +1,3 @@
+---
+alertmanager_namespace: "monitoring"
+alertmanager_telegram_secret_name: "alertmanager-telegram"
