@@ -9,7 +9,7 @@ nodeName: k8s-worker-04
 images:
   # Self-built from src/worker.cpu.Dockerfile (Go anysub binary +
   # pluja/whisperx-api:cpu base). See README for the build/push procedure.
-  worker: ghcr.io/ruddenchaux/anysub-worker:cpu-95b7915-owner
+  worker: ghcr.io/ruddenchaux/anysub-worker:cpu-95b7915-models
   redis: docker.io/valkey/valkey:8-alpine
   mariadb: docker.io/library/mariadb:11
 
@@ -24,7 +24,7 @@ storage:
 
 # Whisper backend
 whisper:
-  models: large-v3        # comma-separated; preloaded at worker startup
+  models: large-v3-turbo,large-v3   # comma-separated; preloaded at worker startup
   threads: "18"           # one socket on Xeon Gold 6140
   device: cpu             # int8 quantization auto-selected when device=cpu
 
